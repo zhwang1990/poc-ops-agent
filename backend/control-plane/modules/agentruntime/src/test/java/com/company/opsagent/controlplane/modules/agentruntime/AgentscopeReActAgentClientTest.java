@@ -445,70 +445,76 @@ class AgentscopeReActAgentClientTest {
           .finishReason("stop")
           .build());
     }
-      private static final class FailingAfterToolUseModel implements Model {
 
-          private int streamCalls;
-
-          @Override
-          public Flux<ChatResponse> stream(
-              List<Msg> messages,
-              List<ToolSchema> tools,
-              GenerateOptions options) {
-              streamCalls++;
-              if (streamCalls == 1) {
-                  return Flux.just(ChatResponse.builder()
-                      .id("response-tool-use")
-                      .content(List.of(ToolUseBlock.builder()
-                          .id("tool-call-1")
-                          .name("node-health")
-                          .input(Map.of("nodeId", "node-1"))
-                          .content("{\"nodeId\":\"node-1\"}")
-                          .build()))
-                      .finishReason("tool_calls")
-                      .build());
-              }
-              return Flux.error(new RuntimeException("model failed after tool execution"));
-          }
-
-          @Override
-          public String getModelName() {
-              return "fake-failing-after-tool-model";
-          }
-      }
-
-      private static final class RepeatedToolUseModel implements Model {
-
-          private int streamCalls;
-
-          @Override
-          public Flux<ChatResponse> stream(
-              List<Msg> messages,
-              List<ToolSchema> tools,
-              GenerateOptions options) {
-              streamCalls++;
-              if (streamCalls <= 2) {
-                  return Flux.just(ChatResponse.builder()
-                      .id("response-tool-use-" + streamCalls)
-                      .content(List.of(ToolUseBlock.builder()
-                          .id("tool-call-" + streamCalls)
-                          .name("node-health")
-                          .input(Map.of("nodeId", "node-1"))
-                          .content("{\"nodeId\":\"node-1\"}")
-                          .build()))
-                      .finishReason("tool_calls")
-                      .build());
-              }
-              return Flux.just(ChatResponse.builder()
-                  .id("response-final")
-                  .content(List.of(TextBlock.builder().text("tool limit enforced").build()))
-                  .finishReason("stop")
-                  .build());
-          }
-
-
-          @Override
+    @Override
     public String getModelName() {
       return "fake-tool-model";
+    }
+  }
+
+  private static final class FailingAfterToolUseModel implements Model {
+
+    private int streamCalls;
+
+    @Override
+    public Flux<ChatResponse> stream(
+        List<Msg> messages,
+        List<ToolSchema> tools,
+        GenerateOptions options) {
+      streamCalls++;
+      if (streamCalls == 1) {
+        return Flux.just(ChatResponse.builder()
+            .id("response-tool-use")
+            .content(List.of(ToolUseBlock.builder()
+                .id("tool-call-1")
+                .name("node-health")
+                .input(Map.of("nodeId", "node-1"))
+                .content("{\"nodeId\":\"node-1\"}")
+                .build()))
+            .finishReason("tool_calls")
+            .build());
+      }
+      return Flux.error(new RuntimeException("model failed after tool execution"));
+    }
+
+    @Override
+    public String getModelName() {
+      return "fake-failing-after-tool-model";
+    }
+  }
+
+  private static final class RepeatedToolUseModel implements Model {
+
+    private int streamCalls;
+
+    @Override
+    public Flux<ChatResponse> stream(
+        List<Msg> messages,
+        List<ToolSchema> tools,
+        GenerateOptions options) {
+      streamCalls++;
+      if (streamCalls <= 2) {
+        return Flux.just(ChatResponse.builder()
+            .id("response-tool-use-" + streamCalls)
+            .content(List.of(ToolUseBlock.builder()
+                .id("tool-call-" + streamCalls)
+                .name("node-health")
+                .input(Map.of("nodeId", "node-1"))
+                .content("{\"nodeId\":\"node-1\"}")
+                .build()))
+            .finishReason("tool_calls")
+            .build());
+      }
+      return Flux.just(ChatResponse.builder()
+          .id("response-final")
+          .content(List.of(TextBlock.builder().text("tool limit enforced").build()))
+          .finishReason("stop")
+          .build());
+    }
+
+    @Override
+    public String getModelName() {
+      return "fake-repeated-tool-model";
     }
   }
 

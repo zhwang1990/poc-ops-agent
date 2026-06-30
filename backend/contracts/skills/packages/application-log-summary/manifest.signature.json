@@ -1,7 +1,7 @@
 {
   "publishedBy": "application-ops",
   "publishedAt": "2026-06-06T22:11:00+08:00",
-  "checksumSha256": "2be54a21488aa6e13f32ee8cfd6d0d9a6f68b18328c16f1fdc21529a3d45b8b2",
+  "checksumSha256": "9c5ec847f68e9eea56136971f5fb7283b93c6d4536da5371ec7e8edb67e1c27b",
   "signatureAlgorithm": "HmacSHA256",
-  "signature": "26953f0747898f4bcc004d1dd3239e196004ae7ba386836b6ea2211db90bb0e3"
+  "signature": "c3964c4810274fdecf65a29a708590a738200cb85f0874bb1cb904a40a3ead57"
 }
