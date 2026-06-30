@@ -40,6 +40,21 @@ findstr /I /C:"npm-dev-always-runs" "%START_SCRIPT%" >nul || (
   exit /b 1
 )
 
+findstr /I /C:"DEMO_JDK21_BIN" "%START_SCRIPT%" >nul || (
+  echo start-demo.cmd must allow an explicit JDK 21 bin path
+  exit /b 1
+)
+
+findstr /I /C:"set \"JAVA_HOME=%%DEMO_JDK21_HOME%%\"" "%START_SCRIPT%" >nul || (
+  echo start-demo.cmd must derive JAVA_HOME from the explicit JDK 21 bin path
+  exit /b 1
+)
+
+findstr /I /C:"Usage: start-demo.cmd" "%START_SCRIPT%" >nul || (
+  echo start-demo.cmd must print usage for the optional JDK 21 bin path
+  exit /b 1
+)
+
 findstr /I /C:"taskkill /PID" "%STOP_SCRIPT%" >nul || (
   echo stop-demo.cmd must stop recorded PIDs
   exit /b 1

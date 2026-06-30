@@ -21,6 +21,7 @@ set "LAUNCHER_LOG=%LOG_DIR%\launcher.log"
 echo ============================================================
 echo Ops Agent Windows Demo Launcher
 echo ============================================================
+echo Usage: start-demo.cmd [JDK21_BIN_PATH]
 echo.
 
 cd /d "%REPO_ROOT%" || (
@@ -34,7 +35,13 @@ if not exist "%PID_DIR%" mkdir "%PID_DIR%"
 
 echo [%date% %time%] Starting demo launcher > "%LAUNCHER_LOG%"
 
-call :requireCommand java.exe "Java 21 is required. Install Java 21 and make sure java.exe is on PATH." || goto :fail
+if not "%~1"=="" set "DEMO_JDK21_BIN=%~1"
+
+if defined DEMO_JDK21_BIN (
+  call :configureJdk21Bin "%DEMO_JDK21_BIN%" || goto :fail
+) else (
+  call :requireCommand java.exe "Java 21 is required. Install Java 21 and make sure java.exe is on PATH, or run start-demo.cmd with the JDK 21 bin path." || goto :fail
+)
 call :requireCommand npm.cmd "Node.js 20+ and npm are required. Install Node.js and make sure npm.cmd is on PATH." || goto :fail
 
 if not exist "%BACKEND_DIR%\mvnw.cmd" (
@@ -97,6 +104,21 @@ echo.
 
 start "" "http://127.0.0.1:5173"
 pause
+exit /b 0
+
+:configureJdk21Bin
+set "DEMO_JDK21_BIN=%~1"
+if not exist "%DEMO_JDK21_BIN%\java.exe" (
+  echo JDK 21 bin path is invalid: %DEMO_JDK21_BIN%
+  echo Expected java.exe at: %DEMO_JDK21_BIN%\java.exe
+  echo Usage: start-demo.cmd "C:\path\to\jdk-21\bin"
+  exit /b 1
+)
+for %%I in ("%DEMO_JDK21_BIN%\..") do set "DEMO_JDK21_HOME=%%~fI"
+set "JAVA_HOME=%DEMO_JDK21_HOME%"
+set "PATH=%DEMO_JDK21_BIN%;%PATH%"
+echo Using JDK 21 bin: %DEMO_JDK21_BIN%
+echo JAVA_HOME: %JAVA_HOME%
 exit /b 0
 
 :requireCommand

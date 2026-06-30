@@ -30,6 +30,12 @@
 tools\demo\start-demo.cmd
 ```
 
+如果演示机同时安装了多个 Java 版本，可以显式指定 JDK 21 的 `bin` 目录：
+
+```text
+tools\demo\start-demo.cmd "C:\path\to\jdk-21\bin"
+```
+
 启动成功后脚本会打开：
 
 ```text
