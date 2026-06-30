@@ -56,6 +56,44 @@ class DynamicModelProviderAgentscopeAgentClientTest {
   }
 
   @Test
+  void normalizesSpringAiStyleBaseUrlBeforeCreatingClient() {
+    var codec = new AesGcmModelProviderSecretCodec("0123456789abcdef0123456789abcdef");
+    var store = new InMemoryModelProviderStore();
+    var provider = new DefaultModelProviderManagementService(
+        store,
+        codec,
+        ignored -> new ModelProviderProbeResult("SUCCEEDED", "ok"),
+        java.time.Clock.systemUTC())
+        .create(new ModelProviderCreateCommand(
+            "OpenAI",
+            "https://model-provider.example/base",
+            "gpt-4.1-mini",
+            "CONSOLE_API_KEY_PLACEHOLDER",
+            Duration.ofSeconds(17),
+            7,
+            4,
+            Duration.ofSeconds(11)),
+            "admin");
+    store.setDefault(provider.providerId());
+
+    AtomicReference<CapturedFactoryInput> captured = new AtomicReference<>();
+    AgentscopeAgentClient client = new DynamicModelProviderAgentscopeAgentClient(
+        store,
+        codec,
+        (apiKey, modelName, baseUrl, maxIters, maxToolCalls, timeout) -> {
+          captured.set(new CapturedFactoryInput(apiKey, modelName, baseUrl, maxIters, maxToolCalls, timeout));
+          return invocation -> Mono.just(new AgentscopeAgentResponse("SUCCEEDED", "ok", 0));
+        },
+        invocation -> Mono.just(new AgentscopeAgentResponse("LEGACY", "legacy", 0)));
+
+    StepVerifier.create(client.run(invocation()))
+        .assertNext(response -> assertEquals("SUCCEEDED", response.status()))
+        .verifyComplete();
+
+    assertEquals("https://model-provider.example/base/v1", captured.get().baseUrl());
+  }
+
+  @Test
   void fallsBackWhenNoDefaultProviderExists() {
     AgentscopeAgentClient client = new DynamicModelProviderAgentscopeAgentClient(
         new InMemoryModelProviderStore(),

@@ -67,7 +67,7 @@ public final class DynamicModelProviderAgentscopeAgentClient implements Agentsco
     return clientFactory.openAiCompatible(
         apiKey,
         provider.modelName(),
-        provider.baseUrl(),
+        OpenAiCompatibleEndpoint.apiBaseUrl(provider.baseUrl()),
         provider.maxIterations(),
         provider.maxToolCalls(),
         provider.timeout());

@@ -89,6 +89,26 @@ class ModelProviderSqlAssistantClientTest {
   }
 
   @Test
+  void appendsOpenAiVersionPathWhenProviderBaseUrlDoesNotIncludeVersion() throws Exception {
+    startServer(exchange -> respond(exchange, 200, """
+        {
+          "choices": [{
+            "message": {
+              "content": "{\\"summary\\":\\"Connected.\\",\\"suggestions\\":[],\\"safetyNotes\\":[\\"Validate before execution.\\"]}"
+            }
+          }]
+        }
+        """));
+    InMemoryModelProviderStore store = new InMemoryModelProviderStore();
+    store.save(provider(serverRootUrl(), API_KEY));
+
+    SqlAssistantResponse response = client(store).ask(prompt());
+
+    assertEquals(SqlAssistantStatus.SUCCEEDED, response.status());
+    assertEquals("Connected.", response.summary());
+  }
+
+  @Test
   void mapsProviderFailureWithoutLeakingSecretOrResponseBody() throws Exception {
     startServer(exchange -> respond(exchange, 401, "invalid key " + API_KEY));
     InMemoryModelProviderStore store = new InMemoryModelProviderStore();
@@ -164,6 +184,10 @@ class ModelProviderSqlAssistantClientTest {
 
   private String serverBaseUrl() {
     return "http://127.0.0.1:" + server.getAddress().getPort() + "/v1";
+  }
+
+  private String serverRootUrl() {
+    return "http://127.0.0.1:" + server.getAddress().getPort();
   }
 
   private void respond(HttpExchange exchange, int statusCode, String body) throws IOException {

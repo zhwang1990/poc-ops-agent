@@ -3,7 +3,6 @@ package com.company.opsagent.controlplane.modules.agentruntime;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
-import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -50,7 +49,7 @@ public final class OpenAiCompatibleModelProviderProbe implements ModelProviderPr
           "SKIPPED_FAKE_API_KEY",
           "Local fake API key placeholder was not sent to the provider.");
     }
-    HttpRequest request = HttpRequest.newBuilder(probeUri(provider.baseUrl()))
+    HttpRequest request = HttpRequest.newBuilder(OpenAiCompatibleEndpoint.chatCompletionsUri(provider.baseUrl()))
         .timeout(probeTimeout(provider.timeout()))
         .header("Authorization", "Bearer " + apiKey)
         .header("Content-Type", "application/json")
@@ -69,11 +68,6 @@ public final class OpenAiCompatibleModelProviderProbe implements ModelProviderPr
           "FAILED",
           "Model provider probe failed before receiving a valid response.");
     }
-  }
-
-  private URI probeUri(String baseUrl) {
-    String trimmed = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
-    return URI.create(trimmed + "/chat/completions");
   }
 
   private String probePayload(ModelProvider provider) {

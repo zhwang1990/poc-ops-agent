@@ -55,6 +55,15 @@ class OpenAiCompatibleModelProviderProbeTest {
   }
 
   @Test
+  void appendsOpenAiVersionPathWhenBaseUrlDoesNotIncludeVersion() throws Exception {
+    startServer(exchange -> respond(exchange, 200, "{\"id\":\"probe\"}"));
+
+    ModelProviderProbeResult result = probe().test(provider(serverRootUrl(), PROBE_API_KEY));
+
+    assertEquals("SUCCEEDED", result.status());
+  }
+
+  @Test
   void mapsUnauthorizedProbeWithoutReturningProviderResponseBody() throws Exception {
     startServer(exchange -> respond(exchange, 401, "invalid api key " + PROBE_API_KEY));
 
@@ -122,6 +131,10 @@ class OpenAiCompatibleModelProviderProbeTest {
 
   private String serverBaseUrl() {
     return "http://127.0.0.1:" + server.getAddress().getPort() + "/v1";
+  }
+
+  private String serverRootUrl() {
+    return "http://127.0.0.1:" + server.getAddress().getPort();
   }
 
   private void respond(HttpExchange exchange, int statusCode, String body) throws IOException {

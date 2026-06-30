@@ -8,6 +8,7 @@ import com.company.opsagent.controlplane.modules.agentruntime.ModelProvider;
 import com.company.opsagent.controlplane.modules.agentruntime.ModelProviderSecretCodec;
 import com.company.opsagent.controlplane.modules.agentruntime.ModelProviderStore;
 import com.company.opsagent.controlplane.modules.agentruntime.ModelProviderType;
+import com.company.opsagent.controlplane.modules.agentruntime.OpenAiCompatibleEndpoint;
 import com.company.opsagent.controlplane.modules.sqlworkbench.SqlAssistantClient;
 import com.company.opsagent.controlplane.modules.sqlworkbench.SqlAssistantPrompt;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -15,7 +16,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.io.IOException;
-import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -86,7 +86,7 @@ public class ModelProviderSqlAssistantClient implements SqlAssistantClient {
       throws IOException {
     String body = objectMapper.writeValueAsString(chatRequest(provider, prompt));
     return HttpRequest.newBuilder()
-        .uri(URI.create(chatCompletionsUrl(provider.baseUrl())))
+        .uri(OpenAiCompatibleEndpoint.chatCompletionsUri(provider.baseUrl()))
         .timeout(provider.timeout() == null ? FALLBACK_TIMEOUT : provider.timeout())
         .header("Authorization", "Bearer " + apiKey)
         .header("Content-Type", "application/json")
@@ -228,13 +228,6 @@ public class ModelProviderSqlAssistantClient implements SqlAssistantClient {
       }
     }
     return List.copyOf(values);
-  }
-
-  private String chatCompletionsUrl(String baseUrl) {
-    String trimmed = baseUrl.endsWith("/")
-        ? baseUrl.substring(0, baseUrl.length() - 1)
-        : baseUrl;
-    return trimmed + "/chat/completions";
   }
 
   private SqlAssistantResponse notConfigured(SqlAssistantAction action) {
