@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://company.example/ops-agent/skills/release-log-analysis-read/1.0.0/input.schema.json",
+  "title": "release-log-analysis-read 输入",
+  "description": "发布日志只读分析所需的脱敏输入参数。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "releaseId",
+    "nodeId",
+    "targetEnvironment",
+    "sanitizedLogExcerpt",
+    "deterministicStatus",
+    "idempotencyKey"
+  ],
+  "properties": {
+    "releaseId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9._:-]+$",
+      "description": "发布单标识。"
+    },
+    "nodeId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9._:-]+$",
+      "description": "发布节点标识。"
+    },
+    "targetEnvironment": {
+      "enum": [
+        "dev",
+        "sit",
+        "uat"
+      ],
+      "description": "非生产目标环境。"
+    },
+    "sanitizedLogExcerpt": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 20000,
+      "description": "平台脱敏后的日志片段。"
+    },
+    "deterministicStatus": {
+      "enum": [
+        "SUCCEEDED",
+        "FAILED",
+        "PARTIAL_FAILED",
+        "MANUAL_INTERVENTION",
+        "UNKNOWN"
+      ],
+      "description": "发布工作流已经判定的确定性状态。"
+    },
+    "idempotencyKey": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[A-Za-z0-9._:-]+$",
+      "description": "只读分析请求幂等键。"
+    }
+  }
+}

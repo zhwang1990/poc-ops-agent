@@ -1,0 +1,50 @@
+{
+  "caseId": "release-log-analysis-read-happy-path",
+  "skillId": "release-log-analysis-read",
+  "version": "1.0.0",
+  "description": "基于脱敏发布日志生成只读诊断建议。",
+  "operator": {
+    "subject": "ops-release-1",
+    "roles": [
+      "ROLE_ops-release"
+    ]
+  },
+  "targetEnvironment": "sit",
+  "input": {
+    "releaseId": "rel-1001",
+    "nodeId": "node-1",
+    "targetEnvironment": "sit",
+    "sanitizedLogExcerpt": "2026-07-01 10:10:00 ERROR deploy failed: health check timeout after 30s",
+    "deterministicStatus": "FAILED",
+    "idempotencyKey": "rel-1001-node-1-log-analysis"
+  },
+  "expected": {
+    "decision": "ALLOW",
+    "status": "SUCCEEDED",
+    "output": {
+      "contractVersion": "1.0",
+      "status": "SUCCEEDED",
+      "releaseId": "rel-1001",
+      "nodeId": "node-1",
+      "deterministicStatus": "FAILED",
+      "summary": "节点健康检查超时与工作流失败状态一致，建议优先核对应用启动耗时和健康检查路径。",
+      "findings": [
+        {
+          "severity": "error",
+          "title": "健康检查超时",
+          "evidence": "日志显示 health check timeout after 30s。"
+        }
+      ],
+      "recommendedNextActions": [
+        "检查应用启动日志中的端口绑定和健康检查路径。",
+        "由发布负责人根据工作流失败状态决定重试、回滚或人工接管。"
+      ],
+      "sanitizationNotes": [
+        "输入日志已由平台脱敏后进入分析。"
+      ],
+      "finalStatusAuthority": "DETERMINISTIC_RELEASE_WORKFLOW",
+      "doesNotOverrideDeterministicStatus": true,
+      "modelProviderFingerprint": "fp_release_model"
+    }
+  }
+}
