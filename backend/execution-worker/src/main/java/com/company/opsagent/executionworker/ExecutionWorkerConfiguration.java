@@ -1,5 +1,7 @@
 package com.company.opsagent.executionworker;
 
+import com.company.opsagent.executionworker.release.ReleaseAdapter;
+import com.company.opsagent.executionworker.release.ReleaseAdapterRegistry;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.net.http.HttpClient;
 import java.time.Clock;
@@ -83,6 +85,11 @@ public class ExecutionWorkerConfiguration {
       WorkerTransportAuthProperties properties,
       Clock workerClock) {
     return new WorkerTransportAuthenticator(properties, workerClock);
+  }
+
+  @Bean
+  ReleaseAdapterRegistry releaseAdapterRegistry(List<ReleaseAdapter> adapters) {
+    return new ReleaseAdapterRegistry(adapters);
   }
 
   /**
