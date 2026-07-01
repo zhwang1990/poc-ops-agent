@@ -91,6 +91,9 @@ describe("operator console routes", () => {
     expect(
       screen.getByRole("link", { name: "模型设置" }),
     ).toHaveAttribute("href", "/model-settings");
+    expect(
+      screen.getByRole("link", { name: "发布中心" }),
+    ).toHaveAttribute("href", "/release");
     expect(screen.getByRole("link", { name: "RAG 问答" })).toHaveAttribute(
       "href",
       "/rag",
@@ -138,6 +141,7 @@ describe("operator console routes", () => {
     ["/quick-links", "快捷连接"],
     ["/sql", "SQL 工作台"],
     ["/model-settings", "模型设置"],
+    ["/release", "发布中心"],
   ])("renders shared navigation and status bar for %s", async (path, title) => {
     renderAt(path);
 

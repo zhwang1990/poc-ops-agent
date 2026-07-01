@@ -14,6 +14,7 @@ import { ProtectedRoute } from "../features/auth/ProtectedRoute.jsx";
 import { OverviewPage } from "../features/overview/OverviewPage.jsx";
 import { QuickLinksPage } from "../features/quick-links/QuickLinksPage.jsx";
 import { RagQuestionPage } from "../features/rag-question/RagQuestionPage.jsx";
+import { ReleaseCenterPage } from "../features/release-center/ReleaseCenterPage.jsx";
 import { SkillRegistryPage } from "../features/skill-registry/SkillRegistryPage.jsx";
 import { SqlWorkbenchPage } from "../features/sql-workbench/SqlWorkbenchPage.jsx";
 import { WorkflowEventsPage } from "../features/workflow-events/WorkflowEventsPage.jsx";
@@ -176,6 +177,14 @@ export function AppRouter() {
           </ProtectedRoute>
         }
         path="/model-settings"
+      />
+      <Route
+        element={
+          <ProtectedRoute>
+            <ReleaseCenterPage />
+          </ProtectedRoute>
+        }
+        path="/release"
       />
       <Route element={<Navigate replace to="/login" />} path="*" />
     </Routes>

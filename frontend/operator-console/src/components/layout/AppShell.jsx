@@ -6,6 +6,7 @@ import {
   DatabaseZap,
   FileClock,
   Network,
+  Rocket,
   SearchCheck,
   SlidersHorizontal,
   Workflow,
@@ -25,6 +26,7 @@ const navigation = [
   { icon: Network, label: "RAG 问答", tone: "teal", to: "/rag" },
   { icon: SearchCheck, label: "SQL 工作区", tone: "deep", to: "/sql" },
   { icon: SlidersHorizontal, label: "模型设置", tone: "model", to: "/model-settings" },
+  { icon: Rocket, label: "发布中心", tone: "release", to: "/release" },
   { icon: Boxes, label: "Skill 注册中心", tone: "warning", to: "/skills" },
   { icon: AudioLines, label: "会议录制纪要", tone: "meeting", to: "/meeting-notes" },
   { icon: DatabaseZap, label: "AS400对象管理", tone: "as400", to: "/as400-ddl" },
@@ -72,7 +74,7 @@ export function AppShell({ children }) {
                   <span className={styles.navSymbol} />
                   <Icon className={styles.navGlyph} strokeWidth={2.25} />
                 </span>
-                {item.label}
+                <span className={styles.navLabel}>{item.label}</span>
                 <span aria-hidden="true" className={styles.navPulse} />
               </Link>
             );

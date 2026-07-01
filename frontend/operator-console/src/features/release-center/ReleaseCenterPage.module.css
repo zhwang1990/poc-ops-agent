@@ -1,0 +1,494 @@
+.releaseCanvas {
+  --release-ink: oklch(0.25 0.024 238);
+  --release-muted: oklch(0.5 0.028 238);
+  --release-line: oklch(0.84 0.022 232);
+  --release-soft: oklch(0.965 0.01 232);
+  --release-surface: oklch(0.985 0.006 232);
+  --release-blue: oklch(0.49 0.102 236);
+  --release-green: oklch(0.49 0.102 148);
+  --release-red: oklch(0.51 0.15 18);
+  --release-amber: oklch(0.64 0.118 76);
+  color: var(--release-ink);
+}
+
+.releaseBody {
+  display: grid;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: var(--workspace-layout-gap, 24px);
+}
+
+.summaryBand {
+  display: grid;
+  min-height: 72px;
+  grid-template-columns: minmax(260px, 1fr) max-content max-content;
+  gap: 14px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid var(--release-line);
+  border-radius: 8px;
+  background: var(--release-surface);
+  box-shadow:
+    0 10px 24px oklch(0.34 0.024 238 / 0.055),
+    inset 0 1px 0 oklch(0.995 0.004 232 / 0.86);
+}
+
+.summaryLead,
+.summaryActions,
+.planMain,
+.planMeta,
+.rowActions {
+  display: flex;
+  align-items: center;
+}
+
+.summaryLead {
+  min-width: 0;
+  gap: 12px;
+}
+
+.summaryIcon,
+.rowIcon {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid oklch(0.74 0.068 148);
+  background: oklch(0.93 0.03 148);
+  color: var(--release-green);
+}
+
+.summaryIcon {
+  width: 42px;
+  height: 42px;
+  border-radius: 8px;
+}
+
+.summaryLead h2,
+.inventoryHeader h2 {
+  margin: 2px 0 0;
+  color: var(--release-ink);
+  font-size: 16px;
+  font-weight: 760;
+  line-height: 1.2;
+}
+
+.kicker,
+.sectionLabel {
+  color: var(--release-muted);
+  font-size: 10px;
+  font-weight: 880;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.environmentSwitch {
+  display: grid;
+  width: 168px;
+  grid-template-columns: repeat(3, 1fr);
+  padding: 3px;
+  border: 1px solid var(--release-line);
+  border-radius: 8px;
+  background: oklch(0.955 0.012 232);
+}
+
+.environmentButton {
+  appearance: none;
+  min-width: 0;
+  height: 32px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--release-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 860;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.environmentButton:hover {
+  color: var(--release-blue);
+}
+
+.environmentButton:focus-visible,
+.tabButton:focus-visible {
+  outline: 2px solid oklch(0.63 0.098 236 / 0.42);
+  outline-offset: 2px;
+}
+
+.environmentButtonActive {
+  background: var(--release-surface);
+  color: var(--release-blue);
+  box-shadow: 0 6px 13px oklch(0.34 0.024 238 / 0.08);
+}
+
+.summaryActions {
+  gap: 8px;
+}
+
+.actionButton,
+.compactButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  white-space: nowrap;
+}
+
+.actionButton {
+  width: 112px;
+  min-height: 34px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.workspaceGrid {
+  display: grid;
+  min-height: 0;
+  grid-template-columns: minmax(0, 1fr) 292px;
+  gap: var(--workspace-layout-gap, 24px);
+}
+
+.primaryPanel,
+.inventoryPanel {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--release-line);
+  border-radius: 8px;
+  background: var(--release-surface);
+  box-shadow: 0 12px 26px oklch(0.34 0.024 238 / 0.055);
+}
+
+.primaryPanel {
+  display: grid;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.tabs {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px;
+  padding: 10px;
+  border-bottom: 1px solid var(--release-line);
+  background: var(--release-soft);
+}
+
+.tabButton {
+  appearance: none;
+  display: inline-flex;
+  min-width: 0;
+  height: 38px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--release-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 850;
+  letter-spacing: 0;
+}
+
+.tabButton span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tabButton svg {
+  flex: 0 0 auto;
+}
+
+.tabButton:hover {
+  border-color: oklch(0.82 0.026 236);
+  color: var(--release-blue);
+}
+
+.tabButtonActive {
+  border-color: oklch(0.74 0.06 236);
+  background: var(--release-surface);
+  color: var(--release-blue);
+  box-shadow:
+    0 8px 16px oklch(0.34 0.024 238 / 0.075),
+    inset 0 1px 0 oklch(0.995 0.004 232 / 0.9);
+}
+
+.tabPanel {
+  min-height: 0;
+  padding: 12px;
+  overflow: auto;
+}
+
+.tabPanel :global(.feedback-state),
+.inventoryPanel :global(.feedback-state) {
+  min-height: 152px;
+  align-content: center;
+  padding: 18px;
+  border: 1px solid var(--release-line);
+  border-radius: 8px;
+  background: var(--release-soft);
+}
+
+.planStack {
+  display: grid;
+  gap: 10px;
+}
+
+.planRow {
+  display: grid;
+  min-height: 116px;
+  grid-template-columns: minmax(260px, 1fr) minmax(180px, 0.58fr) 132px;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid var(--release-line);
+  border-radius: 8px;
+  background: oklch(0.982 0.006 232);
+}
+
+.planMain {
+  min-width: 0;
+  gap: 10px;
+}
+
+.rowIcon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+}
+
+.planCopy,
+.inventoryHeader,
+.inventorySections,
+.inventorySection,
+.inventoryRow {
+  display: grid;
+  min-width: 0;
+}
+
+.planCopy {
+  gap: 5px;
+}
+
+.planCopy strong,
+.planCopy span,
+.planMeta span,
+.tableRow strong,
+.tableRow span,
+.inventoryRow strong,
+.inventoryRow span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.planCopy strong,
+.tableRow strong,
+.inventoryRow strong {
+  color: var(--release-ink);
+  font-size: 13px;
+  font-weight: 880;
+}
+
+.planCopy span,
+.planMeta span,
+.tableRow span,
+.inventoryRow span,
+.inventorySection p {
+  color: var(--release-muted);
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.planMeta {
+  min-width: 0;
+  gap: 9px;
+}
+
+.nodeSteps {
+  display: grid;
+  grid-column: 1 / 3;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.nodeSteps li {
+  display: grid;
+  min-height: 32px;
+  grid-template-columns: 42px minmax(0, 1fr) max-content;
+  gap: 8px;
+  align-items: center;
+  padding: 5px 8px;
+  border: 1px solid oklch(0.86 0.018 232);
+  border-radius: 8px;
+  background: var(--release-soft);
+}
+
+.nodeSteps span {
+  color: var(--release-muted);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.nodeSteps strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--release-ink);
+  font-size: 12px;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowActions {
+  justify-content: end;
+  gap: 7px;
+}
+
+.compactButton {
+  width: 72px;
+  min-height: 32px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.tablePanel {
+  display: grid;
+  gap: 8px;
+}
+
+.tableHeader,
+.tableRow {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(140px, 1.2fr) minmax(110px, 0.8fr) minmax(140px, 1fr) minmax(120px, 0.8fr);
+  gap: 10px;
+  align-items: center;
+}
+
+.tableHeader {
+  min-height: 32px;
+  padding: 0 10px;
+  color: var(--release-muted);
+  font-size: 11px;
+  font-weight: 880;
+}
+
+.tableRow {
+  min-height: 46px;
+  padding: 8px 10px;
+  border: 1px solid var(--release-line);
+  border-radius: 8px;
+  background: oklch(0.982 0.006 232);
+}
+
+.policyGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.policyRow {
+  display: flex;
+  min-height: 46px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--release-line);
+  border-radius: 8px;
+  background: oklch(0.982 0.006 232);
+}
+
+.policyRow strong {
+  color: var(--release-ink);
+  font-size: 13px;
+  font-weight: 870;
+}
+
+.inventoryPanel {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: 12px;
+}
+
+.inventoryHeader {
+  gap: 3px;
+}
+
+.inventorySections {
+  gap: 12px;
+}
+
+.inventorySection {
+  gap: 7px;
+  padding-top: 10px;
+  border-top: 1px solid var(--release-line);
+}
+
+.inventorySection p {
+  margin: 0;
+}
+
+.inventoryRow {
+  gap: 4px;
+  min-height: 45px;
+  padding: 8px 9px;
+  border: 1px solid oklch(0.86 0.018 232);
+  border-radius: 8px;
+  background: var(--release-soft);
+}
+
+@media (max-width: 1180px) {
+  .summaryBand,
+  .workspaceGrid,
+  .planRow {
+    grid-template-columns: 1fr;
+  }
+
+  .environmentSwitch,
+  .summaryActions {
+    justify-self: start;
+  }
+
+  .nodeSteps,
+  .rowActions {
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 760px) {
+  .tabs {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .summaryActions {
+    flex-wrap: wrap;
+  }
+
+  .tableHeader {
+    display: none;
+  }
+
+  .tableRow {
+    grid-template-columns: 1fr;
+  }
+
+  .policyGrid {
+    grid-template-columns: 1fr;
+  }
+}
