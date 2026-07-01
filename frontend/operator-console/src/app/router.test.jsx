@@ -106,6 +106,7 @@ describe("operator console routes", () => {
       "href",
       "/audit",
     );
+    expect(screen.getByRole("link", { name: "帮助" })).toHaveAttribute("href", "/help");
     expect(
       screen.getByRole("link", { name: "审计记录" }),
     ).toBeInTheDocument();
@@ -142,12 +143,24 @@ describe("operator console routes", () => {
     ["/sql", "SQL 工作台"],
     ["/model-settings", "模型设置"],
     ["/release", "发布中心"],
+    ["/help", "帮助"],
   ])("renders shared navigation and status bar for %s", async (path, title) => {
     renderAt(path);
 
     expect(screen.getByRole("navigation", { name: "主导航" })).toBeVisible();
     expect(await screen.findByRole("heading", { name: title })).toBeInTheDocument();
     expect(screen.getByLabelText("当前工作台")).toBeInTheDocument();
+  });
+
+  it("renders the help product manual as a protected route", async () => {
+    renderAt("/help");
+
+    expect(screen.getByRole("navigation", { name: "主导航" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "帮助" })).toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: "帮助章节目录" })).toBeInTheDocument();
+    expect(screen.getByRole("searchbox", { name: "搜索场景、页面、错误或权限问题" })).toBeInTheDocument();
+    expect(screen.getByText("用 Agent 排查服务错误")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "提交 RAG 问题" })).not.toBeInTheDocument();
   });
 
   it("renders the Skill registry inside the shared shell while replacing only the workspace body", async () => {

@@ -4,6 +4,7 @@ import { As400ObjectManagementPage } from "../features/as400-object-management/A
 import { AgentWorkspacePage } from "../features/agent-workspace/AgentWorkspacePage.jsx";
 import { AuditRecordsPage } from "../features/audit-records/AuditRecordsPage.jsx";
 import { LoginPage } from "../features/auth/LoginPage.jsx";
+import { HelpPage } from "../features/help/HelpPage.jsx";
 import { MeetingDraftEditorPage } from "../features/meeting-notes/MeetingDraftEditorPage.jsx";
 import { MeetingNoteDetailPage } from "../features/meeting-notes/MeetingNoteDetailPage.jsx";
 import { MeetingNotesPage } from "../features/meeting-notes/MeetingNotesPage.jsx";
@@ -97,6 +98,14 @@ export function AppRouter() {
           </ProtectedRoute>
         }
         path="/audit"
+      />
+      <Route
+        element={
+          <ProtectedRoute>
+            <HelpPage />
+          </ProtectedRoute>
+        }
+        path="/help"
       />
       <Route
         element={
