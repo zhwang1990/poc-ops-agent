@@ -12,6 +12,13 @@ final class ReleaseValues {
     return value.trim();
   }
 
+  static String optionalText(String value) {
+    if (value == null || value.isBlank()) {
+      return null;
+    }
+    return value.trim();
+  }
+
   static <T> T required(T value, String fieldName) {
     if (value == null) {
       throw new IllegalArgumentException(fieldName + " is required");

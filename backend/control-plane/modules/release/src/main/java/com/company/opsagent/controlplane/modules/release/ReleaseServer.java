@@ -9,6 +9,8 @@ public record ReleaseServer(
     ServerType serverType,
     ManagementMode managementMode,
     String managementEndpoint,
+    String applicationPath,
+    String credentialAlias,
     boolean enabled) {
 
   public ReleaseServer {
@@ -17,6 +19,8 @@ public record ReleaseServer(
     serverType = ReleaseValues.required(serverType, "serverType");
     managementMode = ReleaseValues.required(managementMode, "managementMode");
     managementEndpoint = normalizedEndpoint(managementEndpoint, managementMode);
+    applicationPath = ReleaseValues.optionalText(applicationPath);
+    credentialAlias = ReleaseValues.optionalText(credentialAlias);
   }
 
   public static ReleaseServer create(
@@ -26,12 +30,26 @@ public record ReleaseServer(
       ManagementMode managementMode,
       String managementEndpoint,
       boolean enabled) {
+    return create(nodeId, targetEnvironment, serverType, managementMode, managementEndpoint, null, null, enabled);
+  }
+
+  public static ReleaseServer create(
+      String nodeId,
+      String targetEnvironment,
+      ServerType serverType,
+      ManagementMode managementMode,
+      String managementEndpoint,
+      String applicationPath,
+      String credentialAlias,
+      boolean enabled) {
     return new ReleaseServer(
         nodeId,
         TargetEnvironment.from(targetEnvironment),
         serverType,
         managementMode,
         managementEndpoint,
+        applicationPath,
+        credentialAlias,
         enabled);
   }
 
