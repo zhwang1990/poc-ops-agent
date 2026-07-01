@@ -42,8 +42,8 @@ test("受保护页面导航、层级和禁用态在桌面视口中稳定", async
   await page.getByRole("link", { name: "Skill 注册中心" }).click();
   await expect(page.getByRole("heading", { name: "Skill 注册中心" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "内置 Skill" })).toBeVisible();
-  await expect(page.getByText("Owner: platform-observability")).toBeVisible();
   await expect(page.getByText("node-health-read")).toBeVisible();
+  await expect(page.getByText("角色: ops-reader")).toBeVisible();
   await expect(page.getByRole("button", { name: "安装" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "升级" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "卸载" })).toHaveCount(0);
@@ -53,12 +53,29 @@ test("受保护页面导航、层级和禁用态在桌面视口中稳定", async
   await page.goto("/sql");
   await expect(page.getByRole("heading", { name: "SQL 工作台" })).toBeVisible();
   await expect(page.getByLabel("SQL 工作区连接上下文")).toContainText("已连接 · development");
-  await expect(page.getByRole("button", { name: "新建连接" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "管理连接" })).toBeVisible();
   await expect(page.getByRole("button", { name: "展开工作区" })).toBeVisible();
   await expect(page.getByText("执行边界")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "展开 AI SQL 助手" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "解释 SQL" })).toBeDisabled();
   await assertNoHorizontalOverflow(page);
   await attachVisualEvidence(page, testInfo, "sql");
+});
+
+test("发布中心页面在桌面视口中展示非生产发布配置", async ({ page }, testInfo) => {
+  await page.goto("/release");
+
+  await expect(page.getByRole("link", { name: "发布中心" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "发布中心" })).toBeVisible();
+  const tabs = page.getByRole("tablist", { name: "发布中心配置" });
+  for (const label of ["发布单", "制品", "应用", "服务器", "策略", "凭据"]) {
+    await expect(tabs.getByRole("tab", { name: label })).toBeVisible();
+  }
+  await expect(page.getByText("orders", { exact: true })).toBeVisible();
+  await expect(page.getByText("node-1", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "上传 WAR" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "新建发布单" })).toBeDisabled();
+  await assertNoHorizontalOverflow(page);
+  await attachVisualEvidence(page, testInfo, "release");
 });
 
 test("SQL 工作台执行受控 SELECT 且 DML 只进入预检", async ({ page }) => {
@@ -66,6 +83,7 @@ test("SQL 工作台执行受控 SELECT 且 DML 只进入预检", async ({ page }
 
   await expect(page.getByRole("heading", { name: "SQL 工作台" })).toBeVisible();
   await expect(page.getByRole("button", { name: "执行 SELECT" })).toBeDisabled();
+  await page.getByLabel("SQL 文本").fill("SELECT order_id, status FROM ORDERS.ORDERS");
 
   await page.getByRole("button", { name: "校验" }).click();
 
@@ -83,7 +101,7 @@ test("SQL 工作台执行受控 SELECT 且 DML 只进入预检", async ({ page }
   await expect(page.getByText("REJECTED")).toBeVisible();
   await expect(page.getByText("DML execution is not allowed in P1")).toBeVisible();
   await expect(page.getByRole("button", { name: "执行 SELECT" })).toBeDisabled();
-  await expect(page.getByRole("button", { name: "展开 AI SQL 助手" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "分析错误" })).toBeEnabled();
   await expect(page.getByRole("button", { name: "校验" })).toBeEnabled();
   await expect(page.getByRole("button", { name: "DML 预检" })).toBeEnabled();
 });
@@ -202,7 +220,6 @@ async function mockConsoleApi(page) {
       targetEnvironment: "development",
       schema: "ORDERS",
       action: "RUN_READ_ONLY",
-      validationHash: "sha256:validation-readonly",
     });
 
     await route.fulfill({
@@ -230,6 +247,24 @@ async function mockConsoleApi(page) {
         truncated: false,
         expiresAt: "2026-06-27T09:10:00Z",
       },
+    });
+  });
+
+  await page.route("**/internal/release-center/applications", async (route) => {
+    await route.fulfill({
+      json: releaseApplications,
+    });
+  });
+
+  await page.route("**/internal/release-center/plans", async (route) => {
+    await route.fulfill({
+      json: releasePlans,
+    });
+  });
+
+  await page.route("**/internal/release-center/servers**", async (route) => {
+    await route.fulfill({
+      json: releaseServers,
     });
   });
 
@@ -309,3 +344,46 @@ const validationReport = {
   rejectionReasons: [],
   unverifiedItems: [],
 };
+
+const releaseApplications = [
+  {
+    applicationId: "orders",
+    displayName: "订单服务",
+    artifactType: "WAR",
+    healthCheckPath: "/health",
+    enabled: true,
+  },
+];
+
+const releaseServers = [
+  {
+    nodeId: "node-1",
+    targetEnvironment: "dev",
+    serverType: "TOMCAT",
+    managementMode: "TOMCAT_WAR_UPLOAD",
+    managementEndpoint: "https://tomcat-dev.example",
+    applicationPath: "/orders",
+    credentialAlias: "tomcat-dev",
+    enabled: true,
+  },
+];
+
+const releasePlans = [
+  {
+    releaseId: "rel-1",
+    applicationId: "orders",
+    targetEnvironment: "dev",
+    artifactId: "artifact-1",
+    status: "DRAFT",
+    parametersHash: "sha256:abc123",
+    nodes: [
+      {
+        nodeId: "node-1",
+        serverType: "TOMCAT",
+        managementMode: "TOMCAT_WAR_UPLOAD",
+        sequence: 1,
+        status: "PENDING",
+      },
+    ],
+  },
+];
