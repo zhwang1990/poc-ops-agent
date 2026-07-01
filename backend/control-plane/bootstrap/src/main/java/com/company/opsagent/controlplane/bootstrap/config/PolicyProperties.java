@@ -15,7 +15,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public class PolicyProperties {
 
   private String version = "rbac-v1";
-  private Map<String, List<String>> requiredRolesByAction = new LinkedHashMap<>();
+  private Map<String, List<String>> requiredRolesByAction = defaultRequiredRolesByAction();
 
   /**
    * 返回当前策略版本号。
@@ -46,6 +46,23 @@ public class PolicyProperties {
    * @param requiredRolesByAction 外部配置驱动的 RBAC 规则定义
    */
   public void setRequiredRolesByAction(Map<String, List<String>> requiredRolesByAction) {
-    this.requiredRolesByAction = requiredRolesByAction;
+    LinkedHashMap<String, List<String>> merged = new LinkedHashMap<>(defaultRequiredRolesByAction());
+    if (requiredRolesByAction != null) {
+      merged.putAll(requiredRolesByAction);
+    }
+    this.requiredRolesByAction = merged;
+  }
+
+  private static Map<String, List<String>> defaultRequiredRolesByAction() {
+    LinkedHashMap<String, List<String>> defaults = new LinkedHashMap<>();
+    defaults.put("release.catalog.read", List.of("ROLE_ops-reader", "ROLE_ops-admin"));
+    defaults.put("release.catalog.write", List.of("ROLE_ops-admin"));
+    defaults.put("release.credential.rotate", List.of("ROLE_ops-admin"));
+    defaults.put("release.connection.test", List.of("ROLE_ops-admin"));
+    defaults.put("release.plan.create", List.of("ROLE_ops-admin"));
+    defaults.put("release.plan.confirm", List.of("ROLE_ops-admin"));
+    defaults.put("release.plan.execute", List.of("ROLE_ops-admin"));
+    defaults.put("release.rollback.execute", List.of("ROLE_ops-admin"));
+    return defaults;
   }
 }
