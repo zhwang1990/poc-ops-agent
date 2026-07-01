@@ -27,10 +27,13 @@ export function HelpPage() {
     setActiveSectionId(result.sectionId);
     setQuery("");
     window.requestAnimationFrame(() => {
-      document.getElementById(result.anchorId)?.scrollIntoView({
-        block: "start",
-        behavior: "smooth",
-      });
+      const element = document.getElementById(result.anchorId);
+      if (typeof element?.scrollIntoView === "function") {
+        element.scrollIntoView({
+          block: "start",
+          behavior: "smooth",
+        });
+      }
     });
   }
 

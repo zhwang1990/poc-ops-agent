@@ -57,6 +57,7 @@ describe("HelpPage", () => {
     expect(resultButton).toBeInTheDocument();
 
     await user.click(resultButton);
+    await new Promise((resolve) => window.requestAnimationFrame(resolve));
 
     expect(screen.getByRole("searchbox", { name: "搜索场景、页面、错误或权限问题" })).toHaveValue("");
     expect(screen.getByRole("button", { name: "权限与安全边界" })).toHaveAttribute("aria-current", "page");
