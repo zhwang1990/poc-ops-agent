@@ -2,12 +2,16 @@ package com.company.opsagent.executionworker;
 
 import com.company.opsagent.executionworker.release.ReleaseAdapter;
 import com.company.opsagent.executionworker.release.ReleaseAdapterRegistry;
+import com.company.opsagent.executionworker.release.ReleaseWorkerProperties;
+import com.company.opsagent.executionworker.release.TomcatWarUploadReleaseAdapter;
+import com.company.opsagent.executionworker.release.LibertyHttpsReleaseAdapter;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.net.http.HttpClient;
 import java.time.Clock;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -19,7 +23,8 @@ import org.springframework.context.annotation.Configuration;
 @EnableConfigurationProperties({
     WorkerTransportAuthProperties.class,
     WorkerHttpEgressProperties.class,
-    ConfiguredHttpReadOnlySkillProperties.class
+    ConfiguredHttpReadOnlySkillProperties.class,
+    ReleaseWorkerProperties.class
 })
 public class ExecutionWorkerConfiguration {
 
@@ -90,6 +95,27 @@ public class ExecutionWorkerConfiguration {
   @Bean
   ReleaseAdapterRegistry releaseAdapterRegistry(List<ReleaseAdapter> adapters) {
     return new ReleaseAdapterRegistry(adapters);
+  }
+
+  @Bean
+  TomcatWarUploadReleaseAdapter tomcatWarUploadReleaseAdapter(Clock workerClock) {
+    return new TomcatWarUploadReleaseAdapter(workerClock);
+  }
+
+  @Bean
+  @ConditionalOnProperty(prefix = "ops-agent.worker.release.liberty", name = "enabled", havingValue = "true")
+  LibertyHttpsReleaseAdapter libertyHttpsReleaseAdapter(
+      ReleaseWorkerProperties properties,
+      WorkerHttpEgressPolicy workerHttpEgressPolicy,
+      Clock workerClock,
+      ObjectMapper objectMapper) {
+    return new LibertyHttpsReleaseAdapter(
+        properties.getLiberty().getBaseUrl(),
+        properties.getLiberty().getCredentialAlias(),
+        HttpClient.newHttpClient(),
+        objectMapper,
+        workerHttpEgressPolicy,
+        workerClock);
   }
 
   /**

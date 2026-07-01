@@ -54,7 +54,7 @@ class ReleaseWorkerControllerTest {
 
   @Test
   void returnsStableErrorWhenAdapterIsNotRegistered() {
-    ReleaseWorkerRequest request = request("dev", "TOMCAT_WAR_UPLOAD", OffsetDateTime.now(ZoneOffset.UTC).plusSeconds(30));
+    ReleaseWorkerRequest request = request("dev", "TOMCAT_MANAGER_API", OffsetDateTime.now(ZoneOffset.UTC).plusSeconds(30));
 
     post(request)
         .expectStatus().isOk()

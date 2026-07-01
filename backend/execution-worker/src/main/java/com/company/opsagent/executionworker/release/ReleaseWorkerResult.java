@@ -21,6 +21,27 @@ public record ReleaseWorkerResult(
       String errorCode,
       String errorMessage,
       Clock clock) {
+    return completed(request, ReleaseWorkerStatus.REJECTED, errorCode, errorMessage, clock);
+  }
+
+  public static ReleaseWorkerResult succeeded(ReleaseWorkerRequest request, Clock clock) {
+    return completed(request, ReleaseWorkerStatus.SUCCEEDED, null, null, clock);
+  }
+
+  public static ReleaseWorkerResult failed(
+      ReleaseWorkerRequest request,
+      String errorCode,
+      String errorMessage,
+      Clock clock) {
+    return completed(request, ReleaseWorkerStatus.FAILED, errorCode, errorMessage, clock);
+  }
+
+  private static ReleaseWorkerResult completed(
+      ReleaseWorkerRequest request,
+      ReleaseWorkerStatus status,
+      String errorCode,
+      String errorMessage,
+      Clock clock) {
     ReleaseWorkerRequest.ReleaseCommand command = request == null ? null : request.command();
     ReleaseWorkerRequest.ReleaseNodeTarget node = firstNode(command);
     OffsetDateTime completedAt = OffsetDateTime.ofInstant(clock.instant(), ZoneOffset.UTC);
@@ -29,8 +50,8 @@ public record ReleaseWorkerResult(
         valueOrUnknown(request == null ? null : request.executionRequestId()),
         valueOrUnknown(command == null ? null : command.releaseId()),
         valueOrUnknown(command == null ? null : command.workflowId()),
-        ReleaseWorkerStatus.REJECTED,
-        List.of(ReleaseNodeResult.rejected(node, errorCode, errorMessage, completedAt)),
+        status,
+        List.of(ReleaseNodeResult.completed(node, status, errorCode, errorMessage, completedAt)),
         errorCode,
         errorMessage,
         completedAt);
@@ -46,14 +67,15 @@ public record ReleaseWorkerResult(
       OffsetDateTime startedAt,
       OffsetDateTime completedAt) {
 
-    static ReleaseNodeResult rejected(
+    static ReleaseNodeResult completed(
         ReleaseWorkerRequest.ReleaseNodeTarget node,
+        ReleaseWorkerStatus status,
         String errorCode,
         String errorMessage,
         OffsetDateTime completedAt) {
       return new ReleaseNodeResult(
           valueOrUnknown(node == null ? null : node.nodeId()),
-          ReleaseWorkerStatus.REJECTED,
+          status,
           node == null ? null : node.serverType(),
           node == null ? null : node.managementMode(),
           errorCode,
