@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://company.example/ops-agent/contracts/release/release-worker-result-v1.schema.json",
+  "title": "Release worker result v1",
+  "description": "执行 Worker 返回的发布中心非生产变更结果。最终成功失败由确定性检查产生，不由模型判断。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contractVersion",
+    "executionRequestId",
+    "releaseId",
+    "workflowId",
+    "status",
+    "nodeResults",
+    "completedAt"
+  ],
+  "properties": {
+    "contractVersion": { "const": "1.0" },
+    "executionRequestId": { "type": "string", "format": "uuid" },
+    "releaseId": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "workflowId": { "type": "string", "format": "uuid" },
+    "status": {
+      "type": "string",
+      "enum": ["SUCCEEDED", "FAILED", "REJECTED", "MANUAL_INTERVENTION_REQUIRED"]
+    },
+    "nodeResults": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["nodeId", "status", "startedAt", "completedAt"],
+        "properties": {
+          "nodeId": { "type": "string", "minLength": 1, "maxLength": 120 },
+          "status": {
+            "type": "string",
+            "enum": ["SUCCEEDED", "FAILED", "REJECTED", "MANUAL_INTERVENTION_REQUIRED"]
+          },
+          "serverType": { "type": "string", "enum": ["TOMCAT", "LIBERTY"] },
+          "managementMode": {
+            "type": "string",
+            "enum": [
+              "LIBERTY_HTTPS",
+              "TOMCAT_WAR_UPLOAD",
+              "TOMCAT_MANAGER_API",
+              "NODE_AGENT_HTTPS",
+              "CONTROLLED_SSH_TEMPLATE"
+            ]
+          },
+          "currentVersion": { "type": ["string", "null"], "maxLength": 120 },
+          "targetVersion": { "type": ["string", "null"], "maxLength": 120 },
+          "checks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "status"],
+              "properties": {
+                "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+                "status": { "type": "string", "enum": ["PASSED", "FAILED", "SKIPPED"] },
+                "message": { "type": ["string", "null"], "maxLength": 500 }
+              }
+            }
+          },
+          "errorCode": { "type": ["string", "null"], "maxLength": 120 },
+          "errorMessage": { "type": ["string", "null"], "maxLength": 500 },
+          "startedAt": { "type": "string", "format": "date-time" },
+          "completedAt": { "type": "string", "format": "date-time" }
+        }
+      }
+    },
+    "errorCode": { "type": ["string", "null"], "maxLength": 120 },
+    "errorMessage": { "type": ["string", "null"], "maxLength": 500 },
+    "completedAt": { "type": "string", "format": "date-time" }
+  }
+}

@@ -1,0 +1,190 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://company.example/ops-agent/contracts/release/release-events-v1.schema.json",
+  "title": "Release events v1",
+  "description": "发布中心操作台消费的非生产受控变更语义事件。payload 不包含凭据、密钥或密码字段。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contractVersion",
+    "eventId",
+    "workflowId",
+    "releaseId",
+    "sequence",
+    "timestamp",
+    "type",
+    "payload"
+  ],
+  "properties": {
+    "contractVersion": { "const": "1.0" },
+    "eventId": { "type": "string", "format": "uuid" },
+    "workflowId": { "type": "string", "format": "uuid" },
+    "releaseId": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "sequence": { "type": "integer", "minimum": 1 },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "type": {
+      "type": "string",
+      "enum": [
+        "RELEASE_CREATED",
+        "RELEASE_CONFIRMED",
+        "RELEASE_NODE_STARTED",
+        "RELEASE_NODE_COMPLETED",
+        "RELEASE_NODE_FAILED",
+        "RELEASE_PARTIAL_FAILED",
+        "RELEASE_ROLLBACK_STARTED",
+        "RELEASE_ROLLBACK_FAILED",
+        "RELEASE_MANUAL_INTERVENTION_REQUIRED"
+      ]
+    },
+    "payload": {
+      "oneOf": [
+        { "$ref": "#/$defs/releaseCreatedPayload" },
+        { "$ref": "#/$defs/releaseConfirmedPayload" },
+        { "$ref": "#/$defs/releaseNodeStartedPayload" },
+        { "$ref": "#/$defs/releaseNodeCompletedPayload" },
+        { "$ref": "#/$defs/releaseNodeFailedPayload" },
+        { "$ref": "#/$defs/releasePartialFailedPayload" },
+        { "$ref": "#/$defs/releaseRollbackStartedPayload" },
+        { "$ref": "#/$defs/releaseRollbackFailedPayload" },
+        { "$ref": "#/$defs/releaseManualInterventionRequiredPayload" }
+      ]
+    }
+  },
+  "$defs": {
+    "releaseCreatedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "payloadType",
+        "applicationId",
+        "targetEnvironment",
+        "operation",
+        "artifactType",
+        "artifactChecksum",
+        "nodeIds",
+        "operatorId",
+        "policyDecisionId"
+      ],
+      "properties": {
+        "payloadType": { "const": "RELEASE_CREATED" },
+        "applicationId": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "targetEnvironment": { "type": "string", "enum": ["dev", "sit", "uat"] },
+        "operation": { "type": "string", "enum": ["DEPLOY", "START", "STOP", "RESTART", "ROLLBACK"] },
+        "artifactType": { "const": "WAR" },
+        "artifactChecksum": { "type": "string", "pattern": "^sha256:[a-fA-F0-9]{3,}$" },
+        "nodeIds": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1, "maxLength": 120 }
+        },
+        "operatorId": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "policyDecisionId": { "type": "string", "minLength": 1, "maxLength": 160 }
+      }
+    },
+    "releaseConfirmedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["payloadType", "confirmationId", "confirmedBy", "confirmedAt", "parametersHash"],
+      "properties": {
+        "payloadType": { "const": "RELEASE_CONFIRMED" },
+        "confirmationId": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "confirmedBy": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "confirmedAt": { "type": "string", "format": "date-time" },
+        "parametersHash": { "type": "string", "pattern": "^sha256:[a-fA-F0-9]{3,}$" }
+      }
+    },
+    "releaseNodeStartedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["payloadType", "nodeId", "serverType", "managementMode", "startedAt"],
+      "properties": {
+        "payloadType": { "const": "RELEASE_NODE_STARTED" },
+        "nodeId": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "serverType": { "type": "string", "enum": ["TOMCAT", "LIBERTY"] },
+        "managementMode": {
+          "type": "string",
+          "enum": [
+            "LIBERTY_HTTPS",
+            "TOMCAT_WAR_UPLOAD",
+            "TOMCAT_MANAGER_API",
+            "NODE_AGENT_HTTPS",
+            "CONTROLLED_SSH_TEMPLATE"
+          ]
+        },
+        "startedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "releaseNodeCompletedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["payloadType", "nodeId", "status", "completedAt"],
+      "properties": {
+        "payloadType": { "const": "RELEASE_NODE_COMPLETED" },
+        "nodeId": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "status": { "const": "SUCCEEDED" },
+        "currentVersion": { "type": ["string", "null"], "maxLength": 120 },
+        "targetVersion": { "type": ["string", "null"], "maxLength": 120 },
+        "completedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "releaseNodeFailedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["payloadType", "nodeId", "errorCode", "message", "failedAt"],
+      "properties": {
+        "payloadType": { "const": "RELEASE_NODE_FAILED" },
+        "nodeId": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "errorCode": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "message": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "failedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "releasePartialFailedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["payloadType", "failedNodeId", "completedNodeIds", "message"],
+      "properties": {
+        "payloadType": { "const": "RELEASE_PARTIAL_FAILED" },
+        "failedNodeId": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "completedNodeIds": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1, "maxLength": 120 }
+        },
+        "message": { "type": "string", "minLength": 1, "maxLength": 500 }
+      }
+    },
+    "releaseRollbackStartedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["payloadType", "reason", "startedAt"],
+      "properties": {
+        "payloadType": { "const": "RELEASE_ROLLBACK_STARTED" },
+        "reason": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "startedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "releaseRollbackFailedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["payloadType", "errorCode", "message", "failedAt"],
+      "properties": {
+        "payloadType": { "const": "RELEASE_ROLLBACK_FAILED" },
+        "errorCode": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "message": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "failedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "releaseManualInterventionRequiredPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["payloadType", "reason", "lastCompletedStep", "failedStep"],
+      "properties": {
+        "payloadType": { "const": "RELEASE_MANUAL_INTERVENTION_REQUIRED" },
+        "reason": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "lastCompletedStep": { "type": ["string", "null"], "maxLength": 120 },
+        "failedStep": { "type": ["string", "null"], "maxLength": 120 },
+        "recommendedAction": { "type": ["string", "null"], "maxLength": 500 }
+      }
+    }
+  }
+}

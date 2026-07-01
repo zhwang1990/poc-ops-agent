@@ -1,6 +1,7 @@
 package com.company.opsagent.contracts;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -33,6 +34,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.StreamSupport;
 import org.junit.jupiter.api.Test;
 
@@ -275,6 +277,50 @@ class ContractsTest {
   }
 
   @Test
+  void releaseCommandSchemaRejectsProductionEnvironment() throws Exception {
+    JsonNode schema = new ObjectMapper()
+        .readTree(Path.of("release/release-command-v1.schema.json").toFile());
+
+    List<String> targetEnvironments = enumValues(schema, "targetEnvironment");
+
+    assertEquals(List.of("dev", "sit", "uat"), targetEnvironments);
+    assertFalse(targetEnvironments.contains("prod"));
+    assertFalse(targetEnvironments.contains("production"));
+  }
+
+  @Test
+  void releaseCommandSchemaOnlyAllowsWarArtifacts() throws Exception {
+    JsonNode schema = new ObjectMapper()
+        .readTree(Path.of("release/release-command-v1.schema.json").toFile());
+
+    JsonNode artifactType = schema.path("properties")
+        .path("artifact")
+        .path("properties")
+        .path("type");
+
+    assertEquals("WAR", artifactType.path("const").asText());
+    assertFalse(artifactType.has("enum"));
+  }
+
+  @Test
+  void releaseEventsSchemaRejectsCredentialPayloadFields() throws Exception {
+    JsonNode schema = new ObjectMapper()
+        .readTree(Path.of("release/release-events-v1.schema.json").toFile());
+
+    assertNoSchemaPropertyNamed(schema, Set.of("credential", "credentials", "secret", "password"));
+    assertTrue(enumValues(schema, "type").containsAll(List.of(
+        "RELEASE_CREATED",
+        "RELEASE_CONFIRMED",
+        "RELEASE_NODE_STARTED",
+        "RELEASE_NODE_COMPLETED",
+        "RELEASE_NODE_FAILED",
+        "RELEASE_PARTIAL_FAILED",
+        "RELEASE_ROLLBACK_STARTED",
+        "RELEASE_ROLLBACK_FAILED",
+        "RELEASE_MANUAL_INTERVENTION_REQUIRED")));
+  }
+
+  @Test
   void rejectsInvalidSqlQueryLimits() {
     assertThrows(IllegalArgumentException.class, () -> new SqlQueryLimits(0, 1_000_000, 30));
   }
@@ -444,5 +490,21 @@ class ContractsTest {
         credentialAlias,
         500,
         30);
+  }
+
+  private List<String> enumValues(JsonNode schema, String propertyName) {
+    return StreamSupport.stream(
+            schema.path("properties").path(propertyName).path("enum").spliterator(),
+            false)
+        .map(JsonNode::asText)
+        .toList();
+  }
+
+  private void assertNoSchemaPropertyNamed(JsonNode node, Set<String> forbiddenNames) {
+    if (node.has("properties")) {
+      node.path("properties").fieldNames().forEachRemaining(fieldName ->
+          assertFalse(forbiddenNames.contains(fieldName), "forbidden schema property: " + fieldName));
+    }
+    node.elements().forEachRemaining(child -> assertNoSchemaPropertyNamed(child, forbiddenNames));
   }
 }

@@ -1,0 +1,137 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://company.example/ops-agent/contracts/release/release-command-v1.schema.json",
+  "title": "Release command v1",
+  "description": "发布中心向工作流提交的非生产受控变更命令。生产环境不属于该契约范围。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contractVersion",
+    "releaseId",
+    "workflowId",
+    "operation",
+    "targetEnvironment",
+    "applicationId",
+    "artifact",
+    "nodes",
+    "operator",
+    "policyDecision",
+    "trace",
+    "requestedAt"
+  ],
+  "properties": {
+    "contractVersion": { "const": "1.0" },
+    "releaseId": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "workflowId": { "type": "string", "format": "uuid" },
+    "operation": {
+      "type": "string",
+      "enum": ["DEPLOY", "START", "STOP", "RESTART", "ROLLBACK"]
+    },
+    "targetEnvironment": {
+      "type": "string",
+      "enum": ["dev", "sit", "uat"]
+    },
+    "applicationId": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifactId", "type", "checksum"],
+      "properties": {
+        "artifactId": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "type": { "const": "WAR" },
+        "checksum": { "type": "string", "pattern": "^sha256:[a-fA-F0-9]{3,}$" },
+        "fileName": { "type": "string", "minLength": 1, "maxLength": 260 },
+        "sourceType": {
+          "type": "string",
+          "enum": ["TOMCAT_UPLOAD", "LIBERTY_REMOTE_DIRECTORY"]
+        },
+        "storageReference": { "type": "string", "minLength": 1, "maxLength": 500 }
+      }
+    },
+    "nodes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["nodeId", "serverType", "managementMode"],
+        "properties": {
+          "nodeId": { "type": "string", "minLength": 1, "maxLength": 120 },
+          "serverType": {
+            "type": "string",
+            "enum": ["TOMCAT", "LIBERTY"]
+          },
+          "managementMode": {
+            "type": "string",
+            "enum": [
+              "LIBERTY_HTTPS",
+              "TOMCAT_WAR_UPLOAD",
+              "TOMCAT_MANAGER_API",
+              "NODE_AGENT_HTTPS",
+              "CONTROLLED_SSH_TEMPLATE"
+            ]
+          },
+          "expectedVersion": { "type": "string", "minLength": 1, "maxLength": 120 },
+          "healthCheckId": { "type": "string", "minLength": 1, "maxLength": 120 }
+        }
+      }
+    },
+    "operator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operatorId", "roles"],
+      "properties": {
+        "operatorId": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "roles": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1, "maxLength": 120 }
+        }
+      }
+    },
+    "policyDecision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decisionId", "policyVersion", "decision"],
+      "properties": {
+        "decisionId": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "policyVersion": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "decision": { "const": "ALLOW" }
+      }
+    },
+    "confirmation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["confirmationId", "confirmedAt", "parametersHash"],
+      "properties": {
+        "confirmationId": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "confirmedAt": { "type": "string", "format": "date-time" },
+        "confirmedBy": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "parametersHash": { "type": "string", "pattern": "^sha256:[a-fA-F0-9]{3,}$" }
+      }
+    },
+    "trace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["traceId", "requestId"],
+      "properties": {
+        "traceId": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "requestId": { "type": "string", "minLength": 1, "maxLength": 160 }
+      }
+    },
+    "requestedAt": { "type": "string", "format": "date-time" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "targetEnvironment": { "enum": ["sit", "uat"] }
+        },
+        "required": ["targetEnvironment"]
+      },
+      "then": {
+        "required": ["confirmation"]
+      }
+    }
+  ]
+}
