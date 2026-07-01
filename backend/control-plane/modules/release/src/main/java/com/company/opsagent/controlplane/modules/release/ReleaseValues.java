@@ -1,5 +1,7 @@
 package com.company.opsagent.controlplane.modules.release;
 
+import java.time.OffsetDateTime;
+
 final class ReleaseValues {
 
   private ReleaseValues() {
@@ -20,6 +22,13 @@ final class ReleaseValues {
   }
 
   static <T> T required(T value, String fieldName) {
+    if (value == null) {
+      throw new IllegalArgumentException(fieldName + " is required");
+    }
+    return value;
+  }
+
+  static OffsetDateTime requiredTime(OffsetDateTime value, String fieldName) {
     if (value == null) {
       throw new IllegalArgumentException(fieldName + " is required");
     }

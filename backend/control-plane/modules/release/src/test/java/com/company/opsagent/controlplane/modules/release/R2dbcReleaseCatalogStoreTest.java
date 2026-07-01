@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.r2dbc.spi.ConnectionFactories;
 import io.r2dbc.spi.ConnectionFactory;
+import java.time.OffsetDateTime;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.ClassPathResource;
@@ -44,10 +45,21 @@ class R2dbcReleaseCatalogStoreTest {
         "alice",
         "TOMCAT_UPLOAD",
         true)).block();
+    OffsetDateTime now = OffsetDateTime.parse("2026-07-01T00:00:00Z");
+    store.saveCredential(new ReleaseCredential(
+        "sit-tomcat",
+        ServerType.TOMCAT,
+        "encrypted-value",
+        "nonce-value",
+        "AES_GCM_V1",
+        "fp_example",
+        now,
+        now)).block();
 
     List<ReleaseApplication> applications = store.listApplications().collectList().block();
     List<ReleaseServer> servers = store.listServers("sit").collectList().block();
     ReleaseEnvironmentPolicy policy = store.findEnvironmentPolicy(TargetEnvironment.SIT).block();
+    ReleaseCredential credential = store.findCredential("sit-tomcat").block();
 
     assertEquals(1, applications.size());
     assertEquals("orders", applications.get(0).applicationId());
@@ -56,6 +68,8 @@ class R2dbcReleaseCatalogStoreTest {
     assertNull(servers.get(0).credentialAlias());
     assertTrue(policy.confirmationRequired());
     assertTrue(policy.logAnalysisEnabled());
+    assertEquals("fp_example", credential.fingerprint());
+    assertEquals("encrypted-value", credential.ciphertext());
   }
 
   @Test

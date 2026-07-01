@@ -18,4 +18,8 @@ public interface ReleaseCatalogStore {
   Flux<ReleaseServer> listServers(String targetEnvironment);
 
   Mono<ReleaseArtifact> saveArtifact(ReleaseArtifact artifact);
+
+  Mono<ReleaseCredential> saveCredential(ReleaseCredential credential);
+
+  Mono<ReleaseCredential> findCredential(String credentialAlias);
 }

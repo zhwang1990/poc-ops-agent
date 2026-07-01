@@ -12,6 +12,7 @@ public class InMemoryReleaseCatalogStore implements ReleaseCatalogStore {
   private final Map<TargetEnvironment, ReleaseEnvironmentPolicy> policies = new ConcurrentHashMap<>();
   private final Map<String, ReleaseServer> servers = new ConcurrentHashMap<>();
   private final Map<String, ReleaseArtifact> artifacts = new ConcurrentHashMap<>();
+  private final Map<String, ReleaseCredential> credentials = new ConcurrentHashMap<>();
 
   @Override
   public Mono<ReleaseApplication> saveApplication(ReleaseApplication application) {
@@ -54,5 +55,16 @@ public class InMemoryReleaseCatalogStore implements ReleaseCatalogStore {
   public Mono<ReleaseArtifact> saveArtifact(ReleaseArtifact artifact) {
     artifacts.put(artifact.artifactId(), artifact);
     return Mono.just(artifact);
+  }
+
+  @Override
+  public Mono<ReleaseCredential> saveCredential(ReleaseCredential credential) {
+    credentials.put(credential.credentialAlias(), credential);
+    return Mono.just(credential);
+  }
+
+  @Override
+  public Mono<ReleaseCredential> findCredential(String credentialAlias) {
+    return Mono.justOrEmpty(credentials.get(credentialAlias));
   }
 }

@@ -154,6 +154,67 @@ public class R2dbcReleaseCatalogStore implements ReleaseCatalogStore {
         .thenReturn(artifact);
   }
 
+  @Override
+  public Mono<ReleaseCredential> saveCredential(ReleaseCredential credential) {
+    return databaseClient.sql("delete from release_credential where credential_alias = :credentialAlias")
+        .bind("credentialAlias", credential.credentialAlias())
+        .fetch()
+        .rowsUpdated()
+        .then(databaseClient.sql("""
+                insert into release_credential (
+                  credential_alias,
+                  server_type,
+                  ciphertext,
+                  nonce,
+                  algorithm,
+                  fingerprint,
+                  created_at,
+                  updated_at
+                ) values (
+                  :credentialAlias,
+                  :serverType,
+                  :ciphertext,
+                  :nonce,
+                  :algorithm,
+                  :fingerprint,
+                  :createdAt,
+                  :updatedAt
+                )
+                """)
+            .bind("credentialAlias", credential.credentialAlias())
+            .bind("serverType", credential.serverType().name())
+            .bind("ciphertext", credential.ciphertext())
+            .bind("nonce", credential.nonce())
+            .bind("algorithm", credential.algorithm())
+            .bind("fingerprint", credential.fingerprint())
+            .bind("createdAt", credential.createdAt())
+            .bind("updatedAt", credential.updatedAt())
+            .fetch()
+            .rowsUpdated())
+        .thenReturn(credential);
+  }
+
+  @Override
+  public Mono<ReleaseCredential> findCredential(String credentialAlias) {
+    String alias = ReleaseValues.requiredText(credentialAlias, "credentialAlias");
+    return databaseClient.sql("""
+            select *
+            from release_credential
+            where credential_alias = :credentialAlias
+            """)
+        .bind("credentialAlias", alias)
+        .map((row, metadata) -> new ReleaseCredential(
+            row.get("credential_alias", String.class),
+            ServerType.valueOf(row.get("server_type", String.class)),
+            row.get("ciphertext", String.class),
+            row.get("nonce", String.class),
+            row.get("algorithm", String.class),
+            row.get("fingerprint", String.class),
+            row.get("created_at", OffsetDateTime.class),
+            row.get("updated_at", OffsetDateTime.class)))
+        .one();
+  }
+
   private Mono<Long> insertApplication(ReleaseApplication application) {
     OffsetDateTime now = now();
     return databaseClient.sql("""
