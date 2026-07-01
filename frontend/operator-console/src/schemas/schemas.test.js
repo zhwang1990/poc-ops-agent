@@ -15,6 +15,11 @@ import {
   modelProviderListSchema,
 } from "./model-provider-schemas.js";
 import {
+  releaseArtifactSchema,
+  releaseCredentialSummarySchema,
+  releasePlanSchema,
+} from "./release-center-schemas.js";
+import {
   sqlConnectionListSchema,
   sqlAssistantRequestSchema,
   sqlAssistantResponseSchema,
@@ -213,6 +218,37 @@ describe("model provider schemas", () => {
         maxToolCallDurationSeconds: 30,
       }).apiKey,
     ).toBe("test-key");
+  });
+});
+
+describe("release center schemas", () => {
+  test("rejects production release plans", () => {
+    expect(() =>
+      releasePlanSchema.parse({
+        ...releasePlan,
+        targetEnvironment: "prod",
+      }),
+    ).toThrow();
+  });
+
+  test("rejects non-WAR Tomcat artifacts", () => {
+    expect(() =>
+      releaseArtifactSchema.parse({
+        ...releaseArtifact,
+        artifactType: "JAR",
+      }),
+    ).toThrow();
+  });
+
+  test("rejects credential summaries containing secret material", () => {
+    expect(() =>
+      releaseCredentialSummarySchema.parse({
+        credentialAlias: "tomcat-dev",
+        fingerprint: "sha256:abc123",
+        updatedAt: "2026-07-01T00:00:00Z",
+        secret: "plain-text",
+      }),
+    ).toThrow();
   });
 });
 
@@ -471,6 +507,38 @@ const modelProviderSummary = {
   apiKeyLastRotatedAt: "2026-06-28T00:00:00Z",
   configVersion: 1,
   updatedAt: "2026-06-28T00:00:00Z",
+};
+
+const releaseArtifact = {
+  artifactId: "artifact-1",
+  applicationId: "orders",
+  targetEnvironment: "dev",
+  artifactType: "WAR",
+  checksum: "sha256:abc123",
+  originalFilename: "orders.war",
+  storageKey: "artifact-1.war",
+  byteSize: 1024,
+  uploadedBy: "alice",
+  sourceType: "TOMCAT_UPLOAD",
+  enabled: true,
+};
+
+const releasePlan = {
+  releaseId: "rel-1",
+  applicationId: "orders",
+  targetEnvironment: "dev",
+  artifactId: "artifact-1",
+  status: "DRAFT",
+  parametersHash: "sha256:abc123",
+  nodes: [
+    {
+      nodeId: "node-1",
+      serverType: "TOMCAT",
+      managementMode: "TOMCAT_WAR_UPLOAD",
+      sequence: 1,
+      status: "PENDING",
+    },
+  ],
 };
 
 const validationReport = {
