@@ -9,6 +9,7 @@ public class ReleaseCenterProperties {
   private boolean enabled;
   private String credentialMasterKey;
   private Path artifactStoragePath = Path.of("build/release-center-artifacts");
+  private long maxArtifactBytes = 50L * 1024L * 1024L;
 
   public boolean isEnabled() {
     return enabled;
@@ -32,5 +33,13 @@ public class ReleaseCenterProperties {
 
   public void setArtifactStoragePath(Path artifactStoragePath) {
     this.artifactStoragePath = artifactStoragePath;
+  }
+
+  public long getMaxArtifactBytes() {
+    return maxArtifactBytes;
+  }
+
+  public void setMaxArtifactBytes(long maxArtifactBytes) {
+    this.maxArtifactBytes = maxArtifactBytes;
   }
 }

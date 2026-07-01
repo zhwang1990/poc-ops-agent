@@ -1,6 +1,8 @@
 package com.company.opsagent.controlplane.bootstrap.api;
 
 import static org.springframework.http.MediaType.APPLICATION_JSON;
+import static org.springframework.http.MediaType.APPLICATION_OCTET_STREAM;
+import static org.springframework.http.MediaType.MULTIPART_FORM_DATA;
 
 import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jose.JWSAlgorithm;
@@ -17,8 +19,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.autoconfigure.web.reactive.AutoConfigureWebTestClient;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.reactive.server.WebTestClient;
+import org.springframework.util.MultiValueMap;
+import org.springframework.web.reactive.function.BodyInserters;
+import org.springframework.http.client.MultipartBodyBuilder;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureWebTestClient
@@ -102,6 +108,25 @@ class ReleaseCenterControllerTest {
   }
 
   @Test
+  void uploadsTomcatWarArtifactWithoutReturningLocalPath() {
+    webTestClient.post()
+        .uri("/internal/release-center/artifacts/tomcat-war")
+        .headers(headers -> headers.setBearerAuth(token("admin", List.of("ops-admin"))))
+        .contentType(MULTIPART_FORM_DATA)
+        .body(BodyInserters.fromMultipartData(warUploadBody()))
+        .exchange()
+        .expectStatus().isOk()
+        .expectBody()
+        .jsonPath("$.artifactId").isNotEmpty()
+        .jsonPath("$.applicationId").isEqualTo("orders")
+        .jsonPath("$.artifactType").isEqualTo("WAR")
+        .jsonPath("$.checksum").value(value -> value.toString().startsWith("sha256:"))
+        .jsonPath("$.originalFilename").isEqualTo("orders.war")
+        .jsonPath("$.storagePath").doesNotExist()
+        .jsonPath("$.absolutePath").doesNotExist();
+  }
+
+  @Test
   void exposesServerConnectionTestPlaceholder() {
     webTestClient.post()
         .uri("/internal/release-center/servers/sit-tomcat-1/test")
@@ -151,5 +176,20 @@ class ReleaseCenterControllerTest {
     } catch (JOSEException exception) {
       throw new IllegalStateException("failed to create test token", exception);
     }
+  }
+
+  private MultiValueMap<String, org.springframework.http.HttpEntity<?>> warUploadBody() {
+    MultipartBodyBuilder builder = new MultipartBodyBuilder();
+    builder.part("applicationId", "orders");
+    builder.part("targetEnvironment", "dev");
+    builder.part("file", new ByteArrayResource("war".getBytes(StandardCharsets.UTF_8)) {
+          @Override
+          public String getFilename() {
+            return "orders.war";
+          }
+        })
+        .filename("orders.war")
+        .contentType(APPLICATION_OCTET_STREAM);
+    return builder.build();
   }
 }

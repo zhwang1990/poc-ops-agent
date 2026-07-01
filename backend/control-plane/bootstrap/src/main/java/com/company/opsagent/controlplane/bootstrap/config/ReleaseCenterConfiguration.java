@@ -1,7 +1,9 @@
 package com.company.opsagent.controlplane.bootstrap.config;
 
 import com.company.opsagent.controlplane.modules.release.AesGcmReleaseCredentialSecretCodec;
+import com.company.opsagent.controlplane.modules.release.FileSystemReleaseArtifactStore;
 import com.company.opsagent.controlplane.modules.release.R2dbcReleaseCatalogStore;
+import com.company.opsagent.controlplane.modules.release.ReleaseArtifactStore;
 import com.company.opsagent.controlplane.modules.release.ReleaseCatalogStore;
 import com.company.opsagent.controlplane.modules.release.ReleaseCredentialSecretCodec;
 import com.company.opsagent.controlplane.modules.release.ReleaseCredentialService;
@@ -28,6 +30,13 @@ public class ReleaseCenterConfiguration {
   @Bean
   ReleaseCatalogStore releaseCatalogStore(DatabaseClient databaseClient) {
     return new R2dbcReleaseCatalogStore(databaseClient);
+  }
+
+  @Bean
+  ReleaseArtifactStore releaseArtifactStore(ReleaseCenterProperties properties) {
+    return new FileSystemReleaseArtifactStore(
+        properties.getArtifactStoragePath(),
+        properties.getMaxArtifactBytes());
   }
 
   @Bean

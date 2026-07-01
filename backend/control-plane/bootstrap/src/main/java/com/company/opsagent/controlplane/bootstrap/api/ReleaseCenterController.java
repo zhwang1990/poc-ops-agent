@@ -3,6 +3,8 @@ package com.company.opsagent.controlplane.bootstrap.api;
 import com.company.opsagent.controlplane.bootstrap.security.PolicyEnforcementWebFilter;
 import com.company.opsagent.controlplane.modules.audit.ExecutionContext;
 import com.company.opsagent.controlplane.modules.release.ArtifactType;
+import com.company.opsagent.controlplane.modules.release.ReleaseArtifact;
+import com.company.opsagent.controlplane.modules.release.ReleaseArtifactStore;
 import com.company.opsagent.controlplane.modules.release.ReleaseApplication;
 import com.company.opsagent.controlplane.modules.release.ReleaseCatalogStore;
 import com.company.opsagent.controlplane.modules.release.ReleaseCredentialService;
@@ -11,15 +13,20 @@ import com.company.opsagent.controlplane.modules.release.ServerType;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.ByteArrayInputStream;
 import java.time.OffsetDateTime;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.codec.multipart.FilePart;
+import org.springframework.core.io.buffer.DataBufferUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
@@ -45,14 +52,17 @@ public class ReleaseCenterController {
       "secret");
 
   private final ReleaseCatalogStore releaseCatalogStore;
+  private final ReleaseArtifactStore releaseArtifactStore;
   private final ReleaseCredentialService releaseCredentialService;
   private final ObjectMapper objectMapper;
 
   public ReleaseCenterController(
       ReleaseCatalogStore releaseCatalogStore,
+      ReleaseArtifactStore releaseArtifactStore,
       ReleaseCredentialService releaseCredentialService,
       ObjectMapper objectMapper) {
     this.releaseCatalogStore = releaseCatalogStore;
+    this.releaseArtifactStore = releaseArtifactStore;
     this.releaseCredentialService = releaseCredentialService;
     this.objectMapper = objectMapper;
   }
@@ -84,6 +94,33 @@ public class ReleaseCenterController {
         serverType(parsed.serverType()),
         parsed.secret(),
         context.subject());
+  }
+
+  @PostMapping(
+      value = "/artifacts/tomcat-war",
+      consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+  public Mono<ReleaseArtifact> uploadTomcatWar(
+      @RequestPart("applicationId") String applicationId,
+      @RequestPart("targetEnvironment") String targetEnvironment,
+      @RequestPart("file") FilePart file,
+      ServerWebExchange exchange) {
+    ExecutionContext context = executionContext(exchange);
+    return DataBufferUtils.join(file.content())
+        .flatMap(dataBuffer -> {
+          try {
+            byte[] bytes = new byte[dataBuffer.readableByteCount()];
+            dataBuffer.read(bytes);
+            return releaseArtifactStore.storeWar(
+                    applicationId,
+                    targetEnvironment,
+                    file.filename(),
+                    context.subject(),
+                    new ByteArrayInputStream(bytes))
+                .flatMap(releaseCatalogStore::saveArtifact);
+          } finally {
+            DataBufferUtils.release(dataBuffer);
+          }
+        });
   }
 
   @PostMapping("/servers/{nodeId}/test")
