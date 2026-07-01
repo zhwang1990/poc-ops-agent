@@ -321,6 +321,21 @@ class ContractsTest {
   }
 
   @Test
+  void releaseEventsSchemaRequiresAuditContext() throws Exception {
+    JsonNode schema = new ObjectMapper()
+        .readTree(Path.of("release/release-events-v1.schema.json").toFile());
+
+    List<String> required = StreamSupport.stream(schema.path("required").spliterator(), false)
+        .map(JsonNode::asText)
+        .toList();
+    assertTrue(required.contains("audit"));
+    JsonNode audit = schema.path("properties").path("audit");
+    for (String fieldName : List.of("action", "resource", "policyVersion", "result", "reason", "traceId", "requestId")) {
+      assertTrue(audit.path("properties").has(fieldName), "missing audit field: " + fieldName);
+    }
+  }
+
+  @Test
   void rejectsInvalidSqlQueryLimits() {
     assertThrows(IllegalArgumentException.class, () -> new SqlQueryLimits(0, 1_000_000, 30));
   }

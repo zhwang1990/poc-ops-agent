@@ -2,6 +2,8 @@ package com.company.opsagent.controlplane.modules.release;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -86,6 +88,52 @@ class ReleaseWorkflowServiceTest {
     assertEquals(ReleaseNodeStatus.FAILED, result.nodes().get(1).status());
     assertEquals(ReleaseNodeStatus.SKIPPED, result.nodes().get(2).status());
     assertEquals(2, calls.get());
+  }
+
+  @Test
+  void publishesReleaseWorkflowEventsWithoutCredentialMaterial() {
+    InMemoryReleaseEventSink eventSink = new InMemoryReleaseEventSink();
+    AtomicInteger calls = new AtomicInteger();
+    ReleaseWorkflowService service = new ReleaseWorkflowService((plan, node) -> {
+      int call = calls.incrementAndGet();
+      if (call == 2) {
+        return Mono.just(ReleaseNodeExecutionResult.failed("NODE_HEALTHCHECK_FAILED"));
+      }
+      return Mono.just(ReleaseNodeExecutionResult.succeeded());
+    }, CLOCK, eventSink);
+    ReleasePlan created = service.createPlan(
+        "rel-1",
+        "orders",
+        "sit",
+        "artifact-1",
+        List.of(server("node-1", "sit"), server("node-2", "sit")),
+        ReleaseEnvironmentPolicy.defaultFor(TargetEnvironment.SIT),
+        "sha256:abc123")
+        .block();
+    ReleasePlan confirmed = service.confirm(
+        created,
+        new ReleaseConfirmation("confirm-1", "sha256:abc123", "alice", Instant.now(CLOCK)))
+        .block();
+
+    service.execute(confirmed).block();
+
+    assertEquals(List.of(
+        ReleaseEventType.RELEASE_CREATED,
+        ReleaseEventType.RELEASE_CONFIRMED,
+        ReleaseEventType.RELEASE_NODE_STARTED,
+        ReleaseEventType.RELEASE_NODE_COMPLETED,
+        ReleaseEventType.RELEASE_NODE_STARTED,
+        ReleaseEventType.RELEASE_NODE_FAILED,
+        ReleaseEventType.RELEASE_PARTIAL_FAILED,
+        ReleaseEventType.RELEASE_MANUAL_INTERVENTION_REQUIRED), eventSink.events().stream()
+            .map(ReleaseWorkflowEvent::type)
+            .toList());
+    for (ReleaseWorkflowEvent event : eventSink.events()) {
+      assertNotNull(event.audit());
+      assertFalse(event.toString().toLowerCase().contains("credential"));
+      assertFalse(event.toString().toLowerCase().contains("secret"));
+      assertFalse(event.toString().toLowerCase().contains("password"));
+    }
   }
 
   private static ReleaseWorkflowService service(ReleaseWorkerGateway gateway) {

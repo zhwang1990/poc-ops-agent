@@ -2,8 +2,13 @@ package com.company.opsagent.controlplane.modules.release;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Objects;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.IntStream;
 import reactor.core.publisher.Mono;
 
@@ -11,10 +16,17 @@ public class ReleaseWorkflowService {
 
   private final ReleaseWorkerGateway workerGateway;
   private final Clock clock;
+  private final ReleaseEventSink eventSink;
+  private final ConcurrentMap<String, AtomicLong> eventSequences = new ConcurrentHashMap<>();
 
   public ReleaseWorkflowService(ReleaseWorkerGateway workerGateway, Clock clock) {
+    this(workerGateway, clock, ReleaseEventSink.noop());
+  }
+
+  public ReleaseWorkflowService(ReleaseWorkerGateway workerGateway, Clock clock, ReleaseEventSink eventSink) {
     this.workerGateway = ReleaseValues.required(workerGateway, "workerGateway");
     this.clock = ReleaseValues.required(clock, "clock");
+    this.eventSink = ReleaseValues.required(eventSink, "eventSink");
   }
 
   public Mono<ReleasePlan> createPlan(
@@ -49,7 +61,7 @@ public class ReleaseWorkflowService {
           releasePolicy.stopOnNodeFailure(),
           now,
           now);
-    });
+    }).flatMap(this::publishCreated);
   }
 
   public Mono<ReleasePlan> confirm(ReleasePlan plan, ReleaseConfirmation confirmation) {
@@ -65,7 +77,16 @@ public class ReleaseWorkflowService {
             "release confirmation parameters hash does not match");
       }
       return releasePlan.withConfirmation(releaseConfirmation, ReleaseStatus.READY, Instant.now(clock));
-    });
+    }).flatMap(confirmed -> publish(
+        confirmed,
+        ReleaseEventType.RELEASE_CONFIRMED,
+        new ReleaseEventPayload.Confirmed(
+            confirmation.confirmationId(),
+            confirmation.confirmedBy(),
+            confirmation.confirmedAt(),
+            confirmation.parametersHash()),
+        "SUCCEEDED",
+        "release confirmed").thenReturn(confirmed));
   }
 
   public Mono<ReleasePlan> execute(ReleasePlan plan) {
@@ -93,7 +114,17 @@ public class ReleaseWorkflowService {
 
     ReleaseNodeStep runningNode = plan.nodes().get(index).markRunning(Instant.now(clock));
     ReleasePlan runningPlan = plan.withNode(index, runningNode, ReleaseStatus.RUNNING, Instant.now(clock));
-    return workerGateway.execute(runningPlan, runningNode)
+    return publish(
+        runningPlan,
+        ReleaseEventType.RELEASE_NODE_STARTED,
+        new ReleaseEventPayload.NodeStarted(
+            runningNode.nodeId(),
+            runningNode.serverType(),
+            runningNode.managementMode(),
+            runningNode.startedAt()),
+        "STARTED",
+        "release node started")
+        .then(workerGateway.execute(runningPlan, runningNode))
         .switchIfEmpty(Mono.just(ReleaseNodeExecutionResult.failed("RELEASE_WORKER_EMPTY_RESULT")))
         .onErrorResume(error -> Mono.just(ReleaseNodeExecutionResult.failed("RELEASE_WORKER_ERROR")))
         .flatMap(result -> applyNodeResult(runningPlan, runningNode, result, index));
@@ -111,7 +142,13 @@ public class ReleaseWorkflowService {
           runningNode.markSucceeded(finishedAt),
           ReleaseStatus.RUNNING,
           finishedAt);
-      return executeNode(succeededPlan, index + 1);
+      return publish(
+          succeededPlan,
+          ReleaseEventType.RELEASE_NODE_COMPLETED,
+          new ReleaseEventPayload.NodeCompleted(runningNode.nodeId(), "SUCCEEDED", finishedAt),
+          "SUCCEEDED",
+          "release node completed")
+          .then(executeNode(succeededPlan, index + 1));
     }
 
     ReleasePlan failedPlan = runningPlan.withNode(
@@ -119,10 +156,108 @@ public class ReleaseWorkflowService {
         runningNode.markFailed(result.reason(), finishedAt),
         ReleaseStatus.PARTIAL_FAILED,
         finishedAt);
+    Mono<Void> failedEvent = publish(
+        failedPlan,
+        ReleaseEventType.RELEASE_NODE_FAILED,
+        new ReleaseEventPayload.NodeFailed(runningNode.nodeId(), result.reason(), result.reason(), finishedAt),
+        "FAILED",
+        result.reason());
     if (failedPlan.stopOnNodeFailure()) {
-      return Mono.just(failedPlan.skipNodesAfter(index, finishedAt));
+      ReleasePlan stoppedPlan = failedPlan.skipNodesAfter(index, finishedAt);
+      return failedEvent
+          .then(publish(
+              stoppedPlan,
+              ReleaseEventType.RELEASE_PARTIAL_FAILED,
+              new ReleaseEventPayload.PartialFailed(
+                  runningNode.nodeId(),
+                  completedNodeIds(stoppedPlan),
+                  "release stopped after node failure"),
+              "FAILED",
+              "release stopped after node failure"))
+          .then(publish(
+              stoppedPlan,
+              ReleaseEventType.RELEASE_MANUAL_INTERVENTION_REQUIRED,
+              new ReleaseEventPayload.ManualInterventionRequired(
+                  "release requires manual intervention after node failure",
+                  lastCompletedNodeId(stoppedPlan),
+                  runningNode.nodeId(),
+                  "review deterministic checks and decide rollback or retry"),
+              "MANUAL_INTERVENTION_REQUIRED",
+              "release requires manual intervention"))
+          .thenReturn(stoppedPlan);
     }
-    return executeNode(failedPlan.withStatus(ReleaseStatus.RUNNING, finishedAt), index + 1);
+    return failedEvent.then(executeNode(failedPlan.withStatus(ReleaseStatus.RUNNING, finishedAt), index + 1));
+  }
+
+  private Mono<ReleasePlan> publishCreated(ReleasePlan plan) {
+    return publish(
+        plan,
+        ReleaseEventType.RELEASE_CREATED,
+        new ReleaseEventPayload.Created(
+            plan.applicationId(),
+            plan.targetEnvironment(),
+            "DEPLOY",
+            "WAR",
+            plan.parametersHash(),
+            plan.nodes().stream().map(ReleaseNodeStep::nodeId).toList(),
+            "system",
+            "release-policy:" + plan.targetEnvironment().value()),
+        "CREATED",
+        "release plan created")
+        .thenReturn(plan);
+  }
+
+  private Mono<Void> publish(
+      ReleasePlan plan,
+      ReleaseEventType type,
+      ReleaseEventPayload payload,
+      String result,
+      String reason) {
+    ReleaseWorkflowEvent event = new ReleaseWorkflowEvent(
+        "1.0",
+        UUID.randomUUID().toString(),
+        workflowId(plan.releaseId()),
+        plan.releaseId(),
+        nextSequence(plan.releaseId()),
+        Instant.now(clock),
+        type,
+        payload,
+        audit(plan, type, result, reason));
+    return eventSink.publish(event);
+  }
+
+  private ReleaseAuditContext audit(ReleasePlan plan, ReleaseEventType type, String result, String reason) {
+    return new ReleaseAuditContext(
+        type.name(),
+        "release:" + plan.releaseId(),
+        "release-center-policy-v1",
+        result,
+        reason,
+        "trace:" + plan.releaseId(),
+        "request:" + plan.releaseId());
+  }
+
+  private long nextSequence(String releaseId) {
+    return eventSequences.computeIfAbsent(releaseId, ignored -> new AtomicLong(1)).getAndIncrement();
+  }
+
+  private String workflowId(String releaseId) {
+    return UUID.nameUUIDFromBytes(releaseId.getBytes(StandardCharsets.UTF_8)).toString();
+  }
+
+  private List<String> completedNodeIds(ReleasePlan plan) {
+    return plan.nodes().stream()
+        .filter(node -> node.status() == ReleaseNodeStatus.SUCCEEDED)
+        .map(ReleaseNodeStep::nodeId)
+        .toList();
+  }
+
+  private String lastCompletedNodeId(ReleasePlan plan) {
+    List<String> completedNodeIds = completedNodeIds(plan);
+    if (completedNodeIds.isEmpty()) {
+      return null;
+    }
+    return completedNodeIds.get(completedNodeIds.size() - 1);
   }
 
   private static List<ReleaseNodeStep> enabledNodes(TargetEnvironment environment, List<ReleaseServer> servers) {
