@@ -36,6 +36,21 @@
  * @property {HelpFaq[]} faqs
  */
 
+/**
+ * @typedef {"section" | "scenario" | "faq"} HelpSearchResultType
+ */
+
+/**
+ * @typedef {Object} HelpSearchResult
+ * @property {HelpSearchResultType} type
+ * @property {string} sectionId
+ * @property {string} sectionTitle
+ * @property {string} title
+ * @property {string} summary
+ * @property {string} anchorId
+ * @property {string[]} tags
+ */
+
 export const popularHelpKeywords = ["Agent", "权限拒绝", "SQL 校验", "发布失败", "生产不可见", "API Key"];
 
 /** @type {HelpSection[]} */
@@ -455,15 +470,7 @@ function searchableText(parts) {
 
 /**
  * @param {string} query
- * @returns {Array<{
- *   type: "section" | "scenario" | "faq",
- *   sectionId: string,
- *   sectionTitle: string,
- *   title: string,
- *   summary: string,
- *   anchorId: string,
- *   tags: string[],
- * }>}
+ * @returns {HelpSearchResult[]}
  */
 export function searchHelpContent(query) {
   const normalizedQuery = normalizeHelpText(query);
@@ -472,8 +479,11 @@ export function searchHelpContent(query) {
     return [];
   }
 
+  /** @type {HelpSearchResult[]} */
   const scenarioResults = [];
+  /** @type {HelpSearchResult[]} */
   const sectionResults = [];
+  /** @type {HelpSearchResult[]} */
   const faqResults = [];
 
   for (const section of helpSections) {
@@ -495,7 +505,7 @@ export function searchHelpContent(query) {
         sectionTitle: section.title,
         title: section.title,
         summary: section.summary,
-        anchorId: section.sectionId,
+        anchorId: `help-section-${section.sectionId}`,
         tags: section.keywords,
       });
     }
@@ -522,7 +532,7 @@ export function searchHelpContent(query) {
           sectionTitle: section.title,
           title: scenario.title,
           summary: scenario.whenToUse,
-          anchorId: scenario.id,
+          anchorId: `help-scenario-${scenario.id}`,
           tags: scenario.keywords,
         });
       }
@@ -538,7 +548,7 @@ export function searchHelpContent(query) {
           sectionTitle: section.title,
           title: faq.title,
           summary: faq.summary,
-          anchorId: faq.id,
+          anchorId: `help-faq-${faq.id}`,
           tags: faq.keywords,
         });
       }
