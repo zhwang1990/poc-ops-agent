@@ -57,7 +57,7 @@ describe("shared primitives", () => {
     );
   });
 
-  it("renders the shared dialog standard and supports dismiss interactions", async () => {
+  it("renders the shared dialog standard and keeps backdrop clicks from dismissing it", async () => {
     const user = userEvent.setup();
     /** @type {string[]} */
     const closeCalls = [];
@@ -116,7 +116,7 @@ describe("shared primitives", () => {
     expect(closeCalls).toEqual(["close", "close"]);
 
     await user.click(backdrop);
-    expect(closeCalls).toEqual(["close", "close", "close"]);
+    expect(closeCalls).toEqual(["close", "close"]);
   });
 
   it("keeps the dialog shell visually layered instead of a monotone panel", () => {

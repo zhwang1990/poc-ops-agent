@@ -76,11 +76,6 @@ export function Dialog({
     <div
       className={styles.dialogBackdrop}
       data-dialog-backdrop=""
-      onClick={(event) => {
-        if (event.target === event.currentTarget) {
-          onClose();
-        }
-      }}
     >
       <section
         aria-describedby={description ? descriptionId : undefined}
