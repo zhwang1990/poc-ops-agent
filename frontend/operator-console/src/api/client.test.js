@@ -18,8 +18,10 @@ import { ApiError, SESSION_EXPIRED_EVENT, requestJson } from "./client.js";
 import { getSkill, listSkills } from "./skill-api.js";
 import { listSqlConnections, validateSqlQuery } from "./sql-api.js";
 import {
+  listReleaseScriptProfiles,
   listReleaseApplications,
   rotateReleaseCredential,
+  saveReleaseScriptProfile,
   uploadTomcatWar,
 } from "./release-center-api.js";
 import { server } from "../test/server.js";
@@ -291,6 +293,15 @@ describe("feature API modules", () => {
         calls.push([request.method, new URL(request.url).pathname]);
         return HttpResponse.json([releaseApplication]);
       }),
+      http.get("/internal/release-center/script-profiles", ({ request }) => {
+        const url = new URL(request.url);
+        calls.push([request.method, url.pathname, Object.fromEntries(url.searchParams.entries())]);
+        return HttpResponse.json([releaseScriptProfile]);
+      }),
+      http.post("/internal/release-center/script-profiles", async ({ request }) => {
+        calls.push([request.method, new URL(request.url).pathname, await request.json()]);
+        return HttpResponse.json(releaseScriptProfile);
+      }),
       http.post("/internal/release-center/credentials", async ({ request }) => {
         calls.push([request.method, new URL(request.url).pathname, await request.json()]);
         return HttpResponse.json(releaseCredentialSummary);
@@ -298,6 +309,8 @@ describe("feature API modules", () => {
     );
 
     await listReleaseApplications();
+    await listReleaseScriptProfiles("dev");
+    await saveReleaseScriptProfile(releaseScriptProfile);
     await rotateReleaseCredential({
       credentialAlias: "tomcat-dev",
       serverType: "TOMCAT",
@@ -306,6 +319,8 @@ describe("feature API modules", () => {
 
     expect(calls).toEqual([
       ["GET", "/internal/release-center/applications"],
+      ["GET", "/internal/release-center/script-profiles", { targetEnvironment: "dev" }],
+      ["POST", "/internal/release-center/script-profiles", releaseScriptProfile],
       [
         "POST",
         "/internal/release-center/credentials",
@@ -567,6 +582,21 @@ const releaseCredentialSummary = {
   credentialAlias: "tomcat-dev",
   fingerprint: "sha256:abc123",
   updatedAt: "2026-07-01T00:00:00Z",
+};
+
+const releaseScriptProfile = {
+  profileId: "liberty-war-deploy",
+  targetEnvironment: "dev",
+  displayName: "Liberty WAR deploy",
+  executablePath: "C:\\ops\\scripts\\liberty-war-deploy.cmd",
+  workingDirectory: "C:\\ops-agent\\work\\release",
+  arguments: ["{{param.serverName}}", "{{param.applicationName}}", "{{param.artifactPath}}"],
+  requiredParameters: ["serverName", "applicationName", "artifactPath"],
+  allowedParameters: ["serverName", "applicationName", "artifactPath"],
+  successExitCodes: [0],
+  timeoutSeconds: 600,
+  approved: true,
+  enabled: true,
 };
 
 const releaseArtifact = {

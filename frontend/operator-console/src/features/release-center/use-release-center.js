@@ -3,14 +3,17 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   confirmReleasePlan,
   createReleasePlan,
+  deleteReleaseScriptProfile,
   deleteReleaseServer,
   executeReleasePlan,
   listReleaseApplications,
   listReleaseArtifacts,
   listReleasePlans,
+  listReleaseScriptProfiles,
   listReleaseServers,
   rotateReleaseCredential,
   saveReleaseApplication,
+  saveReleaseScriptProfile,
   saveReleaseServer,
   testReleaseServer,
   uploadTomcatWar,
@@ -20,6 +23,7 @@ const RELEASE_APPLICATIONS_QUERY_KEY = ["release-center", "applications"];
 const RELEASE_ARTIFACTS_QUERY_KEY = ["release-center", "artifacts"];
 const RELEASE_PLANS_QUERY_KEY = ["release-center", "plans"];
 const RELEASE_SERVERS_QUERY_KEY = ["release-center", "servers"];
+const RELEASE_SCRIPT_PROFILES_QUERY_KEY = ["release-center", "script-profiles"];
 
 export function useReleaseApplications() {
   return useQuery({
@@ -65,6 +69,19 @@ export function useReleaseServers(targetEnvironment) {
   });
 }
 
+/**
+ * @param {string} targetEnvironment
+ */
+export function useReleaseScriptProfiles(targetEnvironment) {
+  return useQuery({
+    queryKey: [...RELEASE_SCRIPT_PROFILES_QUERY_KEY, targetEnvironment],
+    queryFn: () => listReleaseScriptProfiles(targetEnvironment),
+    enabled: Boolean(targetEnvironment),
+    staleTime: 15_000,
+    retry: false,
+  });
+}
+
 export function useSaveReleaseApplication() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -103,6 +120,38 @@ export function useDeleteReleaseServer() {
          * @param {unknown} current
          */
         (current) => removeById(Array.isArray(current) ? current : [], variables.nodeId, "nodeId"),
+      );
+    },
+  });
+}
+
+export function useSaveReleaseScriptProfile() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: saveReleaseScriptProfile,
+    onSuccess: (profile) => {
+      queryClient.setQueryData(
+        [...RELEASE_SCRIPT_PROFILES_QUERY_KEY, profile.targetEnvironment],
+        /**
+         * @param {unknown} current
+         */
+        (current) => upsertById(Array.isArray(current) ? current : [], profile, "profileId"),
+      );
+    },
+  });
+}
+
+export function useDeleteReleaseScriptProfile() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: deleteReleaseScriptProfile,
+    onSuccess: (_result, variables) => {
+      queryClient.setQueryData(
+        [...RELEASE_SCRIPT_PROFILES_QUERY_KEY, variables.targetEnvironment],
+        /**
+         * @param {unknown} current
+         */
+        (current) => removeById(Array.isArray(current) ? current : [], variables.profileId, "profileId"),
       );
     },
   });

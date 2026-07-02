@@ -120,6 +120,8 @@ class ReleaseCenterControllerTest {
 
   @Test
   void createsLibertyScriptProfileServerThroughPolicyProtectedApi() {
+    seedApprovedScriptProfile("dev");
+
     webTestClient.post()
         .uri("/internal/release-center/servers")
         .headers(headers -> headers.setBearerAuth(token("admin", List.of("ops-admin"))))
@@ -154,6 +156,102 @@ class ReleaseCenterControllerTest {
         .jsonPath("$.scriptProfile.parameters[0].value").isEqualTo("defaultServer")
         .jsonPath("$.scriptProfile.parameters[2].name").isEqualTo("artifactPath")
         .jsonPath("$.scriptProfile.parameters[2].value").isEqualTo("\\\\jenkins\\share\\orders\\latest\\orders.war");
+  }
+
+  @Test
+  void managesScriptProfilesThroughPolicyProtectedApi() {
+    webTestClient.post()
+        .uri("/internal/release-center/script-profiles")
+        .headers(headers -> headers.setBearerAuth(token("admin", List.of("ops-admin"))))
+        .contentType(APPLICATION_JSON)
+        .bodyValue("""
+            {
+              "profileId": "liberty-war-deploy",
+              "targetEnvironment": "dev",
+              "displayName": "Liberty WAR deploy",
+              "executablePath": "C:\\\\ops\\\\scripts\\\\liberty-war-deploy.cmd",
+              "workingDirectory": "C:\\\\ops-agent\\\\work\\\\release",
+              "arguments": [
+                "{{param.serverName}}",
+                "{{param.applicationName}}",
+                "{{param.artifactPath}}"
+              ],
+              "requiredParameters": ["serverName", "applicationName", "artifactPath"],
+              "allowedParameters": ["serverName", "applicationName", "artifactPath"],
+              "successExitCodes": [0],
+              "timeoutSeconds": 600,
+              "approved": true,
+              "enabled": true
+            }
+            """)
+        .exchange()
+        .expectStatus().isOk()
+        .expectBody()
+        .jsonPath("$.profileId").isEqualTo("liberty-war-deploy")
+        .jsonPath("$.targetEnvironment").isEqualTo("DEV")
+        .jsonPath("$.executablePath").isEqualTo("C:\\ops\\scripts\\liberty-war-deploy.cmd")
+        .jsonPath("$.arguments[2]").isEqualTo("{{param.artifactPath}}")
+        .jsonPath("$.approved").isEqualTo(true)
+        .jsonPath("$.enabled").isEqualTo(true);
+
+    webTestClient.get()
+        .uri("/internal/release-center/script-profiles?targetEnvironment=dev")
+        .headers(headers -> headers.setBearerAuth(token("alice", List.of("ops-reader"))))
+        .exchange()
+        .expectStatus().isOk()
+        .expectBody()
+        .jsonPath("$[0].profileId").isEqualTo("liberty-war-deploy")
+        .jsonPath("$[0].requiredParameters[2]").isEqualTo("artifactPath");
+  }
+
+  @Test
+  void rejectsLibertyServerWhenReferencedScriptProfileIsNotApproved() {
+    webTestClient.post()
+        .uri("/internal/release-center/script-profiles")
+        .headers(headers -> headers.setBearerAuth(token("admin", List.of("ops-admin"))))
+        .contentType(APPLICATION_JSON)
+        .bodyValue("""
+            {
+              "profileId": "liberty-war-deploy",
+              "targetEnvironment": "dev",
+              "displayName": "Liberty WAR deploy",
+              "executablePath": "C:\\\\ops\\\\scripts\\\\liberty-war-deploy.cmd",
+              "workingDirectory": "C:\\\\ops-agent\\\\work\\\\release",
+              "arguments": ["{{param.serverName}}"],
+              "requiredParameters": ["serverName"],
+              "allowedParameters": ["serverName"],
+              "successExitCodes": [0],
+              "timeoutSeconds": 600,
+              "approved": false,
+              "enabled": true
+            }
+            """)
+        .exchange()
+        .expectStatus().isOk();
+
+    webTestClient.post()
+        .uri("/internal/release-center/servers")
+        .headers(headers -> headers.setBearerAuth(token("admin", List.of("ops-admin"))))
+        .contentType(APPLICATION_JSON)
+        .bodyValue("""
+            {
+              "nodeId": "dev-liberty-unapproved",
+              "targetEnvironment": "dev",
+              "serverType": "LIBERTY",
+              "managementMode": "LIBERTY_SCRIPT_PROFILE",
+              "managementEndpoint": "https://liberty-dev.example",
+              "applicationPath": "/orders",
+              "scriptProfile": {
+                "profileId": "liberty-war-deploy",
+                "parameters": [
+                  {"name": "serverName", "value": "defaultServer"}
+                ]
+              },
+              "enabled": true
+            }
+            """)
+        .exchange()
+        .expectStatus().isBadRequest();
   }
 
   @Test
@@ -459,6 +557,7 @@ class ReleaseCenterControllerTest {
   }
 
   private void seedLibertyScriptCatalogWithoutUploadedArtifact(String targetEnvironment) {
+    seedApprovedScriptProfile(targetEnvironment);
     TargetEnvironment environment = TargetEnvironment.from(targetEnvironment);
     releaseCatalogStore.saveApplication(com.company.opsagent.controlplane.modules.release.ReleaseApplication.create(
             "orders",
@@ -486,6 +585,24 @@ class ReleaseCenterControllerTest {
                         "artifactPath",
                         "\\\\jenkins\\share\\orders\\latest\\orders.war"))),
             true))
+        .block();
+  }
+
+  private void seedApprovedScriptProfile(String targetEnvironment) {
+    releaseCatalogStore.saveScriptProfileDefinition(
+            com.company.opsagent.controlplane.modules.release.ReleaseScriptProfileDefinition.create(
+                "liberty-war-deploy",
+                targetEnvironment,
+                "Liberty WAR deploy",
+                "C:\\ops\\scripts\\liberty-war-deploy.cmd",
+                "C:\\ops-agent\\work\\release",
+                List.of("{{param.serverName}}", "{{param.applicationName}}", "{{param.artifactPath}}"),
+                List.of("serverName", "applicationName", "artifactPath"),
+                List.of("serverName", "applicationName", "artifactPath"),
+                List.of(0),
+                600,
+                true,
+                true))
         .block();
   }
 }

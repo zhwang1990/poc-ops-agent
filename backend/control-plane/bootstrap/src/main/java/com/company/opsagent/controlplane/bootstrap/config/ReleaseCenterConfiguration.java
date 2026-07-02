@@ -96,7 +96,10 @@ public class ReleaseCenterConfiguration {
     var initializer = new ConnectionFactoryInitializer();
     initializer.setConnectionFactory(connectionFactory);
     initializer.setDatabasePopulator(new ResourceDatabasePopulator(
-        new ClassPathResource("sql/migrations/V001__release_center_schema.sql")));
+        new ClassPathResource("sql/migrations/V001__release_center_schema.sql"),
+        new ClassPathResource("sql/migrations/V002__release_server_script_profile.sql"),
+        new ClassPathResource("sql/migrations/V003__release_plan_optional_artifact.sql"),
+        new ClassPathResource("sql/migrations/V004__release_script_profile_definition.sql")));
     return initializer;
   }
 }

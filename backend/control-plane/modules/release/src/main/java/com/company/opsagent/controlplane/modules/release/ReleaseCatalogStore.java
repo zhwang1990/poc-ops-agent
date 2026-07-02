@@ -21,6 +21,14 @@ public interface ReleaseCatalogStore {
 
   Mono<Void> deleteServer(String nodeId);
 
+  Mono<ReleaseScriptProfileDefinition> saveScriptProfileDefinition(ReleaseScriptProfileDefinition profile);
+
+  Mono<ReleaseScriptProfileDefinition> findScriptProfileDefinition(String targetEnvironment, String profileId);
+
+  Flux<ReleaseScriptProfileDefinition> listScriptProfileDefinitions(String targetEnvironment);
+
+  Mono<Void> deleteScriptProfileDefinition(String targetEnvironment, String profileId);
+
   Mono<ReleaseArtifact> saveArtifact(ReleaseArtifact artifact);
 
   Flux<ReleaseArtifact> listArtifacts(String targetEnvironment);

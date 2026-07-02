@@ -31,10 +31,13 @@ import {
   useReleaseArtifacts,
   useConfirmReleasePlan,
   useCreateReleasePlan,
+  useDeleteReleaseScriptProfile,
   useDeleteReleaseServer,
   useExecuteReleasePlan,
   useReleasePlans,
+  useReleaseScriptProfiles,
   useReleaseServers,
+  useSaveReleaseScriptProfile,
   useSaveReleaseServer,
   useUploadTomcatWar,
 } from "./use-release-center.js";
@@ -43,8 +46,9 @@ import styles from "./ReleaseCenterPage.module.css";
 /** @typedef {import("../../schemas/release-center-schemas.js").ReleaseApplication} ReleaseApplication */
 /** @typedef {import("../../schemas/release-center-schemas.js").ReleaseArtifact} ReleaseArtifact */
 /** @typedef {import("../../schemas/release-center-schemas.js").ReleasePlan} ReleasePlan */
+/** @typedef {import("../../schemas/release-center-schemas.js").ReleaseScriptProfileDefinition} ReleaseScriptProfileDefinition */
 /** @typedef {import("../../schemas/release-center-schemas.js").ReleaseServer} ReleaseServer */
-/** @typedef {"plans" | "artifacts" | "applications" | "servers" | "policies" | "credentials"} ReleaseTabId */
+/** @typedef {"plans" | "artifacts" | "applications" | "servers" | "scriptProfiles" | "policies" | "credentials"} ReleaseTabId */
 /** @typedef {"PENDING_TARGETS" | "SCRIPT_PROFILE" | "ARTIFACT"} ReleaseArtifactMode */
 /** @typedef {ReleaseApplication & { source?: "CATALOG" | "SCRIPT_PROFILE" }} ReleaseApplicationTarget */
 
@@ -53,6 +57,7 @@ const TABS = [
   { id: "artifacts", label: "制品", icon: FileArchive },
   { id: "applications", label: "应用", icon: Package },
   { id: "servers", label: "服务器", icon: Server },
+  { id: "scriptProfiles", label: "Script profiles", icon: Code2 },
   { id: "policies", label: "策略", icon: ShieldCheck },
   { id: "credentials", label: "凭据", icon: KeyRound },
 ];
@@ -83,6 +88,23 @@ const MANAGEMENT_MODE_OPTIONS_BY_SERVER_TYPE = {
  * }} ReleaseServerForm
  */
 
+/**
+ * @typedef {{
+ *   profileId: string,
+ *   targetEnvironment: string,
+ *   displayName: string,
+ *   executablePath: string,
+ *   workingDirectory: string,
+ *   argumentsText: string,
+ *   requiredParametersText: string,
+ *   allowedParametersText: string,
+ *   successExitCodesText: string,
+ *   timeoutSeconds: string,
+ *   approved: boolean,
+ *   enabled: boolean,
+ * }} ScriptProfileForm
+ */
+
 export function ReleaseCenterPage() {
   const [activeTab, setActiveTab] = useState(/** @type {ReleaseTabId} */ ("plans"));
   const [targetEnvironment, setTargetEnvironment] = useState("dev");
@@ -91,6 +113,7 @@ export function ReleaseCenterPage() {
   const artifactsQuery = useReleaseArtifacts(targetEnvironment);
   const plansQuery = useReleasePlans();
   const serversQuery = useReleaseServers(targetEnvironment);
+  const scriptProfilesQuery = useReleaseScriptProfiles(targetEnvironment);
   const uploadMutation = useUploadTomcatWar();
   const createPlanMutation = useCreateReleasePlan();
   const fileInputRef = useRef(/** @type {HTMLInputElement | null} */ (null));
@@ -98,6 +121,7 @@ export function ReleaseCenterPage() {
   const artifacts = useMemo(() => artifactsQuery.data ?? [], [artifactsQuery.data]);
   const plans = useMemo(() => plansQuery.data ?? [], [plansQuery.data]);
   const servers = useMemo(() => serversQuery.data ?? [], [serversQuery.data]);
+  const scriptProfiles = useMemo(() => scriptProfilesQuery.data ?? [], [scriptProfilesQuery.data]);
   const selectedPlan = plans[0] ?? null;
   const selectedApplication =
     applications.find((application) => application.applicationId === selectedPlan?.applicationId) ??
@@ -278,6 +302,8 @@ export function ReleaseCenterPage() {
                 selectedApplication={selectedApplication}
                 servers={servers}
                 serversQuery={serversQuery}
+                scriptProfiles={scriptProfiles}
+                scriptProfilesQuery={scriptProfilesQuery}
                 targetEnvironment={targetEnvironment}
               />
             </div>
@@ -494,6 +520,8 @@ function CreatePlanField({ label, tone = "default", value }) {
  *   selectedApplication: ReleaseApplication | null,
  *   servers: ReleaseServer[],
  *   serversQuery: ReturnType<typeof useReleaseServers>,
+ *   scriptProfiles: ReleaseScriptProfileDefinition[],
+ *   scriptProfilesQuery: ReturnType<typeof useReleaseScriptProfiles>,
  *   targetEnvironment: string,
  * }} props
  */
@@ -508,6 +536,8 @@ function ReleaseTabPanel({
   selectedApplication,
   servers,
   serversQuery,
+  scriptProfiles,
+  scriptProfilesQuery,
   targetEnvironment,
 }) {
   if (activeTab === "plans") {
@@ -534,6 +564,15 @@ function ReleaseTabPanel({
   }
   if (activeTab === "servers") {
     return <ServersPanel query={serversQuery} servers={servers} targetEnvironment={targetEnvironment} />;
+  }
+  if (activeTab === "scriptProfiles") {
+    return (
+      <ScriptProfilesPanel
+        profiles={scriptProfiles}
+        query={scriptProfilesQuery}
+        targetEnvironment={targetEnvironment}
+      />
+    );
   }
   if (activeTab === "policies") {
     return <PoliciesPanel />;
@@ -688,6 +727,158 @@ function ApplicationsPanel({ applications, query }) {
         </div>
       ))}
     </section>
+  );
+}
+
+/**
+ * @param {{
+ *   profiles: ReleaseScriptProfileDefinition[],
+ *   query: ReturnType<typeof useReleaseScriptProfiles>,
+ *   targetEnvironment: string
+ * }} props
+ */
+function ScriptProfilesPanel({ profiles, query, targetEnvironment }) {
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingProfile, setEditingProfile] = useState(/** @type {ReleaseScriptProfileDefinition | null} */ (null));
+  const [pendingDeleteProfileId, setPendingDeleteProfileId] = useState("");
+  const saveProfileMutation = useSaveReleaseScriptProfile();
+  const deleteProfileMutation = useDeleteReleaseScriptProfile();
+  const queryState = queryFeedback([query], "Script profiles read failed");
+  if (queryState) {
+    return queryState;
+  }
+
+  /**
+   * @param {ReleaseScriptProfileDefinition} profile
+   */
+  function openEditProfile(profile) {
+    setEditingProfile(profile);
+    setDialogOpen(true);
+  }
+
+  function openCreateProfile() {
+    setEditingProfile(null);
+    setDialogOpen(true);
+  }
+
+  /**
+   * @param {ReleaseScriptProfileDefinition} profile
+   */
+  function deleteProfile(profile) {
+    deleteProfileMutation.mutate(
+      { targetEnvironment: profile.targetEnvironment, profileId: profile.profileId },
+      { onSuccess: () => setPendingDeleteProfileId("") },
+    );
+  }
+
+  return (
+    <>
+      <section className={styles.panelStack} aria-label="Script profile definitions">
+        <div className={styles.panelHeader}>
+          <div className={styles.panelTitle}>
+            <span className={styles.kicker}>Script profiles / {targetEnvironment}</span>
+            <strong>Liberty script profiles</strong>
+          </div>
+          <Button
+            aria-label="Add script profile"
+            className={styles.compactActionButton}
+            disabled={saveProfileMutation.isPending}
+            onClick={openCreateProfile}
+            variant="secondary"
+          >
+            <PlusCircle aria-hidden="true" size={15} />
+            New profile
+          </Button>
+        </div>
+
+        {profiles.length === 0 ? (
+          <FeedbackState
+            message={`${targetEnvironment} has no approved script profile definitions yet.`}
+            state="empty"
+            title="No script profiles"
+          />
+        ) : (
+          <section className={styles.tablePanel} aria-label="Script profile list">
+            <div className={`${styles.tableHeader} ${styles.profileTableRow}`}>
+              <span>Profile</span>
+              <span>Executable</span>
+              <span>Parameters</span>
+              <span>Status</span>
+              <span>Actions</span>
+            </div>
+            {profiles.map((profile) => (
+              <div className={`${styles.tableRow} ${styles.profileTableRow}`} key={profile.profileId}>
+                <div className={styles.serverIdentity}>
+                  <strong>{profile.profileId}</strong>
+                  <span>{profile.displayName}</span>
+                </div>
+                <span title={profile.executablePath}>{profile.executablePath}</span>
+                <span>{profile.requiredParameters.join(", ") || "No required parameters"}</span>
+                <StatusPill tone={profile.approved && profile.enabled ? "success" : "warning"}>
+                  {profile.approved && profile.enabled ? "Approved" : "Inactive"}
+                </StatusPill>
+                <div className={`${styles.rowActions} ${styles.serverRowActions}`}>
+                  <Button
+                    aria-label={`Edit script profile ${profile.profileId}`}
+                    className={styles.iconButton}
+                    disabled={saveProfileMutation.isPending}
+                    onClick={() => openEditProfile(profile)}
+                    title="Edit script profile"
+                    variant="secondary"
+                  >
+                    <Pencil aria-hidden="true" size={15} />
+                  </Button>
+                  {pendingDeleteProfileId === profile.profileId ? (
+                    <Button
+                      aria-label={`Confirm delete script profile ${profile.profileId}`}
+                      className={styles.compactDangerButton}
+                      disabled={deleteProfileMutation.isPending}
+                      onClick={() => deleteProfile(profile)}
+                      variant="danger"
+                    >
+                      Confirm
+                    </Button>
+                  ) : (
+                    <Button
+                      aria-label={`Delete script profile ${profile.profileId}`}
+                      className={styles.iconButton}
+                      disabled={deleteProfileMutation.isPending}
+                      onClick={() => setPendingDeleteProfileId(profile.profileId)}
+                      title="Delete script profile"
+                      variant="secondary"
+                    >
+                      <Trash2 aria-hidden="true" size={15} />
+                    </Button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </section>
+        )}
+      </section>
+
+      {dialogOpen ? (
+        <ScriptProfileDialog
+          error={saveProfileMutation.error}
+          initialProfile={editingProfile}
+          isPending={saveProfileMutation.isPending}
+          onClose={() => {
+            setDialogOpen(false);
+            setEditingProfile(null);
+          }}
+          onSubmit={(profile) =>
+            saveProfileMutation.mutate(profile, {
+              onSuccess: () => {
+                setDialogOpen(false);
+                setEditingProfile(null);
+              },
+            })
+          }
+          open={dialogOpen}
+          targetEnvironment={targetEnvironment}
+        />
+      ) : null}
+    </>
   );
 }
 
@@ -896,6 +1087,210 @@ function ServerArtifactCell({ copied, onCopy, server }) {
         <Copy aria-hidden="true" size={15} />
       </Button>
     </div>
+  );
+}
+
+/**
+ * @param {{
+ *   error: unknown,
+ *   initialProfile: ReleaseScriptProfileDefinition | null,
+ *   isPending: boolean,
+ *   onClose: () => void,
+ *   onSubmit: (profile: unknown) => void,
+ *   open: boolean,
+ *   targetEnvironment: string,
+ * }} props
+ */
+function ScriptProfileDialog({ error, initialProfile, isPending, onClose, onSubmit, open, targetEnvironment }) {
+  const [form, setForm] = useState(() =>
+    initialProfile
+      ? createScriptProfileFormFromDefinition(initialProfile)
+      : createDefaultScriptProfileForm(targetEnvironment),
+  );
+  const editing = Boolean(initialProfile);
+  const argumentLines = textLines(form.argumentsText).map(normalizeScriptArgument);
+  const requiredParameters = textLines(form.requiredParametersText);
+  const allowedParameters = textLines(form.allowedParametersText || form.requiredParametersText);
+  const successExitCodes = exitCodes(form.successExitCodesText);
+  const canSubmit =
+    Boolean(
+      form.profileId.trim() &&
+        form.displayName.trim() &&
+        form.executablePath.trim() &&
+        form.workingDirectory.trim() &&
+        argumentLines.length > 0 &&
+        successExitCodes.length > 0 &&
+        Number.parseInt(form.timeoutSeconds, 10) > 0,
+    ) && !isPending;
+
+  /**
+   * @param {keyof ScriptProfileForm} field
+   * @param {string | boolean} value
+   */
+  function updateField(field, value) {
+    setForm((current) => ({ ...current, [field]: value }));
+  }
+
+  /**
+   * @param {React.FormEvent<HTMLFormElement>} event
+   */
+  function handleSubmit(event) {
+    event.preventDefault();
+    if (!canSubmit) {
+      return;
+    }
+    onSubmit({
+      profileId: form.profileId.trim(),
+      targetEnvironment: form.targetEnvironment,
+      displayName: form.displayName.trim(),
+      executablePath: form.executablePath.trim(),
+      workingDirectory: form.workingDirectory.trim(),
+      arguments: argumentLines,
+      requiredParameters,
+      allowedParameters,
+      successExitCodes,
+      timeoutSeconds: Number.parseInt(form.timeoutSeconds, 10),
+      approved: form.approved,
+      enabled: form.enabled,
+    });
+  }
+
+  return (
+    <Dialog
+      closeLabel={editing ? "Close edit script profile" : "Close new script profile"}
+      description="Profiles are reviewed command definitions. Release orders only reference a profile and its approved parameters."
+      eyebrow={`Script profile / ${targetEnvironment}`}
+      icon={<Code2 size={18} />}
+      onClose={onClose}
+      open={open}
+      size="wide"
+      title={editing ? "Edit script profile" : "New script profile"}
+    >
+      <form className={styles.serverForm} onSubmit={handleSubmit}>
+        <div className={styles.formGrid}>
+          <label className={styles.formField}>
+            <span>Profile ID</span>
+            <input
+              aria-label="Profile ID"
+              onChange={(event) => updateField("profileId", event.currentTarget.value)}
+              placeholder="liberty-war-deploy"
+              readOnly={editing}
+              value={form.profileId}
+            />
+          </label>
+          <label className={styles.formField}>
+            <span>Target environment</span>
+            <input readOnly value={form.targetEnvironment} />
+          </label>
+          <label className={styles.formField}>
+            <span>Display name</span>
+            <input
+              aria-label="Display name"
+              onChange={(event) => updateField("displayName", event.currentTarget.value)}
+              placeholder="Liberty WAR deploy"
+              value={form.displayName}
+            />
+          </label>
+          <label className={styles.formField}>
+            <span>Timeout seconds</span>
+            <input
+              aria-label="Timeout seconds"
+              inputMode="numeric"
+              onChange={(event) => updateField("timeoutSeconds", event.currentTarget.value)}
+              value={form.timeoutSeconds}
+            />
+          </label>
+          <label className={styles.formField}>
+            <span>Executable path</span>
+            <input
+              aria-label="Executable path"
+              onChange={(event) => updateField("executablePath", event.currentTarget.value)}
+              placeholder="C:\ops\scripts\liberty-war-deploy.cmd"
+              value={form.executablePath}
+            />
+          </label>
+          <label className={styles.formField}>
+            <span>Working directory</span>
+            <input
+              aria-label="Working directory"
+              onChange={(event) => updateField("workingDirectory", event.currentTarget.value)}
+              placeholder="C:\ops-agent\work\release"
+              value={form.workingDirectory}
+            />
+          </label>
+        </div>
+
+        <div className={styles.profileTextGrid}>
+          <label className={styles.formField}>
+            <span>Arguments</span>
+            <textarea
+              aria-label="Arguments"
+              onChange={(event) => updateField("argumentsText", event.currentTarget.value)}
+              placeholder="{{param.serverName}}"
+              value={form.argumentsText}
+            />
+          </label>
+          <label className={styles.formField}>
+            <span>Required parameters</span>
+            <textarea
+              aria-label="Required parameters"
+              onChange={(event) => updateField("requiredParametersText", event.currentTarget.value)}
+              placeholder="serverName"
+              value={form.requiredParametersText}
+            />
+          </label>
+          <label className={styles.formField}>
+            <span>Allowed parameters</span>
+            <textarea
+              aria-label="Allowed parameters"
+              onChange={(event) => updateField("allowedParametersText", event.currentTarget.value)}
+              placeholder="serverName"
+              value={form.allowedParametersText}
+            />
+          </label>
+          <label className={styles.formField}>
+            <span>Success exit codes</span>
+            <textarea
+              aria-label="Success exit codes"
+              onChange={(event) => updateField("successExitCodesText", event.currentTarget.value)}
+              value={form.successExitCodesText}
+            />
+          </label>
+        </div>
+
+        <div className={styles.profileSwitchGrid}>
+          <label className={styles.toggleField}>
+            <input
+              aria-label="Approved"
+              checked={form.approved}
+              onChange={(event) => updateField("approved", event.currentTarget.checked)}
+              type="checkbox"
+            />
+            <span>Approved</span>
+          </label>
+          <label className={styles.toggleField}>
+            <input
+              aria-label="Enabled"
+              checked={form.enabled}
+              onChange={(event) => updateField("enabled", event.currentTarget.checked)}
+              type="checkbox"
+            />
+            <span>Enabled</span>
+          </label>
+        </div>
+
+        {error ? <p className={styles.formError}>{readErrorMessage(error)}</p> : null}
+
+        <div className={styles.dialogActions}>
+          <Button onClick={onClose} variant="secondary">
+            Cancel
+          </Button>
+          <Button aria-label="Save script profile" disabled={!canSubmit} type="submit">
+            Save script profile
+          </Button>
+        </div>
+      </form>
+    </Dialog>
   );
 }
 
@@ -1174,6 +1569,74 @@ function ServerDialog({ error, initialServer, isPending, onClose, onSubmit, open
       </form>
     </Dialog>
   );
+}
+
+/**
+ * @param {string} targetEnvironment
+ * @returns {ScriptProfileForm}
+ */
+function createDefaultScriptProfileForm(targetEnvironment) {
+  return {
+    profileId: "",
+    targetEnvironment,
+    displayName: "",
+    executablePath: "",
+    workingDirectory: "",
+    argumentsText: "",
+    requiredParametersText: "",
+    allowedParametersText: "",
+    successExitCodesText: "0",
+    timeoutSeconds: "600",
+    approved: false,
+    enabled: true,
+  };
+}
+
+/**
+ * @param {ReleaseScriptProfileDefinition} profile
+ * @returns {ScriptProfileForm}
+ */
+function createScriptProfileFormFromDefinition(profile) {
+  return {
+    profileId: profile.profileId,
+    targetEnvironment: profile.targetEnvironment,
+    displayName: profile.displayName,
+    executablePath: profile.executablePath,
+    workingDirectory: profile.workingDirectory,
+    argumentsText: profile.arguments.join("\n"),
+    requiredParametersText: profile.requiredParameters.join("\n"),
+    allowedParametersText: profile.allowedParameters.join("\n"),
+    successExitCodesText: profile.successExitCodes.join("\n"),
+    timeoutSeconds: String(profile.timeoutSeconds),
+    approved: profile.approved,
+    enabled: profile.enabled,
+  };
+}
+
+/**
+ * @param {string} value
+ */
+function textLines(value) {
+  return value
+    .split(/\r?\n|,/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+/**
+ * @param {string} value
+ */
+function normalizeScriptArgument(value) {
+  return value.startsWith("{param.") && value.endsWith("}}") ? `{${value}` : value;
+}
+
+/**
+ * @param {string} value
+ */
+function exitCodes(value) {
+  return textLines(value)
+    .map((line) => Number.parseInt(line, 10))
+    .filter((code) => Number.isInteger(code) && code >= 0 && code <= 255);
 }
 
 /**

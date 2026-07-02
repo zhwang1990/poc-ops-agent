@@ -339,6 +339,9 @@ public class PolicyEnforcementWebFilter implements WebFilter {
       if (method == HttpMethod.GET && "/internal/release-center/servers".equals(path)) {
         return new ActionDescriptor("release.catalog.read", path);
       }
+      if (method == HttpMethod.GET && "/internal/release-center/script-profiles".equals(path)) {
+        return new ActionDescriptor("release.catalog.read", path);
+      }
       if (method == HttpMethod.GET && "/internal/release-center/plans".equals(path)) {
         return new ActionDescriptor("release.catalog.read", path);
       }
@@ -351,7 +354,13 @@ public class PolicyEnforcementWebFilter implements WebFilter {
       if (method == HttpMethod.POST && "/internal/release-center/servers".equals(path)) {
         return new ActionDescriptor("release.catalog.write", path);
       }
+      if (method == HttpMethod.POST && "/internal/release-center/script-profiles".equals(path)) {
+        return new ActionDescriptor("release.catalog.write", path);
+      }
       if (method == HttpMethod.DELETE && path.startsWith("/internal/release-center/servers/")) {
+        return new ActionDescriptor("release.catalog.write", path);
+      }
+      if (method == HttpMethod.DELETE && path.startsWith("/internal/release-center/script-profiles/")) {
         return new ActionDescriptor("release.catalog.write", path);
       }
       if (method == HttpMethod.POST && "/internal/release-center/credentials".equals(path)) {
