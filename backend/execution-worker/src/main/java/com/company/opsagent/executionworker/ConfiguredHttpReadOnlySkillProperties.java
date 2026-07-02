@@ -32,7 +32,7 @@ public class ConfiguredHttpReadOnlySkillProperties {
     private String endpointUrl;
     private String inputParameterName;
     private String queryParameterName;
-    private String source;
+    private String source = "";
     private Duration timeout = Duration.ofSeconds(5);
     private List<String> allowedResponseFields = List.of();
 

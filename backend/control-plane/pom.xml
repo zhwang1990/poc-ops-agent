@@ -27,5 +27,6 @@
     <module>modules/orchestration</module>
     <module>modules/events</module>
     <module>modules/sqlworkbench</module>
+    <module>modules/release</module>
   </modules>
 </project>

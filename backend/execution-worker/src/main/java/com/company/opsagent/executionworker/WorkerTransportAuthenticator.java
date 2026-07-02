@@ -30,10 +30,17 @@ public class WorkerTransportAuthenticator {
    * 验证请求头签名；认证关闭时仅用于本地回环开发。
    */
   public void authenticate(HttpHeaders headers, WorkerExecutionRequest request) {
+    authenticateCanonical(headers, (keyId, timestamp) -> WorkerRequestSignature.canonicalPayload(keyId, timestamp, request));
+  }
+
+  public void authenticateCanonical(HttpHeaders headers, CanonicalPayloadFactory canonicalPayloadFactory) {
     if (!properties.isEnabled()) {
       return;
     }
     ensureConfigured();
+    if (canonicalPayloadFactory == null) {
+      throw new IllegalArgumentException("canonicalPayloadFactory is required");
+    }
     String keyId = requireHeader(headers, WorkerTransportHeaders.KEY_ID);
     String timestamp = requireHeader(headers, WorkerTransportHeaders.TIMESTAMP);
     String signature = requireHeader(headers, WorkerTransportHeaders.SIGNATURE);
@@ -45,7 +52,7 @@ public class WorkerTransportAuthenticator {
     if (skew.compareTo(properties.getMaxClockSkew()) > 0) {
       reject("worker transport signature timestamp is outside allowed skew");
     }
-    String payload = WorkerRequestSignature.canonicalPayload(keyId, timestamp, request);
+    String payload = canonicalPayloadFactory.create(keyId, timestamp);
     String expected = WorkerRequestSignature.sign(properties.getSharedSecret(), payload);
     if (!WorkerRequestSignature.matches(expected, signature)) {
       reject("worker transport signature is invalid");
@@ -81,5 +88,10 @@ public class WorkerTransportAuthenticator {
 
   private boolean isBlank(String value) {
     return value == null || value.isBlank();
+  }
+
+  @FunctionalInterface
+  public interface CanonicalPayloadFactory {
+    String create(String keyId, String timestamp);
   }
 }

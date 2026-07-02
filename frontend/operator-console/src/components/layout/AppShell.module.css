@@ -58,6 +58,7 @@
   font-size: 14px;
   font-weight: 850;
   text-decoration: none;
+  white-space: nowrap;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.72),
     0 8px 18px rgba(31, 45, 61, 0.035);
@@ -69,6 +70,13 @@
     transform 150ms ease,
     background 150ms ease,
     color 150ms ease;
+}
+
+.navLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .navLink::after {
@@ -314,6 +322,16 @@
   --nav-icon-radius: 8px 14px 8px 14px;
   --nav-symbol-radius: 5px 11px 5px 11px;
   --nav-detail-radius: 3px 7px 3px 7px;
+  --nav-spark-x: 17px;
+  --nav-spark-y: 5px;
+}
+
+.navTonerelease {
+  --nav-color: #587f64;
+  --nav-mark: #5f8769;
+  --nav-icon-radius: 14px 8px 14px 8px;
+  --nav-symbol-radius: 6px 999px 6px 999px;
+  --nav-detail-radius: 4px 999px 4px 999px;
   --nav-spark-x: 17px;
   --nav-spark-y: 5px;
 }

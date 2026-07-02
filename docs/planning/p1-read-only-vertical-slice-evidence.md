@@ -1,5 +1,11 @@
 # P1 只读诊断垂直切片验收证据
 
+## 验收结论
+
+P1 只读诊断 MVP 已于 2026-07-01 完成里程碑验收。验收接受范围为：可审计、可授权、可回放、无生产写入的只读诊断闭环，以及开发/测试环境受控单条 `SELECT` 查询边界。
+
+本文件保留 P1 验收证据、自动化验证、本地端到端验证和安全边界补充记录。原先列为里程碑待确认的远程治理、真实企业联调、集中审计和生产隔离事项不再阻塞 P1，已转入 P2/P3 后续治理和生产加固。
+
 ## 已验证能力
 
 - 版本化只读命令、Worker 请求、Worker 结果和语义事件契约。
@@ -12,6 +18,7 @@
 - SSE 输出强类型语义事件。
 - React/TypeScript 操作台按语义事件类型渲染，不进行浏览器授权决策。
 - 内置只读 Skill 数量达到 6 个。
+- SQL 工作台仅允许开发/测试环境受控单条 `SELECT` 执行，DML 保持静态预检，生产连接在控制面和 Worker 边界均不可见、不可调用。
 
 ## 自动化验证
 
@@ -50,13 +57,13 @@
   - `ReadOnlyWorkflowStore` 与 `ReadOnlyWorkflowRecoveryService` 已完成 Spring 装配
   - 启动期 schema 初始化后可完成最小工作流持久化查询
 
-## 已知风险
+## 已移交 P2/P3 的后续事项
 
-- 真实企业 IdP 联调尚未完成。
-- 远程 GitHub CI 和分支保护尚未验收。
-- Worker 生产传输认证、网络层出口策略和部署隔离仍需 ADR。
-- 现有开发 HMAC/JWT 固定测试密钥仍需迁移为运行时生成或安全注入。
-- 当前 `node-health-read` 具有专用 Worker 适配器；`weather-current-read` 通过配置型 HTTP/JSON 适配器接入但默认失败关闭；其余 4 个 Skill 只参与注册和路由。
+- 真实企业 IdP 联调、环境专用参数校验和联调记录。
+- 远程 GitHub CI、分支保护和真实评审团队协作治理。
+- mTLS、网络层出口策略、短期目标系统凭据、Windows 隔离部署方案和生产演练。
+- 开发 HMAC/JWT 固定测试密钥迁移为运行时生成或安全注入。
+- 更多生产级 Worker 适配器、受控第三方 HTTP 源和 Skill 发布流水线。
 
 ## 2026-06-24 天气查询 Skill 注册补充证据
 
@@ -85,7 +92,7 @@
 - `frontend/operator-console` 执行 `npm audit --audit-level=high` 通过，结果为 `found 0 vulnerabilities`。
 - 仓库级 `tools/ci/check-repository.ps1`、`tools/ci/check-contracts.ps1` 和 `tools/ci/scan-secrets.ps1` 均通过。
 
-本轮本地自动化门禁已满足 P1 只读诊断 MVP 的提交验收条件。正式里程碑验收仍需结合远程 CI、分支保护、评审签署，以及“已知风险”中列出的生产加固项逐项确认。
+本轮本地自动化门禁已满足 P1 只读诊断 MVP 的提交验收条件。2026-07-01 里程碑验收已接受该证据集；远程 CI、分支保护、评审签署和生产加固项转入 P2/P3 后续治理。
 
 ## 2026-06-23 T010 审计保留与恢复补充证据
 
@@ -106,7 +113,7 @@
 
 ## 2026-06-23 M07 Worker SQL 出口 allowlist 补充证据
 
-- Worker 新增 SQL 连接目录和 host/port allowlist 校验，默认空 allowlist 拒绝所有 SQL 目标。
+- Worker 新增 SQL 连接目录和 host/port allowlist 校验；部署安全基线为空连接目录和空 allowlist，仓库内置 `h2-local-test` 仅用于本地 H2 smoke。
 - SQL 连接目录只接受 `development` 和 `test` 环境，P1 生产 SQL 连接会在 Worker 边界被拒绝。
 - 数据源解析前会先执行 Worker 本地出口策略；未知连接、禁用连接、环境不匹配和 host/port 不在 allowlist 时不会继续解析真实 `DataSource`。
 - 出口策略拒绝会映射为 SQL 执行结果 `REJECTED`，并保留稳定错误码，避免误报为普通执行失败。
@@ -117,9 +124,9 @@
 ## 2026-06-24 M07 Worker HTTP 出口与配置型 Skill 补充证据
 
 - Worker 新增 HTTP 出口 `scheme + host + port` allowlist，默认空 allowlist 拒绝所有 HTTP 目标。
-- Worker 新增 `ConfiguredHttpReadOnlySkillAdapter`，简单 HTTP/JSON 只读 Skill 通过配置声明 Skill ID、版本、基础 URL、输入参数名、query 参数名、响应字段白名单、source 和 timeout。
+- Worker 新增 `ConfiguredHttpReadOnlySkillAdapter`，简单 HTTP/JSON 只读 Skill 通过配置声明 Skill ID、版本、基础 URL、输入参数名、query 参数名、响应字段白名单、可选 source 和 timeout。
 - `weather-current-read:1.0.0` 已通过配置型适配器接入 Worker；默认天气源端点为空，因此未配置受控天气源时返回 `HTTP_SKILL_SOURCE_NOT_CONFIGURED`，不会访问外部网络。
-- 配置型适配器会对 query 参数进行安全编码，只透传响应字段白名单，并补充 `source` 与 `generatedAt`。
+- 配置型适配器会对 query 参数进行安全编码，只透传响应字段白名单，并补充 `generatedAt`；`source` 是可选非敏感标识，未配置时不输出该字段。
 - 新增自动化测试覆盖 `WorkerHttpEgressPolicyTest`、`WorkerHttpEgressPropertiesTest`、`ConfiguredHttpReadOnlySkillAdapterTest` 和 `ExecutionWorkerConfigurationTest` 中的配置型 HTTP Skill 场景。
 
 本补充是应用层出口保护，不宣称替代防火墙、私有网络、mTLS、短期目标系统凭据、内部受控网关、Windows 隔离或网络层出口策略。

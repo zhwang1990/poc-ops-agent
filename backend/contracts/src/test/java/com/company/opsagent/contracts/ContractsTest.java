@@ -1,11 +1,14 @@
 package com.company.opsagent.contracts;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.company.opsagent.contracts.agent.AgentTaskResult;
 import com.company.opsagent.contracts.agent.AgentToolResult;
+import com.company.opsagent.contracts.events.AgentRuntimeProgressPayload;
+import com.company.opsagent.contracts.events.AgentRuntimeProgressPayloadKind;
 import com.company.opsagent.contracts.events.AgentToolCallCompletedPayload;
 import com.company.opsagent.contracts.events.AgentToolCallRejectedPayload;
 import com.company.opsagent.contracts.events.AgentToolCallRequestedPayload;
@@ -33,6 +36,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.StreamSupport;
 import org.junit.jupiter.api.Test;
 
@@ -132,6 +136,44 @@ class ContractsTest {
     assertTrue(typeEnum.contains("AGENT_TOOL_CALL_REQUESTED"));
     assertTrue(typeEnum.contains("AGENT_TOOL_CALL_COMPLETED"));
     assertTrue(typeEnum.contains("AGENT_TOOL_CALL_REJECTED"));
+  }
+
+  @Test
+  void acceptsAgentRuntimeProgressSemanticEventWithoutSdkEventNames() throws Exception {
+    OffsetDateTime now = OffsetDateTime.now();
+    new SemanticEvent(
+        "1.0",
+        "55555555-5555-4555-8555-555555555555",
+        "11111111-1111-4111-8111-111111111111",
+        10_001,
+        now,
+        SemanticEventType.AGENT_RUNTIME_PROGRESS,
+        new AgentRuntimeProgressPayload(
+            SemanticEventType.AGENT_RUNTIME_PROGRESS,
+            AgentRuntimeProgressPayloadKind.MODEL_CALL_COMPLETED,
+            "model call completed",
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            12,
+            5,
+            17,
+            0.42,
+            false));
+
+    JsonNode schema = new ObjectMapper()
+        .readTree(Path.of("events/semantic-event-v1.schema.json").toFile());
+    List<String> typeEnum = StreamSupport.stream(
+            schema.path("properties").path("type").path("enum").spliterator(),
+            false)
+        .map(JsonNode::asText)
+        .toList();
+    assertTrue(typeEnum.contains("AGENT_RUNTIME_PROGRESS"));
+    assertNoSchemaPropertyNamed(schema, Set.of("sourceEventType", "delta", "thinking"));
   }
 
   @Test
@@ -272,6 +314,92 @@ class ContractsTest {
     assertTrue(!responseSchema.path("properties").has("apiKey"));
     assertTrue(!responseSchema.path("properties").has("providerResponseBody"));
     assertTrue(!responseSchema.path("properties").has("rows"));
+  }
+
+  @Test
+  void releaseCommandSchemaRejectsProductionEnvironment() throws Exception {
+    JsonNode schema = new ObjectMapper()
+        .readTree(Path.of("release/release-command-v1.schema.json").toFile());
+
+    List<String> targetEnvironments = enumValues(schema, "targetEnvironment");
+
+    assertEquals(List.of("dev", "sit", "uat"), targetEnvironments);
+    assertFalse(targetEnvironments.contains("prod"));
+    assertFalse(targetEnvironments.contains("production"));
+  }
+
+  @Test
+  void releaseCommandSchemaOnlyAllowsWarArtifacts() throws Exception {
+    JsonNode schema = new ObjectMapper()
+        .readTree(Path.of("release/release-command-v1.schema.json").toFile());
+
+    JsonNode artifactType = schema.path("properties")
+        .path("artifact")
+        .path("properties")
+        .path("type");
+
+    assertEquals("WAR", artifactType.path("const").asText());
+    assertFalse(artifactType.has("enum"));
+  }
+
+  @Test
+  void releaseCommandSchemaAllowsArtifactlessLibertyScriptProfiles() throws Exception {
+    JsonNode schema = new ObjectMapper()
+        .readTree(Path.of("release/release-command-v1.schema.json").toFile());
+
+    List<String> required = StreamSupport.stream(schema.path("required").spliterator(), false)
+        .map(JsonNode::asText)
+        .toList();
+    assertFalse(required.contains("artifact"));
+
+    List<String> artifactTypes = StreamSupport.stream(
+            schema.path("properties").path("artifact").path("type").spliterator(),
+            false)
+        .map(JsonNode::asText)
+        .toList();
+    assertTrue(artifactTypes.containsAll(List.of("object", "null")));
+
+    JsonNode nodeProperties = schema.path("properties").path("nodes").path("items").path("properties");
+    List<String> managementModes = StreamSupport.stream(
+            nodeProperties.path("managementMode").path("enum").spliterator(),
+            false)
+        .map(JsonNode::asText)
+        .toList();
+    assertTrue(managementModes.contains("LIBERTY_SCRIPT_PROFILE"));
+    assertTrue(nodeProperties.has("scriptProfile"));
+  }
+
+  @Test
+  void releaseEventsSchemaRejectsCredentialPayloadFields() throws Exception {
+    JsonNode schema = new ObjectMapper()
+        .readTree(Path.of("release/release-events-v1.schema.json").toFile());
+
+    assertNoSchemaPropertyNamed(schema, Set.of("credential", "credentials", "secret", "password"));
+    assertTrue(enumValues(schema, "type").containsAll(List.of(
+        "RELEASE_CREATED",
+        "RELEASE_CONFIRMED",
+        "RELEASE_NODE_STARTED",
+        "RELEASE_NODE_COMPLETED",
+        "RELEASE_NODE_FAILED",
+        "RELEASE_PARTIAL_FAILED",
+        "RELEASE_ROLLBACK_STARTED",
+        "RELEASE_ROLLBACK_FAILED",
+        "RELEASE_MANUAL_INTERVENTION_REQUIRED")));
+  }
+
+  @Test
+  void releaseEventsSchemaRequiresAuditContext() throws Exception {
+    JsonNode schema = new ObjectMapper()
+        .readTree(Path.of("release/release-events-v1.schema.json").toFile());
+
+    List<String> required = StreamSupport.stream(schema.path("required").spliterator(), false)
+        .map(JsonNode::asText)
+        .toList();
+    assertTrue(required.contains("audit"));
+    JsonNode audit = schema.path("properties").path("audit");
+    for (String fieldName : List.of("action", "resource", "policyVersion", "result", "reason", "traceId", "requestId")) {
+      assertTrue(audit.path("properties").has(fieldName), "missing audit field: " + fieldName);
+    }
   }
 
   @Test
@@ -444,5 +572,21 @@ class ContractsTest {
         credentialAlias,
         500,
         30);
+  }
+
+  private List<String> enumValues(JsonNode schema, String propertyName) {
+    return StreamSupport.stream(
+            schema.path("properties").path(propertyName).path("enum").spliterator(),
+            false)
+        .map(JsonNode::asText)
+        .toList();
+  }
+
+  private void assertNoSchemaPropertyNamed(JsonNode node, Set<String> forbiddenNames) {
+    if (node.has("properties")) {
+      node.path("properties").fieldNames().forEachRemaining(fieldName ->
+          assertFalse(forbiddenNames.contains(fieldName), "forbidden schema property: " + fieldName));
+    }
+    node.elements().forEachRemaining(child -> assertNoSchemaPropertyNamed(child, forbiddenNames));
   }
 }

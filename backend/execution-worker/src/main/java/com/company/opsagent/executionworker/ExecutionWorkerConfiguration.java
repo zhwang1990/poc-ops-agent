@@ -1,11 +1,18 @@
 package com.company.opsagent.executionworker;
 
+import com.company.opsagent.executionworker.release.ReleaseAdapter;
+import com.company.opsagent.executionworker.release.ReleaseAdapterRegistry;
+import com.company.opsagent.executionworker.release.ReleaseWorkerProperties;
+import com.company.opsagent.executionworker.release.TomcatWarUploadReleaseAdapter;
+import com.company.opsagent.executionworker.release.LibertyScriptProfileReleaseAdapter;
+import com.company.opsagent.executionworker.release.LibertyHttpsReleaseAdapter;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.net.http.HttpClient;
 import java.time.Clock;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -17,7 +24,8 @@ import org.springframework.context.annotation.Configuration;
 @EnableConfigurationProperties({
     WorkerTransportAuthProperties.class,
     WorkerHttpEgressProperties.class,
-    ConfiguredHttpReadOnlySkillProperties.class
+    ConfiguredHttpReadOnlySkillProperties.class,
+    ReleaseWorkerProperties.class
 })
 public class ExecutionWorkerConfiguration {
 
@@ -83,6 +91,50 @@ public class ExecutionWorkerConfiguration {
       WorkerTransportAuthProperties properties,
       Clock workerClock) {
     return new WorkerTransportAuthenticator(properties, workerClock);
+  }
+
+  @Bean
+  ReleaseAdapterRegistry releaseAdapterRegistry(List<ReleaseAdapter> adapters) {
+    return new ReleaseAdapterRegistry(adapters);
+  }
+
+  @Bean
+  TomcatWarUploadReleaseAdapter tomcatWarUploadReleaseAdapter(
+      ReleaseWorkerProperties properties,
+      WorkerHttpEgressPolicy workerHttpEgressPolicy,
+      Clock workerClock) {
+    return new TomcatWarUploadReleaseAdapter(
+        properties.getTomcat().getArtifactStoragePath(),
+        properties.getTomcat().getCredentials(),
+        HttpClient.newHttpClient(),
+        workerHttpEgressPolicy,
+        workerClock);
+  }
+
+  @Bean
+  LibertyScriptProfileReleaseAdapter libertyScriptProfileReleaseAdapter(
+      ReleaseWorkerProperties properties,
+      Clock workerClock) {
+    return new LibertyScriptProfileReleaseAdapter(
+        properties.getLiberty().getArtifactStoragePath(),
+        properties.getLiberty().getScriptProfiles(),
+        workerClock);
+  }
+
+  @Bean
+  @ConditionalOnProperty(prefix = "ops-agent.worker.release.liberty", name = "enabled", havingValue = "true")
+  LibertyHttpsReleaseAdapter libertyHttpsReleaseAdapter(
+      ReleaseWorkerProperties properties,
+      WorkerHttpEgressPolicy workerHttpEgressPolicy,
+      Clock workerClock,
+      ObjectMapper objectMapper) {
+    return new LibertyHttpsReleaseAdapter(
+        properties.getLiberty().getBaseUrl(),
+        properties.getLiberty().getCredentialAlias(),
+        HttpClient.newHttpClient(),
+        objectMapper,
+        workerHttpEgressPolicy,
+        workerClock);
   }
 
   /**

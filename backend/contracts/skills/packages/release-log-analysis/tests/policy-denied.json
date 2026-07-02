@@ -1,0 +1,25 @@
+{
+  "caseId": "release-log-analysis-read-policy-denied",
+  "skillId": "release-log-analysis-read",
+  "version": "1.0.0",
+  "description": "未授权角色不能读取发布日志分析。",
+  "operator": {
+    "subject": "guest-1",
+    "roles": [
+      "ROLE_guest"
+    ]
+  },
+  "targetEnvironment": "dev",
+  "input": {
+    "releaseId": "rel-1003",
+    "nodeId": "node-1",
+    "targetEnvironment": "dev",
+    "sanitizedLogExcerpt": "deployment completed",
+    "deterministicStatus": "SUCCEEDED",
+    "idempotencyKey": "rel-1003-node-1-log-analysis"
+  },
+  "expected": {
+    "decision": "DENY",
+    "status": "POLICY_DENIED"
+  }
+}

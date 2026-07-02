@@ -1,3 +1,6 @@
+server:
+  port: 8080
+
 spring:
   application:
     name: control-plane
@@ -114,6 +117,23 @@ ops-agent:
       internal.model-providers.test:
         - ROLE_ops-admin
       internal.model-providers.switch:
+        - ROLE_ops-admin
+      release.catalog.read:
+        - ROLE_ops-reader
+        - ROLE_ops-admin
+      release.catalog.write:
+        - ROLE_ops-admin
+      release.credential.rotate:
+        - ROLE_ops-admin
+      release.connection.test:
+        - ROLE_ops-admin
+      release.plan.create:
+        - ROLE_ops-admin
+      release.plan.confirm:
+        - ROLE_ops-admin
+      release.plan.execute:
+        - ROLE_ops-admin
+      release.rollback.execute:
         - ROLE_ops-admin
   worker:
     base-url: http://127.0.0.1:8091

@@ -1,6 +1,7 @@
 package com.company.opsagent.executionworker;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.company.opsagent.contracts.workflow.OperatorContext;
@@ -79,6 +80,42 @@ class ConfiguredHttpReadOnlySkillAdapterTest {
   }
 
   @Test
+  void executesConfiguredWeatherReadWhenOptionalSourceIsOmitted() throws Exception {
+    HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+    server.createContext("/current", exchange -> {
+      byte[] body = """
+          {
+            "location": "Shanghai",
+            "condition": "Cloudy",
+            "temperatureCelsius": 29.2,
+            "humidityPercent": 71,
+            "windSpeedKph": 9.8,
+            "observationTime": "2026-06-24T14:30:00+08:00"
+          }
+          """.getBytes(StandardCharsets.UTF_8);
+      exchange.getResponseHeaders().add("Content-Type", "application/json");
+      exchange.sendResponseHeaders(200, body.length);
+      exchange.getResponseBody().write(body);
+      exchange.close();
+    });
+    server.start();
+    try {
+      int port = server.getAddress().getPort();
+      ConfiguredHttpReadOnlySkillAdapter adapter = adapter(
+          skillWithoutSource("http://127.0.0.1:" + port + "/current"),
+          List.of(new WorkerHttpEgressTarget("http", "127.0.0.1", port)));
+
+      var output = adapter.execute(command("Shanghai"));
+
+      assertEquals("Shanghai", output.get("location").asText());
+      assertNull(output.get("source"));
+      assertEquals("2026-06-24T04:00:00Z", output.get("generatedAt").asText());
+    } finally {
+      server.stop(0);
+    }
+  }
+
+  @Test
   void rejectsConfiguredSkillWhenHttpEgressTargetIsNotAllowed() {
     ConfiguredHttpReadOnlySkillAdapter adapter = adapter(skill("https://weather.internal/current"), List.of());
     RestrictedReadOnlyExecutionWorker worker = new RestrictedReadOnlyExecutionWorker(List.of(adapter), clock);
@@ -135,6 +172,24 @@ class ConfiguredHttpReadOnlySkillAdapterTest {
     skill.setInputParameterName("location");
     skill.setQueryParameterName("location");
     skill.setSource("weather-read-model");
+    skill.setTimeout(Duration.ofSeconds(2));
+    skill.setAllowedResponseFields(List.of(
+        "location",
+        "condition",
+        "temperatureCelsius",
+        "humidityPercent",
+        "windSpeedKph",
+        "observationTime"));
+    return skill;
+  }
+
+  private ConfiguredHttpReadOnlySkillProperties.Skill skillWithoutSource(String endpointUrl) {
+    ConfiguredHttpReadOnlySkillProperties.Skill skill = new ConfiguredHttpReadOnlySkillProperties.Skill();
+    skill.setSkillId("weather-current-read");
+    skill.setVersion("1.0.0");
+    skill.setEndpointUrl(endpointUrl);
+    skill.setInputParameterName("location");
+    skill.setQueryParameterName("location");
     skill.setTimeout(Duration.ofSeconds(2));
     skill.setAllowedResponseFields(List.of(
         "location",

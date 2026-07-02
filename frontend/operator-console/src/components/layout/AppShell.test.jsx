@@ -142,4 +142,9 @@ describe("AppShell styles", () => {
     expect(appShellCss).not.toContain("sidebarPreviewMenuRail");
     expect(appShellCss).not.toContain("sidebar-menu-sync");
   });
+
+  it("uses the short release center menu label", () => {
+    expect(appShellSource).toContain('label: "发布中心"');
+    expect(appShellSource).not.toContain("应用发布与运行控制");
+  });
 });

@@ -1,6 +1,7 @@
 package com.company.opsagent.controlplane.bootstrap.config;
 
 import com.company.opsagent.controlplane.modules.agentruntime.AgentRuntimeService;
+import com.company.opsagent.controlplane.modules.agentruntime.AgentRuntimeProgressSink;
 import com.company.opsagent.controlplane.modules.agentruntime.AgentToolCatalogProvider;
 import com.company.opsagent.controlplane.modules.agentruntime.AgentToolDescriptor;
 import com.company.opsagent.controlplane.modules.agentruntime.AgentToolExecutor;
@@ -63,7 +64,8 @@ public class AgentRuntimeConfiguration {
   AgentscopeAgentClient agentscopeAgentClient(
       AgentRuntimeProperties properties,
       ModelProviderStore modelProviderStore,
-      ModelProviderSecretCodec modelProviderSecretCodec) {
+      ModelProviderSecretCodec modelProviderSecretCodec,
+      AgentRuntimeProgressSink progressSink) {
     if ("local-weather-smoke".equals(properties.getProvider())) {
       return new LocalWeatherSmokeAgentClient();
     }
@@ -71,10 +73,13 @@ public class AgentRuntimeConfiguration {
         modelProviderStore,
         modelProviderSecretCodec,
         AgentscopeReActAgentClientFactory::openAiCompatible,
-        legacyPropertiesClient(properties));
+        legacyPropertiesClient(properties, progressSink),
+        progressSink);
   }
 
-  private AgentscopeAgentClient legacyPropertiesClient(AgentRuntimeProperties properties) {
+  private AgentscopeAgentClient legacyPropertiesClient(
+      AgentRuntimeProperties properties,
+      AgentRuntimeProgressSink progressSink) {
     String apiKey = resolvedApiKey(properties);
     if (isBlank(properties.getModelName()) || isBlank(apiKey)) {
       return notConfiguredClient();
@@ -88,7 +93,8 @@ public class AgentRuntimeConfiguration {
         properties.getBaseUrl(),
         properties.getMaxIterations(),
         properties.getMaxToolCalls(),
-        properties.getTimeout());
+        properties.getTimeout(),
+        progressSink);
   }
 
   @Bean

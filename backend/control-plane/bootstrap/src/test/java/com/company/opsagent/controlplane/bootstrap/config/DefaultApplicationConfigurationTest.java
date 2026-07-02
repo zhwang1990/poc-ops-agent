@@ -15,6 +15,7 @@ class DefaultApplicationConfigurationTest {
   void defaultApplicationConfigurationUsesBuiltInBrowserIdentity() throws IOException {
     PropertySource<?> application = loadApplicationYaml();
 
+    assertEquals(8080, application.getProperty("server.port"));
     assertEquals("built-in", application.getProperty("ops-agent.security.auth-mode"));
     assertEquals(true, application.getProperty("ops-agent.security.browser-login-enabled"));
     assertEquals(false, application.getProperty("ops-agent.local-oidc-provider.enabled"));

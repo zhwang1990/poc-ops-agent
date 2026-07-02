@@ -1,0 +1,70 @@
+schemaVersion: ops-agent.skill/v1
+skillId: release-log-analysis-read
+version: 1.0.0
+displayName: "发布日志只读分析"
+description: "基于脱敏的非生产发布日志片段生成诊断摘要和人工复核建议，不判定最终成功失败。"
+category: APPLICATION_DIAGNOSTICS
+riskLevel: READ_ONLY
+readOnly: true
+executor: WORKFLOW
+outputType: JSON
+owner: release-platform
+timeoutSeconds: 30
+publishedAt: "2026-07-01T12:00:00+08:00"
+requiredRoles:
+  - ROLE_ops-reader
+  - ROLE_ops-release
+  - ROLE_ops-admin
+interceptors:
+  - AUTHORIZATION
+  - AUDIT
+  - SENSITIVE_DATA_MASKING
+  - RATE_LIMIT
+tags:
+  - release
+  - log
+  - analysis
+  - advisory
+parameters:
+  - name: releaseId
+    displayName: "发布单标识"
+    description: "需要分析日志的发布单标识。"
+    type: STRING
+    required: true
+    allowedValues: []
+    defaultValue: null
+  - name: nodeId
+    displayName: "节点标识"
+    description: "需要分析日志的发布节点标识。"
+    type: STRING
+    required: true
+    allowedValues: []
+    defaultValue: null
+  - name: targetEnvironment
+    displayName: "目标环境"
+    description: "发布中心允许分析的非生产目标环境。"
+    type: ENUM
+    required: true
+    allowedValues: [dev, sit, uat]
+    defaultValue: null
+  - name: sanitizedLogExcerpt
+    displayName: "脱敏日志片段"
+    description: "平台脱敏后的发布日志片段。"
+    type: STRING
+    required: true
+    allowedValues: []
+    defaultValue: null
+  - name: deterministicStatus
+    displayName: "确定性状态"
+    description: "发布工作流已经判定的确定性节点或发布状态。"
+    type: ENUM
+    required: true
+    allowedValues: [SUCCEEDED, FAILED, PARTIAL_FAILED, MANUAL_INTERVENTION, UNKNOWN]
+    defaultValue: null
+  - name: idempotencyKey
+    displayName: "幂等键"
+    description: "本次只读日志分析请求的幂等键。"
+    type: STRING
+    required: true
+    allowedValues: []
+    defaultValue: null

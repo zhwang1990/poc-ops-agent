@@ -1,0 +1,137 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://company.example/ops-agent/skills/release-log-analysis-read/1.0.0/output.schema.json",
+  "title": "release-log-analysis-read 输出",
+  "description": "发布日志只读分析的结构化诊断建议。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contractVersion",
+    "status",
+    "releaseId",
+    "nodeId",
+    "deterministicStatus",
+    "summary",
+    "findings",
+    "recommendedNextActions",
+    "finalStatusAuthority",
+    "doesNotOverrideDeterministicStatus"
+  ],
+  "properties": {
+    "contractVersion": {
+      "const": "1.0"
+    },
+    "status": {
+      "enum": [
+        "SUCCEEDED",
+        "MODEL_NOT_CONFIGURED",
+        "FAILED",
+        "REJECTED"
+      ]
+    },
+    "releaseId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "nodeId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "deterministicStatus": {
+      "enum": [
+        "SUCCEEDED",
+        "FAILED",
+        "PARTIAL_FAILED",
+        "MANUAL_INTERVENTION",
+        "UNKNOWN"
+      ]
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 3000
+    },
+    "findings": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "severity",
+          "title",
+          "evidence"
+        ],
+        "properties": {
+          "severity": {
+            "enum": [
+              "info",
+              "warning",
+              "error"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "evidence": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          }
+        }
+      }
+    },
+    "recommendedNextActions": {
+      "type": "array",
+      "maxItems": 5,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 600
+      }
+    },
+    "sanitizationNotes": {
+      "type": "array",
+      "maxItems": 5,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 500
+      }
+    },
+    "finalStatusAuthority": {
+      "const": "DETERMINISTIC_RELEASE_WORKFLOW"
+    },
+    "doesNotOverrideDeterministicStatus": {
+      "const": true
+    },
+    "modelProviderFingerprint": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    }
+  },
+  "not": {
+    "anyOf": [
+      {
+        "required": [
+          "credential"
+        ]
+      },
+      {
+        "required": [
+          "secret"
+        ]
+      },
+      {
+        "required": [
+          "password"
+        ]
+      }
+    ]
+  }
+}

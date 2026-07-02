@@ -2,7 +2,7 @@
 
 ## 目的
 
-本文记录 AgentScope Java 作为 M04 主 Agent Runtime 的 P1 评测清单。评测目标不是证明模型“聪明”，而是证明模型驱动的诊断链路不会绕过身份、策略、契约、工作流、审计和 Worker 隔离。
+本文记录 AgentScope Java 作为 M04 主 Agent Runtime 的 P1 评测清单。评测目标不是证明模型“聪明”，而是证明模型驱动的诊断链路不会绕过身份、策略、契约、工作流、审计和 Worker 隔离。P1 已于 2026-07-01 完成验收；本清单继续作为 P2 受控变更试点的 Agent 诊断回归基线。
 
 ## 当前自动化覆盖
 
@@ -60,7 +60,7 @@ cd backend
 
 ## 发布门槛
 
-- AgentScope Java 是 P1 只读诊断目标主链路；目标环境启用前必须完成模型供应方、API Key 注入、只读 Tool Catalog、M05/M07 Tool 执行闭环和回退开关验证。
+- AgentScope Java 是 P1 已验收的只读诊断目标主链路；P2 环境启用前仍必须验证模型供应方、API Key 注入、只读 Tool Catalog、M05/M07 Tool 执行闭环和回退开关。
 - 未配置或未启用的环境必须失败关闭，不得静默改走未审计路径。
 - AgentScope 直接依赖只能出现在 `control-plane-agentruntime` 模块。
 - 不得引入未审查的 MCP 传递依赖。

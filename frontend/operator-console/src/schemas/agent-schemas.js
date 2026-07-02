@@ -173,6 +173,27 @@ export const skillRoutingResponseSchema = z
     path: ["total"],
   });
 
+const agentRuntimeProgressKindValues = [
+  "AGENT_STARTED",
+  "AGENT_ENDED",
+  "AGENT_RESULT_READY",
+  "MODEL_CALL_STARTED",
+  "MODEL_CALL_COMPLETED",
+  "TEXT_DELTA_AVAILABLE",
+  "TOOL_CALL_STARTED",
+  "TOOL_CALL_DELTA_AVAILABLE",
+  "TOOL_CALL_COMPLETED",
+  "TOOL_RESULT_STARTED",
+  "TOOL_RESULT_DELTA_AVAILABLE",
+  "TOOL_RESULT_COMPLETED",
+  "SUBAGENT_EXPOSED",
+  "ITERATION_LIMIT_EXCEEDED",
+  "USER_CONFIRMATION_REQUIRED",
+  "EXTERNAL_EXECUTION_REQUIRED",
+  "CUSTOM",
+  "UNKNOWN",
+];
+
 const semanticPayloadSchema = z.discriminatedUnion("payloadType", [
   z
     .object({
@@ -231,6 +252,25 @@ const semanticPayloadSchema = z.discriminatedUnion("payloadType", [
     .strict(),
   z
     .object({
+      payloadType: z.literal("AGENT_RUNTIME_PROGRESS"),
+      progressKind: z.enum(agentRuntimeProgressKindValues),
+      message: nonBlankString,
+      replyId: nonBlankString.nullable(),
+      blockId: nonBlankString.nullable(),
+      toolCallId: nonBlankString.nullable(),
+      toolName: nonBlankString.nullable(),
+      agentId: nonBlankString.nullable(),
+      sessionId: nonBlankString.nullable(),
+      subagentId: nonBlankString.nullable(),
+      inputTokens: z.number().int().nonnegative(),
+      outputTokens: z.number().int().nonnegative(),
+      totalTokens: z.number().int().nonnegative(),
+      modelTimeSeconds: z.number().nonnegative(),
+      sensitiveContentSuppressed: z.boolean(),
+    })
+    .strict(),
+  z
+    .object({
       payloadType: z.literal("WORKFLOW_COMPLETED"),
       outputSchemaId: nonBlankString,
       output: z.record(z.string(), z.unknown()),
@@ -259,6 +299,7 @@ export const semanticEventSchema = z
       "AGENT_TOOL_CALL_REQUESTED",
       "AGENT_TOOL_CALL_COMPLETED",
       "AGENT_TOOL_CALL_REJECTED",
+      "AGENT_RUNTIME_PROGRESS",
       "WORKFLOW_COMPLETED",
       "WORKFLOW_FAILED",
     ]),

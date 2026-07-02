@@ -2,6 +2,7 @@ package com.company.opsagent.controlplane.bootstrap.config;
 
 import com.company.opsagent.controlplane.bootstrap.service.WebClientWorkerGateway;
 import com.company.opsagent.controlplane.modules.agentruntime.AgentRuntimeService;
+import com.company.opsagent.controlplane.modules.agentruntime.AgentRuntimeProgressSink;
 import com.company.opsagent.controlplane.modules.agentruntime.AgentToolCatalogProvider;
 import com.company.opsagent.controlplane.modules.agentruntime.AgentToolExecutor;
 import com.company.opsagent.controlplane.modules.audit.AuditTrail;
@@ -17,6 +18,7 @@ import com.company.opsagent.controlplane.modules.workflow.R2dbcReadOnlyWorkflowS
 import com.company.opsagent.controlplane.modules.workflow.RetryableFailureClassifier;
 import com.company.opsagent.controlplane.modules.workflow.WorkerGateway;
 import com.company.opsagent.controlplane.modules.workflow.WorkflowBackedAgentToolExecutor;
+import com.company.opsagent.controlplane.modules.workflow.WorkflowAgentRuntimeProgressSink;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Clock;
 import org.springframework.boot.ApplicationRunner;
@@ -56,6 +58,11 @@ public class WorkflowConfiguration {
   @Bean
   AgentWorkflowStore agentWorkflowStore(DatabaseClient databaseClient) {
     return new R2dbcAgentWorkflowStore(databaseClient);
+  }
+
+  @Bean
+  AgentRuntimeProgressSink agentRuntimeProgressSink(ReadOnlyWorkflowStore readOnlyWorkflowStore) {
+    return new WorkflowAgentRuntimeProgressSink(readOnlyWorkflowStore, Clock.systemUTC());
   }
 
   /**

@@ -17,6 +17,11 @@ import {
 import { ApiError, SESSION_EXPIRED_EVENT, requestJson } from "./client.js";
 import { getSkill, listSkills } from "./skill-api.js";
 import { listSqlConnections, validateSqlQuery } from "./sql-api.js";
+import {
+  listReleaseApplications,
+  rotateReleaseCredential,
+  uploadTomcatWar,
+} from "./release-center-api.js";
 import { server } from "../test/server.js";
 
 describe("requestJson", () => {
@@ -278,6 +283,66 @@ describe("feature API modules", () => {
     ]);
   });
 
+  test("maps release center configuration endpoints to control-plane paths", async () => {
+    /** @type {Array<[string, string, unknown?]>} */
+    const calls = [];
+    server.use(
+      http.get("/internal/release-center/applications", ({ request }) => {
+        calls.push([request.method, new URL(request.url).pathname]);
+        return HttpResponse.json([releaseApplication]);
+      }),
+      http.post("/internal/release-center/credentials", async ({ request }) => {
+        calls.push([request.method, new URL(request.url).pathname, await request.json()]);
+        return HttpResponse.json(releaseCredentialSummary);
+      }),
+    );
+
+    await listReleaseApplications();
+    await rotateReleaseCredential({
+      credentialAlias: "tomcat-dev",
+      serverType: "TOMCAT",
+      secret: "secret-value",
+    });
+
+    expect(calls).toEqual([
+      ["GET", "/internal/release-center/applications"],
+      [
+        "POST",
+        "/internal/release-center/credentials",
+        { credentialAlias: "tomcat-dev", serverType: "TOMCAT", secret: "secret-value" },
+      ],
+    ]);
+  });
+
+  test("uploads Tomcat WAR artifacts as multipart form data", async () => {
+    const fetchMock = vi.fn().mockImplementation(async (url, options) => {
+      const body = /** @type {FormData} */ (options.body);
+      const file = /** @type {File} */ (body.get("file"));
+      expect(url).toBe("/internal/release-center/artifacts/tomcat-war");
+      expect(options.method).toBe("POST");
+      expect(body).toBeInstanceOf(FormData);
+      expect(body.get("applicationId")).toBe("orders");
+      expect(body.get("targetEnvironment")).toBe("dev");
+      expect(file.name).toBe("orders.war");
+      return new Response(JSON.stringify(releaseArtifact), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      uploadTomcatWar({
+        applicationId: "orders",
+        targetEnvironment: "dev",
+        file: new File(["war"], "orders.war", { type: "application/java-archive" }),
+      }),
+    ).resolves.toMatchObject({ artifactId: "artifact-1" });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
+  });
+
   test("surfaces a disabled AgentScope runtime response without client fallback", async () => {
     server.use(
       http.post("/api/v1/agent/diagnostics", () =>
@@ -488,6 +553,34 @@ const validationReport = {
   risks: [],
   rejectionReasons: [],
   unverifiedItems: [],
+};
+
+const releaseApplication = {
+  applicationId: "orders",
+  displayName: "订单服务",
+  artifactType: "WAR",
+  healthCheckPath: "/health",
+  enabled: true,
+};
+
+const releaseCredentialSummary = {
+  credentialAlias: "tomcat-dev",
+  fingerprint: "sha256:abc123",
+  updatedAt: "2026-07-01T00:00:00Z",
+};
+
+const releaseArtifact = {
+  artifactId: "artifact-1",
+  applicationId: "orders",
+  targetEnvironment: "dev",
+  artifactType: "WAR",
+  checksum: "sha256:abc123",
+  originalFilename: "orders.war",
+  storageKey: "artifact-1.war",
+  byteSize: 3,
+  uploadedBy: "alice",
+  sourceType: "TOMCAT_UPLOAD",
+  enabled: true,
 };
 
 const readOnlyDiagnosticRequest = {

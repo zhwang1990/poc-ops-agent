@@ -14,4 +14,8 @@ public final class EventsModule {
   public static String moduleId() {
     return "M09";
   }
+
+  public static String releaseEventContractId() {
+    return "release/release-events-v1.schema.json";
+  }
 }

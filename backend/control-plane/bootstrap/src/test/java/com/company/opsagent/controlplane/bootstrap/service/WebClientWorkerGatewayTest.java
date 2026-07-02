@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.web.reactive.function.client.ClientRequest;
 import org.springframework.web.reactive.function.client.ClientResponse;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -83,6 +84,21 @@ class WebClientWorkerGatewayTest {
     assertFalse(sent.headers().containsKey(WorkerTransportHeaders.KEY_ID));
     assertFalse(sent.headers().containsKey(WorkerTransportHeaders.TIMESTAMP));
     assertFalse(sent.headers().containsKey(WorkerTransportHeaders.SIGNATURE));
+  }
+
+  @Test
+  void sendsWorkerRequestAsJson() {
+    AtomicReference<ClientRequest> captured = new AtomicReference<>();
+    WebClientWorkerGateway gateway = new WebClientWorkerGateway(
+        webClient(captured),
+        workerProperties(false),
+        Clock.fixed(SIGNED_AT, ZoneOffset.UTC));
+
+    gateway.execute(request()).block();
+
+    ClientRequest sent = captured.get();
+    assertNotNull(sent);
+    assertEquals(MediaType.APPLICATION_JSON, sent.headers().getContentType());
   }
 
   private WebClient webClient(AtomicReference<ClientRequest> captured) {

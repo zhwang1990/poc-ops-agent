@@ -1,0 +1,25 @@
+{
+  "caseId": "release-log-analysis-read-invalid-parameters",
+  "skillId": "release-log-analysis-read",
+  "version": "1.0.0",
+  "description": "生产环境参数必须被拒绝。",
+  "operator": {
+    "subject": "ops-release-1",
+    "roles": [
+      "ROLE_ops-release"
+    ]
+  },
+  "targetEnvironment": "prod",
+  "input": {
+    "releaseId": "rel-1002",
+    "nodeId": "node-1",
+    "targetEnvironment": "prod",
+    "sanitizedLogExcerpt": "health check passed",
+    "deterministicStatus": "SUCCEEDED",
+    "idempotencyKey": "rel-1002-node-1-log-analysis"
+  },
+  "expected": {
+    "decision": "REJECT",
+    "status": "INVALID_PARAMETERS"
+  }
+}

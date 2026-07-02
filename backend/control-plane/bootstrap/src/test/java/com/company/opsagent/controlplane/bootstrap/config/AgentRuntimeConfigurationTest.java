@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 
 import com.company.opsagent.controlplane.modules.agentruntime.AgentRuntimeRequest;
+import com.company.opsagent.controlplane.modules.agentruntime.AgentRuntimeProgressSink;
 import com.company.opsagent.controlplane.modules.agentruntime.AesGcmModelProviderSecretCodec;
 import com.company.opsagent.controlplane.modules.agentruntime.AgentscopeAgentClient;
 import com.company.opsagent.controlplane.modules.agentruntime.AgentscopeAgentInvocation;
@@ -30,7 +31,8 @@ class AgentRuntimeConfigurationTest {
     AgentscopeAgentClient client = new AgentRuntimeConfiguration().agentscopeAgentClient(
         properties,
         new InMemoryModelProviderStore(),
-        new AesGcmModelProviderSecretCodec("0123456789abcdef0123456789abcdef"));
+        new AesGcmModelProviderSecretCodec("0123456789abcdef0123456789abcdef"),
+        AgentRuntimeProgressSink.noop());
 
     assertInstanceOf(LocalWeatherSmokeAgentClient.class, client);
   }
@@ -45,7 +47,8 @@ class AgentRuntimeConfigurationTest {
     AgentscopeAgentClient client = new AgentRuntimeConfiguration().agentscopeAgentClient(
         properties,
         new InMemoryModelProviderStore(),
-        new AesGcmModelProviderSecretCodec("0123456789abcdef0123456789abcdef"));
+        new AesGcmModelProviderSecretCodec("0123456789abcdef0123456789abcdef"),
+        AgentRuntimeProgressSink.noop());
 
     AgentscopeAgentResponse response = client.run(invocation()).block();
     assertEquals("AGENT_RUNTIME_FAKE_API_KEY", response.status());
@@ -61,7 +64,8 @@ class AgentRuntimeConfigurationTest {
     AgentscopeAgentClient client = new AgentRuntimeConfiguration().agentscopeAgentClient(
         properties,
         new InMemoryModelProviderStore(),
-        new AesGcmModelProviderSecretCodec("0123456789abcdef0123456789abcdef"));
+        new AesGcmModelProviderSecretCodec("0123456789abcdef0123456789abcdef"),
+        AgentRuntimeProgressSink.noop());
 
     assertInstanceOf(DynamicModelProviderAgentscopeAgentClient.class, client);
   }
