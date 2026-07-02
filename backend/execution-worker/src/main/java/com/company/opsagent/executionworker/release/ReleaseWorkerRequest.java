@@ -76,12 +76,9 @@ public record ReleaseWorkerRequest(
   public record ReleaseScriptProfileDefinition(
       String executablePath,
       List<String> arguments,
-      List<String> requiredParameters,
-      List<String> allowedParameters,
       List<Integer> successExitCodes,
       int timeoutSeconds,
       String workingDirectory,
-      List<String> targetEnvironments,
       boolean approved,
       boolean enabled) {
   }

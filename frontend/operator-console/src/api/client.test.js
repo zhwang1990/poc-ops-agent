@@ -22,6 +22,7 @@ import {
   listReleaseApplications,
   rotateReleaseCredential,
   saveReleaseScriptProfile,
+  streamReleasePlanEvents,
   uploadTomcatWar,
 } from "./release-center-api.js";
 import { server } from "../test/server.js";
@@ -294,8 +295,7 @@ describe("feature API modules", () => {
         return HttpResponse.json([releaseApplication]);
       }),
       http.get("/internal/release-center/script-profiles", ({ request }) => {
-        const url = new URL(request.url);
-        calls.push([request.method, url.pathname, Object.fromEntries(url.searchParams.entries())]);
+        calls.push([request.method, new URL(request.url).pathname]);
         return HttpResponse.json([releaseScriptProfile]);
       }),
       http.post("/internal/release-center/script-profiles", async ({ request }) => {
@@ -309,7 +309,7 @@ describe("feature API modules", () => {
     );
 
     await listReleaseApplications();
-    await listReleaseScriptProfiles("dev");
+    await listReleaseScriptProfiles();
     await saveReleaseScriptProfile(releaseScriptProfile);
     await rotateReleaseCredential({
       credentialAlias: "tomcat-dev",
@@ -319,7 +319,7 @@ describe("feature API modules", () => {
 
     expect(calls).toEqual([
       ["GET", "/internal/release-center/applications"],
-      ["GET", "/internal/release-center/script-profiles", { targetEnvironment: "dev" }],
+      ["GET", "/internal/release-center/script-profiles"],
       ["POST", "/internal/release-center/script-profiles", releaseScriptProfile],
       [
         "POST",
@@ -356,6 +356,39 @@ describe("feature API modules", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     vi.unstubAllGlobals();
+  });
+
+  test("streams release plan events and notifies parsed log events", async () => {
+    /** @type {Array<[string, string, string | null]>} */
+    const calls = [];
+    server.use(
+      http.get("/internal/release-center/plans/:releaseId/events", ({ request, params }) => {
+        const url = new URL(request.url);
+        calls.push([
+          request.method,
+          `${url.pathname}?afterSequence=${url.searchParams.get("afterSequence")}`,
+          request.headers.get("accept"),
+        ]);
+        expect(params.releaseId).toBe("rel-1");
+        return new HttpResponse(`data: ${JSON.stringify(releaseNodeLogEvent)}\n\n`, {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        });
+      }),
+    );
+    const onEvent = vi.fn();
+
+    const result = await streamReleasePlanEvents("rel-1", {
+      afterSequence: 2,
+      onEvent,
+    });
+
+    expect(calls).toEqual([
+      ["GET", "/internal/release-center/plans/rel-1/events?afterSequence=2", "text/event-stream"],
+    ]);
+    expect(onEvent).toHaveBeenCalledTimes(1);
+    expect(onEvent.mock.calls[0][0].type).toBe("RELEASE_NODE_LOG");
+    expect(result[0].payload.payloadType).toBe("RELEASE_NODE_LOG");
   });
 
   test("surfaces a disabled AgentScope runtime response without client fallback", async () => {
@@ -586,13 +619,10 @@ const releaseCredentialSummary = {
 
 const releaseScriptProfile = {
   profileId: "liberty-war-deploy",
-  targetEnvironment: "dev",
   displayName: "Liberty WAR deploy",
   executablePath: "C:\\ops\\scripts\\liberty-war-deploy.cmd",
   workingDirectory: "C:\\ops-agent\\work\\release",
   arguments: ["{{param.serverName}}", "{{param.applicationName}}", "{{param.artifactPath}}"],
-  requiredParameters: ["serverName", "applicationName", "artifactPath"],
-  allowedParameters: ["serverName", "applicationName", "artifactPath"],
   successExitCodes: [0],
   timeoutSeconds: 600,
   approved: true,
@@ -611,6 +641,32 @@ const releaseArtifact = {
   uploadedBy: "alice",
   sourceType: "TOMCAT_UPLOAD",
   enabled: true,
+};
+
+const releaseNodeLogEvent = {
+  contractVersion: "1.0",
+  eventId: "88888888-8888-4888-8888-888888888888",
+  workflowId: "99999999-9999-4999-8999-999999999999",
+  releaseId: "rel-1",
+  sequence: 3,
+  timestamp: "2026-07-02T00:00:00Z",
+  type: "RELEASE_NODE_LOG",
+  payload: {
+    payloadType: "RELEASE_NODE_LOG",
+    nodeId: "node-1",
+    stream: "STDOUT",
+    message: "deploy started",
+    emittedAt: "2026-07-02T00:00:00Z",
+  },
+  audit: {
+    action: "RELEASE_NODE_LOG",
+    resource: "release:rel-1",
+    policyVersion: "release-center-policy-v1",
+    result: "LOG",
+    reason: "release node script output",
+    traceId: "trace:rel-1",
+    requestId: "request:rel-1",
+  },
 };
 
 const readOnlyDiagnosticRequest = {

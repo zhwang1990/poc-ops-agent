@@ -374,16 +374,16 @@ class ContractsTest {
     for (String fieldName : List.of(
         "executablePath",
         "arguments",
-        "requiredParameters",
-        "allowedParameters",
         "successExitCodes",
         "timeoutSeconds",
         "workingDirectory",
-        "targetEnvironments",
         "approved",
         "enabled")) {
       assertTrue(definition.path("properties").has(fieldName), "missing script profile definition field: " + fieldName);
     }
+    assertFalse(definition.path("properties").has("requiredParameters"));
+    assertFalse(definition.path("properties").has("allowedParameters"));
+    assertFalse(definition.path("properties").has("targetEnvironments"));
   }
 
   @Test
@@ -396,6 +396,7 @@ class ContractsTest {
         "RELEASE_CREATED",
         "RELEASE_CONFIRMED",
         "RELEASE_NODE_STARTED",
+        "RELEASE_NODE_LOG",
         "RELEASE_NODE_COMPLETED",
         "RELEASE_NODE_FAILED",
         "RELEASE_PARTIAL_FAILED",

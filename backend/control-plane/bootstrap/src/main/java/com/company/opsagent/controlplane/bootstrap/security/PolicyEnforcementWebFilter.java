@@ -342,6 +342,10 @@ public class PolicyEnforcementWebFilter implements WebFilter {
       if (method == HttpMethod.GET && "/internal/release-center/plans".equals(path)) {
         return new ActionDescriptor("release.catalog.read", path);
       }
+      if (method == HttpMethod.GET && path.startsWith("/internal/release-center/plans/")
+          && path.endsWith("/events")) {
+        return new ActionDescriptor("release.catalog.read", path);
+      }
       if (method == HttpMethod.GET && "/internal/release-center/artifacts".equals(path)) {
         return new ActionDescriptor("release.catalog.read", path);
       }

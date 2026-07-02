@@ -11,6 +11,7 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
@@ -201,6 +202,54 @@ class ReleaseWorkflowServiceTest {
       assertFalse(event.toString().toLowerCase().contains("secret"));
       assertFalse(event.toString().toLowerCase().contains("password"));
     }
+  }
+
+  @Test
+  void publishesWorkerScriptLogEventsInReleaseSequence() {
+    InMemoryReleaseEventSink eventSink = new InMemoryReleaseEventSink();
+    ReleaseWorkflowService service = new ReleaseWorkflowService(new ReleaseWorkerGateway() {
+      @Override
+      public Mono<ReleaseNodeExecutionResult> execute(ReleasePlan plan, ReleaseNodeStep node) {
+        return Mono.just(ReleaseNodeExecutionResult.succeeded());
+      }
+
+      @Override
+      public Flux<ReleaseNodeExecutionEvent> executeWithEvents(ReleasePlan plan, ReleaseNodeStep node) {
+        return Flux.just(
+            ReleaseNodeExecutionEvent.log(node.nodeId(), "STDOUT", "deploy started", Instant.now(CLOCK)),
+            ReleaseNodeExecutionEvent.result(ReleaseNodeExecutionResult.succeeded()));
+      }
+    }, CLOCK, eventSink);
+    ReleaseEnvironmentPolicy policy = ReleaseEnvironmentPolicy.defaultFor(TargetEnvironment.DEV)
+        .requireConfirmation(false);
+    ReleasePlan plan = service.createPlan(
+        "rel-1",
+        "orders",
+        "dev",
+        "artifact-1",
+        List.of(server("node-1", "dev")),
+        policy,
+        "sha256:abc123")
+        .block();
+
+    service.execute(plan).block();
+
+    assertEquals(List.of(
+        ReleaseEventType.RELEASE_CREATED,
+        ReleaseEventType.RELEASE_NODE_STARTED,
+        ReleaseEventType.RELEASE_NODE_LOG,
+        ReleaseEventType.RELEASE_NODE_COMPLETED), eventSink.events().stream()
+            .map(ReleaseWorkflowEvent::type)
+            .toList());
+    ReleaseEventPayload.NodeLog payload = assertInstanceOf(
+        ReleaseEventPayload.NodeLog.class,
+        eventSink.events().get(2).payload());
+    assertEquals("node-1", payload.nodeId());
+    assertEquals("STDOUT", payload.stream());
+    assertEquals("deploy started", payload.message());
+    assertEquals(List.of(1L, 2L, 3L, 4L), eventSink.events().stream()
+        .map(ReleaseWorkflowEvent::sequence)
+        .toList());
   }
 
   private static ReleaseWorkflowService service(ReleaseWorkerGateway gateway) {

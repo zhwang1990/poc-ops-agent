@@ -99,17 +99,14 @@ class R2dbcReleaseCatalogStoreTest {
   }
 
   @Test
-  void storesScriptProfileDefinitionsByEnvironment() {
+  void storesGlobalScriptProfileDefinitions() {
     ReleaseCatalogStore store = store();
     ReleaseScriptProfileDefinition profile = ReleaseScriptProfileDefinition.create(
         "liberty-war-deploy",
-        "dev",
         "Liberty WAR deploy",
         "C:\\ops\\scripts\\liberty-war-deploy.cmd",
         "C:\\ops-agent\\work\\release",
         List.of("{{param.serverName}}", "{{param.applicationName}}", "{{param.artifactPath}}"),
-        List.of("serverName", "applicationName", "artifactPath"),
-        List.of("serverName", "applicationName", "artifactPath"),
         List.of(0),
         600,
         true,
@@ -118,18 +115,16 @@ class R2dbcReleaseCatalogStoreTest {
     store.saveScriptProfileDefinition(profile).block();
 
     ReleaseScriptProfileDefinition loaded = store
-        .findScriptProfileDefinition("dev", "liberty-war-deploy")
+        .findScriptProfileDefinition("liberty-war-deploy")
         .block();
     List<ReleaseScriptProfileDefinition> profiles = store
-        .listScriptProfileDefinitions("dev")
+        .listScriptProfileDefinitions()
         .collectList()
         .block();
 
     assertEquals("liberty-war-deploy", loaded.profileId());
-    assertEquals(TargetEnvironment.DEV, loaded.targetEnvironment());
     assertEquals("C:\\ops\\scripts\\liberty-war-deploy.cmd", loaded.executablePath());
     assertEquals("{{param.artifactPath}}", loaded.arguments().get(2));
-    assertEquals(List.of("serverName", "applicationName", "artifactPath"), loaded.allowedParameters());
     assertEquals(List.of(0), loaded.successExitCodes());
     assertEquals(600, loaded.timeoutSeconds());
     assertTrue(loaded.approved());

@@ -16,5 +16,10 @@ public final class LibertyScriptProbe {
     }
     Path output = Path.of(args[0]);
     Files.writeString(output, String.join("|", args), StandardCharsets.UTF_8);
+    if (args.length > 1 && "--stdout".equals(args[1])) {
+      System.out.println("deploy started");
+      System.out.println("token=abc123");
+      System.out.println("deploy completed");
+    }
   }
 }

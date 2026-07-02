@@ -15,6 +15,7 @@ import reactor.core.publisher.Mono;
 
 public class R2dbcReleaseCatalogStore implements ReleaseCatalogStore {
 
+  private static final String SCRIPT_PROFILE_COMPAT_ENVIRONMENT = "dev";
   private static final TypeReference<List<ReleaseScriptParameter>> SCRIPT_PARAMETERS_TYPE = new TypeReference<>() {
   };
   private static final TypeReference<List<String>> STRING_LIST_TYPE = new TypeReference<>() {
@@ -164,10 +165,8 @@ public class R2dbcReleaseCatalogStore implements ReleaseCatalogStore {
     OffsetDateTime now = now();
     return databaseClient.sql("""
             delete from release_script_profile_definition
-            where target_environment = :targetEnvironment
-              and profile_id = :profileId
+            where profile_id = :profileId
             """)
-        .bind("targetEnvironment", profile.targetEnvironment().value())
         .bind("profileId", profile.profileId())
         .fetch()
         .rowsUpdated()
@@ -205,13 +204,13 @@ public class R2dbcReleaseCatalogStore implements ReleaseCatalogStore {
                 )
                 """)
             .bind("profileId", profile.profileId())
-            .bind("targetEnvironment", profile.targetEnvironment().value())
+            .bind("targetEnvironment", SCRIPT_PROFILE_COMPAT_ENVIRONMENT)
             .bind("displayName", profile.displayName())
             .bind("executablePath", profile.executablePath())
             .bind("workingDirectory", profile.workingDirectory())
             .bind("argumentsJson", json(profile.arguments(), "script profile arguments"))
-            .bind("requiredParametersJson", json(profile.requiredParameters(), "script profile required parameters"))
-            .bind("allowedParametersJson", json(profile.allowedParameters(), "script profile allowed parameters"))
+            .bind("requiredParametersJson", json(List.of(), "script profile required parameters"))
+            .bind("allowedParametersJson", json(List.of(), "script profile allowed parameters"))
             .bind("successExitCodesJson", json(profile.successExitCodes(), "script profile success exit codes"))
             .bind("timeoutSeconds", profile.timeoutSeconds())
             .bind("approved", profile.approved())
@@ -224,45 +223,45 @@ public class R2dbcReleaseCatalogStore implements ReleaseCatalogStore {
   }
 
   @Override
-  public Mono<ReleaseScriptProfileDefinition> findScriptProfileDefinition(String targetEnvironment, String profileId) {
-    TargetEnvironment environment = TargetEnvironment.from(targetEnvironment);
+  public Mono<ReleaseScriptProfileDefinition> findScriptProfileDefinition(String profileId) {
     String id = ReleaseValues.requiredText(profileId, "profileId");
     return databaseClient.sql("""
             select *
             from release_script_profile_definition
-            where target_environment = :targetEnvironment
-              and profile_id = :profileId
+            where profile_id = :profileId
+            order by target_environment asc
             """)
-        .bind("targetEnvironment", environment.value())
         .bind("profileId", id)
         .map((row, metadata) -> scriptProfileDefinition(row))
-        .one();
+        .all()
+        .next();
   }
 
   @Override
-  public Flux<ReleaseScriptProfileDefinition> listScriptProfileDefinitions(String targetEnvironment) {
-    TargetEnvironment environment = TargetEnvironment.from(targetEnvironment);
+  public Flux<ReleaseScriptProfileDefinition> listScriptProfileDefinitions() {
     return databaseClient.sql("""
-            select *
-            from release_script_profile_definition
-            where target_environment = :targetEnvironment
-            order by profile_id asc
+            select d.*
+            from release_script_profile_definition d
+            join (
+              select profile_id, min(target_environment) as target_environment
+              from release_script_profile_definition
+              group by profile_id
+            ) selected
+              on selected.profile_id = d.profile_id
+             and selected.target_environment = d.target_environment
+            order by d.profile_id asc
             """)
-        .bind("targetEnvironment", environment.value())
         .map((row, metadata) -> scriptProfileDefinition(row))
         .all();
   }
 
   @Override
-  public Mono<Void> deleteScriptProfileDefinition(String targetEnvironment, String profileId) {
-    TargetEnvironment environment = TargetEnvironment.from(targetEnvironment);
+  public Mono<Void> deleteScriptProfileDefinition(String profileId) {
     String id = ReleaseValues.requiredText(profileId, "profileId");
     return databaseClient.sql("""
             delete from release_script_profile_definition
-            where target_environment = :targetEnvironment
-              and profile_id = :profileId
+            where profile_id = :profileId
             """)
-        .bind("targetEnvironment", environment.value())
         .bind("profileId", id)
         .fetch()
         .rowsUpdated()
@@ -703,13 +702,10 @@ public class R2dbcReleaseCatalogStore implements ReleaseCatalogStore {
   private ReleaseScriptProfileDefinition scriptProfileDefinition(io.r2dbc.spi.Row row) {
     return new ReleaseScriptProfileDefinition(
         row.get("profile_id", String.class),
-        TargetEnvironment.from(row.get("target_environment", String.class)),
         row.get("display_name", String.class),
         row.get("executable_path", String.class),
         row.get("working_directory", String.class),
         stringList(row.get("arguments_json", String.class), "script profile arguments"),
-        stringList(row.get("required_parameters_json", String.class), "script profile required parameters"),
-        stringList(row.get("allowed_parameters_json", String.class), "script profile allowed parameters"),
         integerList(row.get("success_exit_codes_json", String.class), "script profile success exit codes"),
         number(row.get("timeout_seconds")).intValue(),
         Boolean.TRUE.equals(row.get("approved", Boolean.class)),

@@ -69,14 +69,10 @@ export function useReleaseServers(targetEnvironment) {
   });
 }
 
-/**
- * @param {string} targetEnvironment
- */
-export function useReleaseScriptProfiles(targetEnvironment) {
+export function useReleaseScriptProfiles() {
   return useQuery({
-    queryKey: [...RELEASE_SCRIPT_PROFILES_QUERY_KEY, targetEnvironment],
-    queryFn: () => listReleaseScriptProfiles(targetEnvironment),
-    enabled: Boolean(targetEnvironment),
+    queryKey: RELEASE_SCRIPT_PROFILES_QUERY_KEY,
+    queryFn: listReleaseScriptProfiles,
     staleTime: 15_000,
     retry: false,
   });
@@ -131,7 +127,7 @@ export function useSaveReleaseScriptProfile() {
     mutationFn: saveReleaseScriptProfile,
     onSuccess: (profile) => {
       queryClient.setQueryData(
-        [...RELEASE_SCRIPT_PROFILES_QUERY_KEY, profile.targetEnvironment],
+        RELEASE_SCRIPT_PROFILES_QUERY_KEY,
         /**
          * @param {unknown} current
          */
@@ -147,7 +143,7 @@ export function useDeleteReleaseScriptProfile() {
     mutationFn: deleteReleaseScriptProfile,
     onSuccess: (_result, variables) => {
       queryClient.setQueryData(
-        [...RELEASE_SCRIPT_PROFILES_QUERY_KEY, variables.targetEnvironment],
+        RELEASE_SCRIPT_PROFILES_QUERY_KEY,
         /**
          * @param {unknown} current
          */

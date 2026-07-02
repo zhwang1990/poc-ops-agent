@@ -373,6 +373,82 @@
   white-space: nowrap;
 }
 
+.releaseLogPanel {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid oklch(0.84 0.02 232);
+  border-radius: 8px;
+  background: oklch(0.965 0.008 232);
+}
+
+.releaseLogHeader {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.releaseLogHeader strong {
+  color: var(--release-ink);
+  font-size: 12px;
+  font-weight: 880;
+}
+
+.releaseLogList {
+  display: grid;
+  max-height: 164px;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.releaseLogList li {
+  display: grid;
+  min-height: 30px;
+  grid-template-columns: 88px 68px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: oklch(0.992 0.004 232);
+}
+
+.releaseLogList time,
+.releaseLogList span {
+  color: var(--release-muted);
+  font-size: 11px;
+  font-weight: 820;
+  line-height: 1.45;
+}
+
+.releaseLogList code {
+  min-width: 0;
+  color: var(--release-ink);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  font-weight: 720;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.releaseLogEmpty,
+.releaseLogError {
+  margin: 0;
+  color: var(--release-muted);
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.releaseLogError {
+  color: var(--release-danger);
+}
+
 .rowActions {
   justify-content: end;
   gap: 7px;

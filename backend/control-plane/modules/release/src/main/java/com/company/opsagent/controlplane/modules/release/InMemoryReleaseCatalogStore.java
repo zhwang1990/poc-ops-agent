@@ -65,26 +65,24 @@ public class InMemoryReleaseCatalogStore implements ReleaseCatalogStore {
 
   @Override
   public Mono<ReleaseScriptProfileDefinition> saveScriptProfileDefinition(ReleaseScriptProfileDefinition profile) {
-    scriptProfiles.put(scriptProfileKey(profile.targetEnvironment().value(), profile.profileId()), profile);
+    scriptProfiles.put(profile.profileId(), profile);
     return Mono.just(profile);
   }
 
   @Override
-  public Mono<ReleaseScriptProfileDefinition> findScriptProfileDefinition(String targetEnvironment, String profileId) {
-    return Mono.justOrEmpty(scriptProfiles.get(scriptProfileKey(targetEnvironment, profileId)));
+  public Mono<ReleaseScriptProfileDefinition> findScriptProfileDefinition(String profileId) {
+    return Mono.justOrEmpty(scriptProfiles.get(ReleaseValues.requiredText(profileId, "profileId")));
   }
 
   @Override
-  public Flux<ReleaseScriptProfileDefinition> listScriptProfileDefinitions(String targetEnvironment) {
-    TargetEnvironment environment = TargetEnvironment.from(targetEnvironment);
+  public Flux<ReleaseScriptProfileDefinition> listScriptProfileDefinitions() {
     return Flux.fromIterable(scriptProfiles.values())
-        .filter(profile -> profile.targetEnvironment() == environment)
         .sort(Comparator.comparing(ReleaseScriptProfileDefinition::profileId));
   }
 
   @Override
-  public Mono<Void> deleteScriptProfileDefinition(String targetEnvironment, String profileId) {
-    scriptProfiles.remove(scriptProfileKey(targetEnvironment, profileId));
+  public Mono<Void> deleteScriptProfileDefinition(String profileId) {
+    scriptProfiles.remove(ReleaseValues.requiredText(profileId, "profileId"));
     return Mono.empty();
   }
 
@@ -133,12 +131,6 @@ public class InMemoryReleaseCatalogStore implements ReleaseCatalogStore {
   public Flux<ReleasePlan> listPlans() {
     return Flux.fromIterable(plans.values())
         .sort(Comparator.comparing(ReleasePlan::updatedAt).reversed());
-  }
-
-  private String scriptProfileKey(String targetEnvironment, String profileId) {
-    return TargetEnvironment.from(targetEnvironment).value()
-        + "/"
-        + ReleaseValues.requiredText(profileId, "profileId");
   }
 
   private final Map<String, ReleasePlan> plans = new ConcurrentHashMap<>();

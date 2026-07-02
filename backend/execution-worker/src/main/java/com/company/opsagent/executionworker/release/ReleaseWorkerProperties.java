@@ -124,8 +124,6 @@ public class ReleaseWorkerProperties {
 
       private Path executablePath;
       private List<String> arguments = List.of();
-      private List<String> requiredParameters = List.of();
-      private List<String> allowedParameters = List.of();
       private List<Integer> successExitCodes = List.of(0);
       private Duration timeout = Duration.ofMinutes(5);
       private Path workingDirectory;
@@ -144,22 +142,6 @@ public class ReleaseWorkerProperties {
 
       public void setArguments(List<String> arguments) {
         this.arguments = arguments == null ? List.of() : List.copyOf(arguments);
-      }
-
-      public List<String> getRequiredParameters() {
-        return requiredParameters;
-      }
-
-      public void setRequiredParameters(List<String> requiredParameters) {
-        this.requiredParameters = requiredParameters == null ? List.of() : List.copyOf(requiredParameters);
-      }
-
-      public List<String> getAllowedParameters() {
-        return allowedParameters;
-      }
-
-      public void setAllowedParameters(List<String> allowedParameters) {
-        this.allowedParameters = allowedParameters == null ? List.of() : List.copyOf(allowedParameters);
       }
 
       public List<Integer> getSuccessExitCodes() {

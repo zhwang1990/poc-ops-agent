@@ -28,7 +28,7 @@ P1 只读诊断 MVP 已于 2026-07-01 完成验收。当前阶段进入 P2 受�
 | 结构化语义事件、SSE、前端渲染和确权交互 | M09 操作台与语义事件流 |
 | MySQL、Redis、本地工作区、审计和可观测性 | M10 可观测性与平台运维 |
 | 内部研发 SQL 工作台、AS/400 查询、DML 预检与开发环境受控 CRUD | M09 操作台、M02 策略审计、M05 工作流、M07 Worker、M08 目标系统适配；P1 已验收开发/测试环境受控单条 `SELECT` 执行且 DML 仅预检，P2 开放开发环境受控写执行 |
-| 发布中心非生产受控变更 | M09 操作台、M02 策略审计、M03 Skill 契约、M05 工作流、M07 Worker、M08 服务器适配、M10 可观测性、M11 发布门禁；P2 仅覆盖 `dev`、`sit`、`uat` 的 WAR 制品发布、Liberty 脚本 Profile 发布、启停、回滚和只读日志分析，Liberty 制品由脚本参数 `artifactPath` 指向 `\\` 开头的共享目录路径，生产环境不可见、不可配置、不可调用 |
+| 发布中心非生产受控变更 | M09 操作台、M02 策略审计、M03 Skill 契约、M05 工作流、M07 Worker、M08 服务器适配、M10 可观测性、M11 发布门禁；P2 仅覆盖 `dev`、`sit`、`uat` 的 WAR 制品发布、Liberty 脚本 Profile 发布、启停、回滚和只读日志分析，Liberty 脚本 Profile 是跨非生产环境复用的通用定义，不同节点通过服务器配置中的脚本参数传入 `serverName`、`applicationName`、`artifactPath` 等值，Liberty 制品由 `artifactPath` 指向 `\\` 开头的共享目录路径，生产环境不可见、不可配置、不可调用 |
 
 ## 为实现设计目标而补充的工程机制
 

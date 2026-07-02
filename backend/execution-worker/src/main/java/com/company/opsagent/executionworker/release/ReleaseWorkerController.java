@@ -5,11 +5,14 @@ import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.Set;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.http.codec.ServerSentEvent;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
@@ -40,47 +43,75 @@ public class ReleaseWorkerController {
       authenticator.authenticateCanonical(
           headers,
           (keyId, timestamp) -> ReleaseWorkerRequestSignature.canonicalPayload(keyId, timestamp, request));
-      return validateAndExecute(request);
+      return validateAndExecuteWithEvents(request)
+          .filter(event -> event.eventType() == ReleaseWorkerExecutionEvent.EventType.RESULT)
+          .map(ReleaseWorkerExecutionEvent::result)
+          .last();
     }).subscribeOn(Schedulers.boundedElastic());
   }
 
-  private Mono<ReleaseWorkerResult> validateAndExecute(ReleaseWorkerRequest request) {
+  @PostMapping(value = "/execute/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+  public Flux<ServerSentEvent<ReleaseWorkerExecutionEvent>> executeEvents(
+      @RequestHeader HttpHeaders headers,
+      @RequestBody ReleaseWorkerRequest request) {
+    return Flux.defer(() -> {
+      authenticator.authenticateCanonical(
+          headers,
+          (keyId, timestamp) -> ReleaseWorkerRequestSignature.canonicalPayload(keyId, timestamp, request));
+      return validateAndExecuteWithEvents(request);
+    }).map(event -> ServerSentEvent.builder(event)
+        .event(event.eventType().name())
+        .id(event.eventType() == ReleaseWorkerExecutionEvent.EventType.RESULT
+            ? "result"
+            : event.nodeId() + "-" + event.timestamp().toInstant().toEpochMilli())
+        .build())
+        .subscribeOn(Schedulers.boundedElastic());
+  }
+
+  private Flux<ReleaseWorkerExecutionEvent> validateAndExecuteWithEvents(ReleaseWorkerRequest request) {
     ReleaseWorkerRequest.ReleaseCommand command = request == null ? null : request.command();
     if (request == null || command == null) {
-      return Mono.just(reject(request, "RELEASE_REQUEST_INVALID", "release worker request is invalid"));
+      return Flux.just(ReleaseWorkerExecutionEvent.result(
+          reject(request, "RELEASE_REQUEST_INVALID", "release worker request is invalid")));
     }
     if (request.expiresAt() == null || !request.expiresAt().isAfter(OffsetDateTime.now(clock))) {
-      return Mono.just(reject(request, "RELEASE_REQUEST_EXPIRED", "release worker request is expired"));
+      return Flux.just(ReleaseWorkerExecutionEvent.result(
+          reject(request, "RELEASE_REQUEST_EXPIRED", "release worker request is expired")));
     }
     if (!ALLOWED_ENVIRONMENTS.contains(command.targetEnvironment())) {
-      return Mono.just(reject(request, "TARGET_ENVIRONMENT_NOT_ALLOWED", "target environment is not allowed"));
+      return Flux.just(ReleaseWorkerExecutionEvent.result(
+          reject(request, "TARGET_ENVIRONMENT_NOT_ALLOWED", "target environment is not allowed")));
     }
     if (command.nodes() == null || command.nodes().size() != 1) {
-      return Mono.just(reject(request, "RELEASE_WORKER_SINGLE_NODE_REQUIRED", "release worker request must target one node"));
+      return Flux.just(ReleaseWorkerExecutionEvent.result(
+          reject(request, "RELEASE_WORKER_SINGLE_NODE_REQUIRED", "release worker request must target one node")));
     }
     ReleaseWorkerRequest.ReleaseNodeTarget node = command.nodes().get(0);
     if ("DISABLED".equals(node.managementMode())) {
-      return Mono.just(reject(request, "SERVER_MANAGEMENT_MODE_DISABLED", "server management mode is disabled"));
+      return Flux.just(ReleaseWorkerExecutionEvent.result(
+          reject(request, "SERVER_MANAGEMENT_MODE_DISABLED", "server management mode is disabled")));
     }
     return adapterRegistry.find(node.managementMode())
-        .map(adapter -> executeAdapter(adapter, request))
-        .orElseGet(() -> Mono.just(reject(
-            request,
-            "SERVER_MANAGEMENT_MODE_NOT_CONFIGURED",
-            "server management mode is not configured")));
+        .map(adapter -> executeAdapterWithEvents(adapter, request))
+        .orElseGet(() -> Flux.just(ReleaseWorkerExecutionEvent.result(
+            reject(
+                request,
+                "SERVER_MANAGEMENT_MODE_NOT_CONFIGURED",
+                "server management mode is not configured"))));
   }
 
-  private Mono<ReleaseWorkerResult> executeAdapter(ReleaseAdapter adapter, ReleaseWorkerRequest request) {
+  private Flux<ReleaseWorkerExecutionEvent> executeAdapterWithEvents(ReleaseAdapter adapter, ReleaseWorkerRequest request) {
     String operation = request.command().operation();
     return switch (operation) {
-      case "PRECHECK" -> adapter.precheck(request);
-      case "DEPLOY" -> adapter.deploy(request);
-      case "START" -> adapter.start(request);
-      case "STOP" -> adapter.stop(request);
-      case "ROLLBACK" -> adapter.rollback(request);
-      case "HEALTHCHECK" -> adapter.healthcheck(request);
-      case "COLLECT_LOGS" -> adapter.collectLogs(request);
-      default -> Mono.just(reject(request, "RELEASE_OPERATION_NOT_SUPPORTED", "release operation is not supported"));
+      case "PRECHECK" -> adapter.precheckWithEvents(request);
+      case "DEPLOY" -> adapter.deployWithEvents(request);
+      case "START" -> adapter.startWithEvents(request);
+      case "STOP" -> adapter.stopWithEvents(request);
+      case "ROLLBACK" -> adapter.rollbackWithEvents(request);
+      case "HEALTHCHECK" -> adapter.healthcheckWithEvents(request);
+      case "COLLECT_LOGS" -> adapter.collectLogsWithEvents(request);
+      default -> Flux.just(ReleaseWorkerExecutionEvent.result(
+          reject(request, "RELEASE_OPERATION_NOT_SUPPORTED", "release operation is not supported")));
     };
   }
 

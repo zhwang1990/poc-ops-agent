@@ -8,6 +8,7 @@ import com.company.opsagent.contracts.workflow.WorkerTransportHeaders;
 import com.company.opsagent.controlplane.bootstrap.config.WorkerProperties;
 import com.company.opsagent.controlplane.modules.release.ReleaseArtifact;
 import com.company.opsagent.controlplane.modules.release.ReleaseCatalogStore;
+import com.company.opsagent.controlplane.modules.release.ReleaseNodeExecutionEvent;
 import com.company.opsagent.controlplane.modules.release.ReleaseNodeExecutionResult;
 import com.company.opsagent.controlplane.modules.release.ReleaseNodeStep;
 import com.company.opsagent.controlplane.modules.release.ReleasePlan;
@@ -26,6 +27,7 @@ import java.util.Optional;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
@@ -53,16 +55,25 @@ public class WebClientReleaseWorkerGateway implements ReleaseWorkerGateway {
 
   @Override
   public Mono<ReleaseNodeExecutionResult> execute(ReleasePlan plan, ReleaseNodeStep node) {
+    return executeWithEvents(plan, node)
+        .filter(event -> event.eventType() == ReleaseNodeExecutionEvent.EventType.RESULT)
+        .map(ReleaseNodeExecutionEvent::result)
+        .last();
+  }
+
+  @Override
+  public Flux<ReleaseNodeExecutionEvent> executeWithEvents(ReleasePlan plan, ReleaseNodeStep node) {
     OffsetDateTime now = OffsetDateTime.ofInstant(clock.instant(), ZoneOffset.UTC);
     return request(plan, node, now)
-        .flatMap(request -> webClient.post()
-            .uri("/internal/release/execute")
+        .flatMapMany(request -> webClient.post()
+            .uri("/internal/release/execute/events")
             .contentType(MediaType.APPLICATION_JSON)
+            .accept(MediaType.TEXT_EVENT_STREAM)
             .headers(headers -> sign(headers, request))
             .bodyValue(request)
             .retrieve()
-            .bodyToMono(ReleaseWorkerResult.class))
-        .map(this::result);
+            .bodyToFlux(ReleaseWorkerExecutionEvent.class))
+        .map(this::executionEvent);
   }
 
   private Mono<ReleaseWorkerRequest> request(ReleasePlan plan, ReleaseNodeStep node, OffsetDateTime now) {
@@ -81,7 +92,7 @@ public class WebClientReleaseWorkerGateway implements ReleaseWorkerGateway {
             return Mono.just(request(plan, node, tuple.getT1().orElse(null), server, null, now));
           }
           return releaseCatalogStore
-              .findScriptProfileDefinition(server.targetEnvironment().value(), server.scriptProfile().profileId())
+              .findScriptProfileDefinition(server.scriptProfile().profileId())
               .switchIfEmpty(Mono.error(new IllegalStateException("release script profile not found")))
               .filter(ReleaseScriptProfileDefinition::executable)
               .switchIfEmpty(Mono.error(new IllegalStateException("release script profile is not executable")))
@@ -141,6 +152,20 @@ public class WebClientReleaseWorkerGateway implements ReleaseWorkerGateway {
         ? result.status()
         : result.errorCode();
     return ReleaseNodeExecutionResult.failed(reason);
+  }
+
+  private ReleaseNodeExecutionEvent executionEvent(ReleaseWorkerExecutionEvent event) {
+    if ("LOG".equals(event.eventType())) {
+      return ReleaseNodeExecutionEvent.log(
+          event.nodeId(),
+          event.stream(),
+          event.message(),
+          event.timestamp().toInstant());
+    }
+    if ("RESULT".equals(event.eventType())) {
+      return ReleaseNodeExecutionEvent.result(result(event.result()));
+    }
+    throw new IllegalStateException("unsupported release worker event type: " + event.eventType());
   }
 
   private void sign(HttpHeaders headers, ReleaseWorkerRequest request) {
@@ -215,12 +240,9 @@ public class WebClientReleaseWorkerGateway implements ReleaseWorkerGateway {
     return new ReleaseScriptProfileDefinitionPayload(
         definition.executablePath(),
         definition.arguments(),
-        definition.requiredParameters(),
-        definition.allowedParameters(),
         definition.successExitCodes(),
         definition.timeoutSeconds(),
         definition.workingDirectory(),
-        List.of(definition.targetEnvironment().value()),
         definition.approved(),
         definition.enabled());
   }
@@ -300,12 +322,9 @@ public class WebClientReleaseWorkerGateway implements ReleaseWorkerGateway {
   private record ReleaseScriptProfileDefinitionPayload(
       String executablePath,
       List<String> arguments,
-      List<String> requiredParameters,
-      List<String> allowedParameters,
       List<Integer> successExitCodes,
       int timeoutSeconds,
       String workingDirectory,
-      List<String> targetEnvironments,
       boolean approved,
       boolean enabled) {
   }
@@ -325,6 +344,18 @@ public class WebClientReleaseWorkerGateway implements ReleaseWorkerGateway {
       String errorCode,
       String errorMessage,
       OffsetDateTime completedAt) {
+  }
+
+  private record ReleaseWorkerExecutionEvent(
+      String eventType,
+      String executionRequestId,
+      String releaseId,
+      String workflowId,
+      String nodeId,
+      String stream,
+      String message,
+      OffsetDateTime timestamp,
+      ReleaseWorkerResult result) {
   }
 
   private record ReleaseNodeResult(

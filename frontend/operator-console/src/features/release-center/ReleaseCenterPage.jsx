@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   BadgeCheck,
   CheckCircle2,
@@ -26,6 +26,7 @@ import { WorkspacePageFrame } from "../../components/layout/WorkspacePageFrame.j
 import { WorkspaceStatusBar } from "../../components/layout/WorkspaceStatusBar.jsx";
 import { Button } from "../../components/primitives/Button.jsx";
 import { Dialog } from "../../components/primitives/Dialog.jsx";
+import { streamReleasePlanEvents } from "../../api/release-center-api.js";
 import {
   useReleaseApplications,
   useReleaseArtifacts,
@@ -46,6 +47,7 @@ import styles from "./ReleaseCenterPage.module.css";
 /** @typedef {import("../../schemas/release-center-schemas.js").ReleaseApplication} ReleaseApplication */
 /** @typedef {import("../../schemas/release-center-schemas.js").ReleaseArtifact} ReleaseArtifact */
 /** @typedef {import("../../schemas/release-center-schemas.js").ReleasePlan} ReleasePlan */
+/** @typedef {import("../../schemas/release-center-schemas.js").ReleaseWorkflowEvent} ReleaseWorkflowEvent */
 /** @typedef {import("../../schemas/release-center-schemas.js").ReleaseScriptProfileDefinition} ReleaseScriptProfileDefinition */
 /** @typedef {import("../../schemas/release-center-schemas.js").ReleaseServer} ReleaseServer */
 /** @typedef {"plans" | "artifacts" | "applications" | "servers" | "scriptProfiles" | "policies" | "credentials"} ReleaseTabId */
@@ -91,13 +93,10 @@ const MANAGEMENT_MODE_OPTIONS_BY_SERVER_TYPE = {
 /**
  * @typedef {{
  *   profileId: string,
- *   targetEnvironment: string,
  *   displayName: string,
  *   executablePath: string,
  *   workingDirectory: string,
  *   argumentsText: string,
- *   requiredParametersText: string,
- *   allowedParametersText: string,
  *   successExitCodesText: string,
  *   timeoutSeconds: string,
  *   approved: boolean,
@@ -113,7 +112,7 @@ export function ReleaseCenterPage() {
   const artifactsQuery = useReleaseArtifacts(targetEnvironment);
   const plansQuery = useReleasePlans();
   const serversQuery = useReleaseServers(targetEnvironment);
-  const scriptProfilesQuery = useReleaseScriptProfiles(targetEnvironment);
+  const scriptProfilesQuery = useReleaseScriptProfiles();
   const uploadMutation = useUploadTomcatWar();
   const createPlanMutation = useCreateReleasePlan();
   const fileInputRef = useRef(/** @type {HTMLInputElement | null} */ (null));
@@ -570,7 +569,6 @@ function ReleaseTabPanel({
       <ScriptProfilesPanel
         profiles={scriptProfiles}
         query={scriptProfilesQuery}
-        targetEnvironment={targetEnvironment}
       />
     );
   }
@@ -591,7 +589,81 @@ function ReleaseTabPanel({
 function PlansPanel({ applicationsQuery, plans, plansQuery, selectedApplication }) {
   const confirmMutation = useConfirmReleasePlan();
   const executeMutation = useExecuteReleasePlan();
+  const streamAbortRef = useRef(/** @type {AbortController | null} */ (null));
+  const [activeLogReleaseId, setActiveLogReleaseId] = useState(/** @type {string | null} */ (null));
+  const [streamingReleaseId, setStreamingReleaseId] = useState(/** @type {string | null} */ (null));
+  const [releaseLogsById, setReleaseLogsById] = useState(
+    /** @type {Record<string, ReleaseWorkflowEvent[]>} */ ({}),
+  );
+  const [logStreamErrorsById, setLogStreamErrorsById] = useState(
+    /** @type {Record<string, string>} */ ({}),
+  );
   const queryState = queryFeedback([plansQuery, applicationsQuery], "发布单读取失败");
+  useEffect(() => () => streamAbortRef.current?.abort(), []);
+
+  /**
+   * @param {ReleasePlan} plan
+   * @returns {AbortController}
+   */
+  function startReleaseLogStream(plan) {
+    streamAbortRef.current?.abort();
+    const controller = new AbortController();
+    streamAbortRef.current = controller;
+    setActiveLogReleaseId(plan.releaseId);
+    setStreamingReleaseId(plan.releaseId);
+    setReleaseLogsById((current) => ({ ...current, [plan.releaseId]: [] }));
+    setLogStreamErrorsById((current) => {
+      const next = { ...current };
+      delete next[plan.releaseId];
+      return next;
+    });
+    streamReleasePlanEvents(plan.releaseId, {
+      afterSequence: 0,
+      signal: controller.signal,
+      onEvent: (event) => {
+        if (event.type !== "RELEASE_NODE_LOG") {
+          return;
+        }
+        setReleaseLogsById((current) => ({
+          ...current,
+          [event.releaseId]: [...(current[event.releaseId] ?? []), event].slice(-200),
+        }));
+      },
+    })
+      .catch((error) => {
+        if (isAbortError(error)) {
+          return;
+        }
+        setLogStreamErrorsById((current) => ({
+          ...current,
+          [plan.releaseId]: readErrorMessage(error),
+        }));
+      })
+      .finally(() => {
+        if (streamAbortRef.current === controller) {
+          streamAbortRef.current = null;
+          setStreamingReleaseId((current) => (current === plan.releaseId ? null : current));
+        }
+      });
+    return controller;
+  }
+
+  /**
+   * @param {ReleasePlan} plan
+   */
+  function handleExecutePlan(plan) {
+    const controller = startReleaseLogStream(plan);
+    executeMutation.mutate(plan.releaseId, {
+      onSettled: () => {
+        window.setTimeout(() => {
+          if (streamAbortRef.current === controller) {
+            controller.abort();
+          }
+        }, 750);
+      },
+    });
+  }
+
   if (queryState) {
     return queryState;
   }
@@ -601,61 +673,115 @@ function PlansPanel({ applicationsQuery, plans, plansQuery, selectedApplication 
 
   return (
     <section className={styles.planStack} aria-label="发布单列表">
-      {plans.map((plan) => (
-        <article className={styles.planRow} key={plan.releaseId}>
-          <div className={styles.planMain}>
-            <span className={styles.rowIcon} aria-hidden="true">
-              <Rocket size={17} />
-            </span>
-            <div className={styles.planCopy}>
-              <strong>{plan.releaseId}</strong>
-              <span>
-                应用 {selectedApplication?.displayName ?? plan.applicationId} / {plan.targetEnvironment}
+      {plans.map((plan) => {
+        const releaseLogs = releaseLogsById[plan.releaseId] ?? [];
+        const logStreamError = logStreamErrorsById[plan.releaseId] ?? null;
+        const showLogPanel = activeLogReleaseId === plan.releaseId || releaseLogs.length > 0 || Boolean(logStreamError);
+        return (
+          <article className={styles.planRow} key={plan.releaseId}>
+            <div className={styles.planMain}>
+              <span className={styles.rowIcon} aria-hidden="true">
+                <Rocket size={17} />
               </span>
+              <div className={styles.planCopy}>
+                <strong>{plan.releaseId}</strong>
+                <span>
+                  应用 {selectedApplication?.displayName ?? plan.applicationId} / {plan.targetEnvironment}
+                </span>
+              </div>
             </div>
-          </div>
-          <div className={styles.planMeta}>
-            <StatusPill tone={statusTone(plan.status)}>{plan.status}</StatusPill>
-            <span>{plan.artifactId ?? "SCRIPT_PROFILE"}</span>
-          </div>
-          <ol className={styles.nodeSteps} aria-label={`${plan.releaseId} 节点`}>
-            {plan.nodes.map((node) => (
-              <li key={`${plan.releaseId}-${node.nodeId}`}>
-                <span>#{node.sequence}</span>
-                <strong>节点 {node.nodeId}</strong>
-                <StatusPill tone={statusTone(node.status)}>{node.status}</StatusPill>
+            <div className={styles.planMeta}>
+              <StatusPill tone={statusTone(plan.status)}>{plan.status}</StatusPill>
+              <span>{plan.artifactId ?? "SCRIPT_PROFILE"}</span>
+            </div>
+            <ol className={styles.nodeSteps} aria-label={`${plan.releaseId} 节点`}>
+              {plan.nodes.map((node) => (
+                <li key={`${plan.releaseId}-${node.nodeId}`}>
+                  <span>#{node.sequence}</span>
+                  <strong>节点 {node.nodeId}</strong>
+                  <StatusPill tone={statusTone(node.status)}>{node.status}</StatusPill>
+                </li>
+              ))}
+            </ol>
+            <div className={styles.rowActions}>
+              <Button
+                className={styles.compactButton}
+                disabled={plan.status !== "WAIT_CONFIRM" || confirmMutation.isPending}
+                onClick={() =>
+                  confirmMutation.mutate({
+                    releaseId: plan.releaseId,
+                    input: {
+                      confirmationId: `confirm-${plan.releaseId}`,
+                      parametersHash: plan.parametersHash,
+                    },
+                  })
+                }
+                variant="secondary"
+              >
+                <CheckCircle2 aria-hidden="true" size={15} />
+                确认
+              </Button>
+              <Button
+                className={styles.compactButton}
+                disabled={!["DRAFT", "READY"].includes(plan.status) || executeMutation.isPending}
+                onClick={() => handleExecutePlan(plan)}
+              >
+                <Play aria-hidden="true" size={15} />
+                执行
+              </Button>
+            </div>
+            {showLogPanel ? (
+              <ReleaseLogPanel
+                errorMessage={logStreamError}
+                events={releaseLogs}
+                isStreaming={streamingReleaseId === plan.releaseId}
+                releaseId={plan.releaseId}
+              />
+            ) : null}
+          </article>
+        );
+      })}
+    </section>
+  );
+}
+
+/**
+ * @param {{
+ *   errorMessage: string | null,
+ *   events: ReleaseWorkflowEvent[],
+ *   isStreaming: boolean,
+ *   releaseId: string,
+ * }} props
+ */
+function ReleaseLogPanel({ errorMessage, events, isStreaming, releaseId }) {
+  return (
+    <section className={styles.releaseLogPanel} aria-label={`${releaseId} 脚本输出`}>
+      <div className={styles.releaseLogHeader}>
+        <strong>脚本输出</strong>
+        <StatusPill tone={isStreaming ? "warning" : "info"}>
+          {isStreaming ? "STREAMING" : "LATEST"}
+        </StatusPill>
+      </div>
+      {events.length === 0 ? (
+        <p className={styles.releaseLogEmpty}>等待脚本输出</p>
+      ) : (
+        <ol className={styles.releaseLogList}>
+          {events.map((event) => {
+            const payload = event.payload;
+            if (payload.payloadType !== "RELEASE_NODE_LOG") {
+              return null;
+            }
+            return (
+              <li key={`${event.releaseId}-${event.sequence}`}>
+                <time dateTime={payload.emittedAt}>{formatLogTime(payload.emittedAt)}</time>
+                <span>{payload.stream}</span>
+                <code>{payload.message}</code>
               </li>
-            ))}
-          </ol>
-          <div className={styles.rowActions}>
-            <Button
-              className={styles.compactButton}
-              disabled={plan.status !== "WAIT_CONFIRM" || confirmMutation.isPending}
-              onClick={() =>
-                confirmMutation.mutate({
-                  releaseId: plan.releaseId,
-                  input: {
-                    confirmationId: `confirm-${plan.releaseId}`,
-                    parametersHash: plan.parametersHash,
-                  },
-                })
-              }
-              variant="secondary"
-            >
-              <CheckCircle2 aria-hidden="true" size={15} />
-              确认
-            </Button>
-            <Button
-              className={styles.compactButton}
-              disabled={!["DRAFT", "READY"].includes(plan.status) || executeMutation.isPending}
-              onClick={() => executeMutation.mutate(plan.releaseId)}
-            >
-              <Play aria-hidden="true" size={15} />
-              执行
-            </Button>
-          </div>
-        </article>
-      ))}
+            );
+          })}
+        </ol>
+      )}
+      {errorMessage ? <p className={styles.releaseLogError}>{errorMessage}</p> : null}
     </section>
   );
 }
@@ -734,10 +860,9 @@ function ApplicationsPanel({ applications, query }) {
  * @param {{
  *   profiles: ReleaseScriptProfileDefinition[],
  *   query: ReturnType<typeof useReleaseScriptProfiles>,
- *   targetEnvironment: string
  * }} props
  */
-function ScriptProfilesPanel({ profiles, query, targetEnvironment }) {
+function ScriptProfilesPanel({ profiles, query }) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingProfile, setEditingProfile] = useState(/** @type {ReleaseScriptProfileDefinition | null} */ (null));
   const [pendingDeleteProfileId, setPendingDeleteProfileId] = useState("");
@@ -766,7 +891,7 @@ function ScriptProfilesPanel({ profiles, query, targetEnvironment }) {
    */
   function deleteProfile(profile) {
     deleteProfileMutation.mutate(
-      { targetEnvironment: profile.targetEnvironment, profileId: profile.profileId },
+      { profileId: profile.profileId },
       { onSuccess: () => setPendingDeleteProfileId("") },
     );
   }
@@ -776,8 +901,8 @@ function ScriptProfilesPanel({ profiles, query, targetEnvironment }) {
       <section className={styles.panelStack} aria-label="Script profile definitions">
         <div className={styles.panelHeader}>
           <div className={styles.panelTitle}>
-            <span className={styles.kicker}>Script profiles / {targetEnvironment}</span>
-            <strong>Liberty script profiles</strong>
+            <span className={styles.kicker}>Script profiles</span>
+            <strong>Liberty shared script profiles</strong>
           </div>
           <Button
             aria-label="Add script profile"
@@ -793,7 +918,7 @@ function ScriptProfilesPanel({ profiles, query, targetEnvironment }) {
 
         {profiles.length === 0 ? (
           <FeedbackState
-            message={`${targetEnvironment} has no approved script profile definitions yet.`}
+            message="No shared Liberty script profile definitions have been configured yet."
             state="empty"
             title="No script profiles"
           />
@@ -802,7 +927,7 @@ function ScriptProfilesPanel({ profiles, query, targetEnvironment }) {
             <div className={`${styles.tableHeader} ${styles.profileTableRow}`}>
               <span>Profile</span>
               <span>Executable</span>
-              <span>Parameters</span>
+              <span>Arguments</span>
               <span>Status</span>
               <span>Actions</span>
             </div>
@@ -813,7 +938,7 @@ function ScriptProfilesPanel({ profiles, query, targetEnvironment }) {
                   <span>{profile.displayName}</span>
                 </div>
                 <span title={profile.executablePath}>{profile.executablePath}</span>
-                <span>{profile.requiredParameters.join(", ") || "No required parameters"}</span>
+                <span title={profile.arguments.join(" ")}>{profile.arguments.join(" ")}</span>
                 <StatusPill tone={profile.approved && profile.enabled ? "success" : "warning"}>
                   {profile.approved && profile.enabled ? "Approved" : "Inactive"}
                 </StatusPill>
@@ -875,7 +1000,6 @@ function ScriptProfilesPanel({ profiles, query, targetEnvironment }) {
             })
           }
           open={dialogOpen}
-          targetEnvironment={targetEnvironment}
         />
       ) : null}
     </>
@@ -1098,19 +1222,16 @@ function ServerArtifactCell({ copied, onCopy, server }) {
  *   onClose: () => void,
  *   onSubmit: (profile: unknown) => void,
  *   open: boolean,
- *   targetEnvironment: string,
  * }} props
  */
-function ScriptProfileDialog({ error, initialProfile, isPending, onClose, onSubmit, open, targetEnvironment }) {
+function ScriptProfileDialog({ error, initialProfile, isPending, onClose, onSubmit, open }) {
   const [form, setForm] = useState(() =>
     initialProfile
       ? createScriptProfileFormFromDefinition(initialProfile)
-      : createDefaultScriptProfileForm(targetEnvironment),
+      : createDefaultScriptProfileForm(),
   );
   const editing = Boolean(initialProfile);
   const argumentLines = textLines(form.argumentsText).map(normalizeScriptArgument);
-  const requiredParameters = textLines(form.requiredParametersText);
-  const allowedParameters = textLines(form.allowedParametersText || form.requiredParametersText);
   const successExitCodes = exitCodes(form.successExitCodesText);
   const canSubmit =
     Boolean(
@@ -1141,13 +1262,10 @@ function ScriptProfileDialog({ error, initialProfile, isPending, onClose, onSubm
     }
     onSubmit({
       profileId: form.profileId.trim(),
-      targetEnvironment: form.targetEnvironment,
       displayName: form.displayName.trim(),
       executablePath: form.executablePath.trim(),
       workingDirectory: form.workingDirectory.trim(),
       arguments: argumentLines,
-      requiredParameters,
-      allowedParameters,
       successExitCodes,
       timeoutSeconds: Number.parseInt(form.timeoutSeconds, 10),
       approved: form.approved,
@@ -1158,8 +1276,8 @@ function ScriptProfileDialog({ error, initialProfile, isPending, onClose, onSubm
   return (
     <Dialog
       closeLabel={editing ? "Close edit script profile" : "Close new script profile"}
-      description="Profiles are reviewed command definitions. Release orders only reference a profile and its approved parameters."
-      eyebrow={`Script profile / ${targetEnvironment}`}
+      description="Profiles are reviewed shared command definitions. Node-specific values are configured as server script parameters."
+      eyebrow="Script profile"
       icon={<Code2 size={18} />}
       onClose={onClose}
       open={open}
@@ -1177,10 +1295,6 @@ function ScriptProfileDialog({ error, initialProfile, isPending, onClose, onSubm
               readOnly={editing}
               value={form.profileId}
             />
-          </label>
-          <label className={styles.formField}>
-            <span>Target environment</span>
-            <input readOnly value={form.targetEnvironment} />
           </label>
           <label className={styles.formField}>
             <span>Display name</span>
@@ -1228,24 +1342,6 @@ function ScriptProfileDialog({ error, initialProfile, isPending, onClose, onSubm
               onChange={(event) => updateField("argumentsText", event.currentTarget.value)}
               placeholder="{{param.serverName}}"
               value={form.argumentsText}
-            />
-          </label>
-          <label className={styles.formField}>
-            <span>Required parameters</span>
-            <textarea
-              aria-label="Required parameters"
-              onChange={(event) => updateField("requiredParametersText", event.currentTarget.value)}
-              placeholder="serverName"
-              value={form.requiredParametersText}
-            />
-          </label>
-          <label className={styles.formField}>
-            <span>Allowed parameters</span>
-            <textarea
-              aria-label="Allowed parameters"
-              onChange={(event) => updateField("allowedParametersText", event.currentTarget.value)}
-              placeholder="serverName"
-              value={form.allowedParametersText}
             />
           </label>
           <label className={styles.formField}>
@@ -1572,19 +1668,15 @@ function ServerDialog({ error, initialServer, isPending, onClose, onSubmit, open
 }
 
 /**
- * @param {string} targetEnvironment
  * @returns {ScriptProfileForm}
  */
-function createDefaultScriptProfileForm(targetEnvironment) {
+function createDefaultScriptProfileForm() {
   return {
     profileId: "",
-    targetEnvironment,
     displayName: "",
     executablePath: "",
     workingDirectory: "",
     argumentsText: "",
-    requiredParametersText: "",
-    allowedParametersText: "",
     successExitCodesText: "0",
     timeoutSeconds: "600",
     approved: false,
@@ -1599,13 +1691,10 @@ function createDefaultScriptProfileForm(targetEnvironment) {
 function createScriptProfileFormFromDefinition(profile) {
   return {
     profileId: profile.profileId,
-    targetEnvironment: profile.targetEnvironment,
     displayName: profile.displayName,
     executablePath: profile.executablePath,
     workingDirectory: profile.workingDirectory,
     argumentsText: profile.arguments.join("\n"),
-    requiredParametersText: profile.requiredParameters.join("\n"),
-    allowedParametersText: profile.allowedParameters.join("\n"),
     successExitCodesText: profile.successExitCodes.join("\n"),
     timeoutSeconds: String(profile.timeoutSeconds),
     approved: profile.approved,
@@ -1916,6 +2005,24 @@ function statusTone(status) {
     return "warning";
   }
   return "info";
+}
+
+/**
+ * @param {string} value
+ */
+function formatLogTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleTimeString("zh-CN", { hour12: false });
+}
+
+/**
+ * @param {unknown} error
+ */
+function isAbortError(error) {
+  return error instanceof DOMException && error.name === "AbortError";
 }
 
 /**
