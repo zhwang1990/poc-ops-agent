@@ -234,7 +234,7 @@ describe("ReleaseCenterPage", () => {
     await userEvent.click(createButton);
 
     const dialog = await screen.findByRole("dialog");
-    expect(within(dialog).getByText("//jenkins/share/orders/latest/orders.war")).toBeInTheDocument();
+    expect(within(dialog).getByText("\\\\jenkins\\share\\orders\\latest\\orders.war")).toBeInTheDocument();
     const dialogButtons = within(dialog).getAllByRole("button");
     await userEvent.click(dialogButtons[dialogButtons.length - 1]);
 
@@ -412,7 +412,9 @@ describe("ReleaseCenterPage", () => {
     expect(within(dialog).getByLabelText("Parameter 1 name")).toHaveValue("serverName");
     expect(within(dialog).getByLabelText("Parameter 1 value")).toHaveValue("defaultServer");
     expect(within(dialog).getByLabelText("Parameter 3 name")).toHaveValue("artifactPath");
-    expect(within(dialog).getByLabelText("Parameter 3 value")).toHaveValue("//jenkins/share/orders/latest/orders.war");
+    expect(within(dialog).getByLabelText("Parameter 3 value")).toHaveValue(
+      "\\\\jenkins\\share\\orders\\latest\\orders.war",
+    );
     await userEvent.click(within(dialog).getByRole("button", { name: "Save release server" }));
 
     await waitFor(() =>
@@ -429,14 +431,14 @@ describe("ReleaseCenterPage", () => {
           parameters: [
             { name: "serverName", value: "defaultServer" },
             { name: "applicationName", value: "orders" },
-            { name: "artifactPath", value: "//jenkins/share/orders/latest/orders.war" },
+            { name: "artifactPath", value: "\\\\jenkins\\share\\orders\\latest\\orders.war" },
           ],
         },
         enabled: true,
       }),
     );
-    expect(await screen.findByText("//jenkins/share/orders/latest/orders.war")).toBeInTheDocument();
-    expect(screen.getByText("//jenkins/share/orders/latest/orders.war").closest("a")).toBeNull();
+    expect(await screen.findByText("\\\\jenkins\\share\\orders\\latest\\orders.war")).toBeInTheDocument();
+    expect(screen.getByText("\\\\jenkins\\share\\orders\\latest\\orders.war").closest("a")).toBeNull();
     expect(await screen.findByRole("button", { name: "Copy artifact path for liberty-dev-1" })).toBeInTheDocument();
   });
 
@@ -569,7 +571,7 @@ const releaseLibertyScriptServer = {
     parameters: [
       { name: "serverName", value: "defaultServer" },
       { name: "applicationName", value: "orders" },
-      { name: "artifactPath", value: "//jenkins/share/orders/latest/orders.war" },
+      { name: "artifactPath", value: "\\\\jenkins\\share\\orders\\latest\\orders.war" },
     ],
   },
   enabled: true,

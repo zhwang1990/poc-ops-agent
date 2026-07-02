@@ -850,7 +850,7 @@ function ServerArtifactCell({ copied, onCopy, server }) {
         </a>
       ) : (
         <span data-tone="warning" title={artifactPath}>
-          制品路径必须以 // 开头
+          制品路径必须以 \\ 开头
         </span>
       )}
       <Button
@@ -1160,7 +1160,7 @@ function createDefaultServerForm(targetEnvironment) {
     scriptParameters: [
       { id: "serverName", name: "serverName", value: "defaultServer" },
       { id: "applicationName", name: "applicationName", value: "orders" },
-      { id: "artifactPath", name: "artifactPath", value: "//jenkins/share/orders/latest/orders.war" },
+      { id: "artifactPath", name: "artifactPath", value: "\\\\jenkins\\share\\orders\\latest\\orders.war" },
     ],
     enabled: true,
   };
@@ -1241,7 +1241,7 @@ function isHttpUrl(value) {
  * @param {string} value
  */
 function isSharedArtifactPath(value) {
-  return value.trim().startsWith("//");
+  return value.trim().startsWith("\\\\");
 }
 
 function PoliciesPanel() {

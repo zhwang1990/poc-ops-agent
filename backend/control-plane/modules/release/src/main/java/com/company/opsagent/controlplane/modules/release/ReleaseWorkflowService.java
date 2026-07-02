@@ -306,10 +306,10 @@ public class ReleaseWorkflowService {
         .toList();
     for (ReleaseServer server : enabledServers) {
       String artifactPath = scriptProfileParameter(server.scriptProfile(), "artifactPath");
-      if (artifactPath == null || !artifactPath.startsWith("//")) {
+      if (artifactPath == null || !artifactPath.startsWith("\\\\")) {
         throw new ReleaseWorkflowException(
             "RELEASE_SCRIPT_ARTIFACT_PATH_REQUIRED",
-            "Liberty script releases require artifactPath script parameter starting with //");
+            "Liberty script releases require artifactPath script parameter starting with \\\\");
       }
     }
   }

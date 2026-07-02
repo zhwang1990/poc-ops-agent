@@ -33,7 +33,7 @@
 
 Liberty 脚本发布只允许执行已经安全评审并部署到 Worker 侧配置中的脚本 Profile。操作台新增或修改服务器时只能填写 `scriptProfile.profileId` 和脚本所需的 `name/value` 参数，不能填写脚本路径、命令行、shell 片段或明文密钥。
 
-Liberty 发布不要求操作台上传制品，但必须在脚本参数中提供 `artifactPath`。`artifactPath` 是以 `//` 开头的共享目录路径，通常作为脚本第三个参数传给经评审脚本，由脚本调用成熟 JAR / HTTPS 发布能力读取制品。控制面创建发布单时不绑定平台上传制品，但会要求所有启用的 Liberty 脚本节点都配置 `artifactPath`，并把该值纳入参数哈希。Worker 仍必须只执行预登记 Profile，不得接受操作台传入的脚本路径或命令行。
+Liberty 发布不要求操作台上传制品，但必须在脚本参数中提供 `artifactPath`。`artifactPath` 是以 `\\` 开头的共享目录路径，例如 `\\jenkins\share\orders\latest\orders.war`，通常作为脚本第三个参数传给经评审脚本，由脚本调用成熟 JAR / HTTPS 发布能力读取制品。控制面创建发布单时不绑定平台上传制品，但会要求所有启用的 Liberty 脚本节点都配置 `artifactPath`，并把该值纳入参数哈希。Worker 仍必须只执行预登记 Profile，不得接受操作台传入的脚本路径或命令行。
 
 Worker 配置必须至少约束以下内容：
 

@@ -138,7 +138,7 @@ class ReleaseCenterControllerTest {
                 "parameters": [
                   {"name": "serverName", "value": "defaultServer"},
                   {"name": "applicationName", "value": "orders"},
-                  {"name": "artifactPath", "value": "//jenkins/share/orders/latest/orders.war"}
+                  {"name": "artifactPath", "value": "\\\\\\\\jenkins\\\\share\\\\orders\\\\latest\\\\orders.war"}
                 ]
               },
               "enabled": true
@@ -153,7 +153,7 @@ class ReleaseCenterControllerTest {
         .jsonPath("$.scriptProfile.parameters[0].name").isEqualTo("serverName")
         .jsonPath("$.scriptProfile.parameters[0].value").isEqualTo("defaultServer")
         .jsonPath("$.scriptProfile.parameters[2].name").isEqualTo("artifactPath")
-        .jsonPath("$.scriptProfile.parameters[2].value").isEqualTo("//jenkins/share/orders/latest/orders.war");
+        .jsonPath("$.scriptProfile.parameters[2].value").isEqualTo("\\\\jenkins\\share\\orders\\latest\\orders.war");
   }
 
   @Test
@@ -484,7 +484,7 @@ class ReleaseCenterControllerTest {
                     new com.company.opsagent.controlplane.modules.release.ReleaseScriptParameter("applicationName", "orders"),
                     new com.company.opsagent.controlplane.modules.release.ReleaseScriptParameter(
                         "artifactPath",
-                        "//jenkins/share/orders/latest/orders.war"))),
+                        "\\\\jenkins\\share\\orders\\latest\\orders.war"))),
             true))
         .block();
   }
