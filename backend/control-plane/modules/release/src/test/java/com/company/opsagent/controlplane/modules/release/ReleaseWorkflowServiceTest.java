@@ -231,7 +231,7 @@ class ReleaseWorkflowServiceTest {
             List.of(
                 new ReleaseScriptParameter("serverName", "defaultServer"),
                 new ReleaseScriptParameter("applicationName", "orders"),
-                new ReleaseScriptParameter("artifactPath", "//jenkins/share/orders/latest/orders.war"))),
+                new ReleaseScriptParameter("artifactPath", "\\\\jenkins\\share\\orders\\latest\\orders.war"))),
         true);
   }
 
