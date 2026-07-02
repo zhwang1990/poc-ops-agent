@@ -247,6 +247,82 @@ describe("ReleaseCenterPage", () => {
     );
   });
 
+  it("creates a SIT Liberty script release plan from script applicationName when no application catalog entry exists", async () => {
+    /** @type {unknown} */
+    let savedRequest = null;
+    const sitLibertyServer = {
+      ...releaseLibertyScriptServer,
+      nodeId: "liberty-sit-1",
+      targetEnvironment: "sit",
+      managementEndpoint: "https://liberty-sit.example",
+    };
+    const sitArtifact = {
+      ...releaseArtifact,
+      artifactId: "artifact-sit-1",
+      targetEnvironment: "sit",
+    };
+    server.use(
+      http.get("/auth/session", () =>
+        HttpResponse.json({
+          authenticated: true,
+          subject: "operator-1",
+          username: "ops.release",
+          roles: ["ROLE_ops-release"],
+          authenticationType: "built-in",
+        }),
+      ),
+      http.get("/internal/release-center/applications", () => HttpResponse.json([])),
+      http.get("/internal/release-center/artifacts", ({ request }) => {
+        const url = new URL(request.url);
+        return HttpResponse.json(url.searchParams.get("targetEnvironment") === "sit" ? [sitArtifact] : []);
+      }),
+      http.get("/internal/release-center/plans", () => HttpResponse.json([])),
+      http.get("/internal/release-center/servers", ({ request }) => {
+        const url = new URL(request.url);
+        return HttpResponse.json(url.searchParams.get("targetEnvironment") === "sit" ? [sitLibertyServer] : []);
+      }),
+      http.post("/internal/release-center/plans", async ({ request }) => {
+        const requestBody = /** @type {Record<string, unknown>} */ (await request.json());
+        savedRequest = requestBody;
+        return HttpResponse.json({
+          ...releasePlan,
+          applicationId: "orders",
+          targetEnvironment: "sit",
+          artifactId: null,
+          nodes: [
+            {
+              nodeId: "liberty-sit-1",
+              serverType: "LIBERTY",
+              managementMode: "LIBERTY_SCRIPT_PROFILE",
+              sequence: 1,
+              status: "PENDING",
+            },
+          ],
+        });
+      }),
+    );
+
+    renderReleaseCenter();
+
+    await userEvent.click(await screen.findByRole("button", { name: "SIT" }));
+    await screen.findByText("liberty-sit-1");
+    await userEvent.click(await screen.findByRole("button", { name: "新建发布单" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "新建发布单" });
+    expect(within(dialog).queryByText("缺少已启用应用")).not.toBeInTheDocument();
+    expect(within(dialog).getByText("orders（脚本参数） / orders")).toBeInTheDocument();
+    expect(within(dialog).getByText("\\\\jenkins\\share\\orders\\latest\\orders.war")).toBeInTheDocument();
+    await userEvent.click(within(dialog).getByRole("button", { name: "创建发布单" }));
+
+    await waitFor(() =>
+      expect(savedRequest).toEqual({
+        applicationId: "orders",
+        targetEnvironment: "sit",
+        nodeIds: ["liberty-sit-1"],
+      }),
+    );
+  });
+
   it("requires a shared artifact path for Liberty script releases", async () => {
     const serverWithoutArtifactPath = {
       ...releaseLibertyScriptServer,
