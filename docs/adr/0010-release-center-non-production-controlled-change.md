@@ -13,10 +13,10 @@
 用户已确认以下产品约束：
 
 - 菜单名称使用“发布中心”，避免过长导致菜单换行。
-- Tomcat 和 Liberty HTTPS 初始只支持 WAR 制品；Liberty 脚本 Profile 可以不绑定发布制品，前提是 Worker 侧已评审 Profile 不引用制品上下文。
+- Tomcat 和 Liberty HTTPS 初始只支持 WAR 制品；Liberty 脚本 Profile 可以不绑定平台上传制品，前提是控制面保存的已审核 Profile 参数模板不引用平台制品上下文。
 - 单次发布面向一个应用、一个环境、多节点串行执行。
 - `sit` 和 `uat` 至少需要二次确认，该要求可通过服务端策略配置。
-- Liberty 可以复用现有 HTTPS 服务，也可以通过已经安全评审、由 Worker 侧预注册的脚本 Profile 完成非生产发布；操作台只保存 Profile ID 和受约束参数，不保存脚本路径或命令。
+- Liberty 可以复用现有 HTTPS 服务，也可以通过已经安全评审、由控制面脚本 Profile 页面维护的受控定义完成非生产发布；发布单和服务器配置只引用 Profile ID 和受约束参数，不允许临时填写脚本路径或命令。
 - Tomcat 初期提供页面上传 WAR 按钮，目标执行方式通过策略扩展。
 - 成功或失败必须由确定性检查判定，大模型只能分析脱敏日志并给出诊断建议。
 
@@ -29,7 +29,7 @@
 - 发布中心仅允许 `dev`、`sit`、`uat` 环境。生产环境不可配置、不可见、不可调用。
 - 执行模式采用显式管理模式：
   - `LIBERTY_HTTPS`：由 Worker 调用已配置的 Liberty HTTPS 发布服务，仍受 HTTP 出口 allowlist 约束；
-  - `LIBERTY_SCRIPT_PROFILE`：由 Worker 调用已安全评审、已部署在 Worker 侧配置中的脚本 Profile。控制面和操作台只能传 `profileId` 与 `name/value` 参数，不能传脚本路径、命令行或 shell 片段；参数不得携带密码、密钥或 token，敏感材料只能通过凭据别名或短期凭据边界提供；当 Profile 参数模板不引用 `{{artifactPath}}`、`{{artifactId}}`、`{{artifactStorageKey}}` 或 `{{artifactChecksum}}` 时，发布单可以不绑定制品；
+  - `LIBERTY_SCRIPT_PROFILE`：由 Worker 调用控制面随已授权请求下发的已审核脚本 Profile 定义。控制面脚本 Profile 页面可以维护 `executablePath`、`workingDirectory`、参数模板、参数白名单、超时、成功退出码、审核和启用状态；发布单和服务器配置只能传 `profileId` 与 `name/value` 参数，不能临时传脚本路径、命令行或 shell 片段；参数不得携带密码、密钥或 token，敏感材料只能通过凭据别名或短期凭据边界提供；当 Profile 参数模板不引用 `{{artifactPath}}`、`{{artifactId}}`、`{{artifactStorageKey}}` 或 `{{artifactChecksum}}` 时，发布单可以不绑定制品；
   - `TOMCAT_WAR_UPLOAD`：由操作台上传 WAR，控制面保存受控制品引用，Worker 后续按配置策略部署；
   - 预留 `TOMCAT_MANAGER_API`、`NODE_AGENT_HTTPS` 和 `CONTROLLED_SSH_TEMPLATE` 策略，但未完成 ADR、安全评审和测试前不得启用。
 - 服务器适配采用可插拔 Skill 驱动模型。每个发布、启停、回滚和日志分析动作都必须有版本化 Skill 契约、风险等级、输入输出 Schema、权限、超时、重试策略和测试用例。
@@ -69,7 +69,7 @@
 
 - 不支持生产环境发布、启停、回滚或日志读取。
 - 不触发 CI 构建流水线。
-- 不支持任意脚本执行；只允许 Worker 侧预注册、已评审、参数 Schema 受限且不经过 shell 的 `LIBERTY_SCRIPT_PROFILE`。
+- 不支持任意脚本执行；只允许控制面已审核、参数 Schema 受限、随授权请求下发且 Worker 不经过 shell 执行的 `LIBERTY_SCRIPT_PROFILE`。
 - 不把模型分析作为最终成功或失败判定。
 - 不新增多租户、外部客户接入、计费或租户隔离。
 - 不把每一种服务器类型实现为独立部署服务。

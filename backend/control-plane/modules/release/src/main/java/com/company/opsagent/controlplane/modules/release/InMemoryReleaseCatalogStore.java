@@ -11,6 +11,7 @@ public class InMemoryReleaseCatalogStore implements ReleaseCatalogStore {
   private final Map<String, ReleaseApplication> applications = new ConcurrentHashMap<>();
   private final Map<TargetEnvironment, ReleaseEnvironmentPolicy> policies = new ConcurrentHashMap<>();
   private final Map<String, ReleaseServer> servers = new ConcurrentHashMap<>();
+  private final Map<String, ReleaseScriptProfileDefinition> scriptProfiles = new ConcurrentHashMap<>();
   private final Map<String, ReleaseArtifact> artifacts = new ConcurrentHashMap<>();
   private final Map<String, ReleaseCredential> credentials = new ConcurrentHashMap<>();
 
@@ -63,6 +64,31 @@ public class InMemoryReleaseCatalogStore implements ReleaseCatalogStore {
   }
 
   @Override
+  public Mono<ReleaseScriptProfileDefinition> saveScriptProfileDefinition(ReleaseScriptProfileDefinition profile) {
+    scriptProfiles.put(scriptProfileKey(profile.targetEnvironment().value(), profile.profileId()), profile);
+    return Mono.just(profile);
+  }
+
+  @Override
+  public Mono<ReleaseScriptProfileDefinition> findScriptProfileDefinition(String targetEnvironment, String profileId) {
+    return Mono.justOrEmpty(scriptProfiles.get(scriptProfileKey(targetEnvironment, profileId)));
+  }
+
+  @Override
+  public Flux<ReleaseScriptProfileDefinition> listScriptProfileDefinitions(String targetEnvironment) {
+    TargetEnvironment environment = TargetEnvironment.from(targetEnvironment);
+    return Flux.fromIterable(scriptProfiles.values())
+        .filter(profile -> profile.targetEnvironment() == environment)
+        .sort(Comparator.comparing(ReleaseScriptProfileDefinition::profileId));
+  }
+
+  @Override
+  public Mono<Void> deleteScriptProfileDefinition(String targetEnvironment, String profileId) {
+    scriptProfiles.remove(scriptProfileKey(targetEnvironment, profileId));
+    return Mono.empty();
+  }
+
+  @Override
   public Mono<ReleaseArtifact> saveArtifact(ReleaseArtifact artifact) {
     artifacts.put(artifact.artifactId(), artifact);
     return Mono.just(artifact);
@@ -107,6 +133,12 @@ public class InMemoryReleaseCatalogStore implements ReleaseCatalogStore {
   public Flux<ReleasePlan> listPlans() {
     return Flux.fromIterable(plans.values())
         .sort(Comparator.comparing(ReleasePlan::updatedAt).reversed());
+  }
+
+  private String scriptProfileKey(String targetEnvironment, String profileId) {
+    return TargetEnvironment.from(targetEnvironment).value()
+        + "/"
+        + ReleaseValues.requiredText(profileId, "profileId");
   }
 
   private final Map<String, ReleasePlan> plans = new ConcurrentHashMap<>();

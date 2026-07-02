@@ -17,6 +17,10 @@ public class R2dbcReleaseCatalogStore implements ReleaseCatalogStore {
 
   private static final TypeReference<List<ReleaseScriptParameter>> SCRIPT_PARAMETERS_TYPE = new TypeReference<>() {
   };
+  private static final TypeReference<List<String>> STRING_LIST_TYPE = new TypeReference<>() {
+  };
+  private static final TypeReference<List<Integer>> INTEGER_LIST_TYPE = new TypeReference<>() {
+  };
 
   private final DatabaseClient databaseClient;
   private final ObjectMapper objectMapper;
@@ -150,6 +154,116 @@ public class R2dbcReleaseCatalogStore implements ReleaseCatalogStore {
   public Mono<Void> deleteServer(String nodeId) {
     return databaseClient.sql("delete from release_server where node_id = :nodeId")
         .bind("nodeId", ReleaseValues.requiredText(nodeId, "nodeId"))
+        .fetch()
+        .rowsUpdated()
+        .then();
+  }
+
+  @Override
+  public Mono<ReleaseScriptProfileDefinition> saveScriptProfileDefinition(ReleaseScriptProfileDefinition profile) {
+    OffsetDateTime now = now();
+    return databaseClient.sql("""
+            delete from release_script_profile_definition
+            where target_environment = :targetEnvironment
+              and profile_id = :profileId
+            """)
+        .bind("targetEnvironment", profile.targetEnvironment().value())
+        .bind("profileId", profile.profileId())
+        .fetch()
+        .rowsUpdated()
+        .then(databaseClient.sql("""
+                insert into release_script_profile_definition (
+                  profile_id,
+                  target_environment,
+                  display_name,
+                  executable_path,
+                  working_directory,
+                  arguments_json,
+                  required_parameters_json,
+                  allowed_parameters_json,
+                  success_exit_codes_json,
+                  timeout_seconds,
+                  approved,
+                  enabled,
+                  created_at,
+                  updated_at
+                ) values (
+                  :profileId,
+                  :targetEnvironment,
+                  :displayName,
+                  :executablePath,
+                  :workingDirectory,
+                  :argumentsJson,
+                  :requiredParametersJson,
+                  :allowedParametersJson,
+                  :successExitCodesJson,
+                  :timeoutSeconds,
+                  :approved,
+                  :enabled,
+                  :createdAt,
+                  :updatedAt
+                )
+                """)
+            .bind("profileId", profile.profileId())
+            .bind("targetEnvironment", profile.targetEnvironment().value())
+            .bind("displayName", profile.displayName())
+            .bind("executablePath", profile.executablePath())
+            .bind("workingDirectory", profile.workingDirectory())
+            .bind("argumentsJson", json(profile.arguments(), "script profile arguments"))
+            .bind("requiredParametersJson", json(profile.requiredParameters(), "script profile required parameters"))
+            .bind("allowedParametersJson", json(profile.allowedParameters(), "script profile allowed parameters"))
+            .bind("successExitCodesJson", json(profile.successExitCodes(), "script profile success exit codes"))
+            .bind("timeoutSeconds", profile.timeoutSeconds())
+            .bind("approved", profile.approved())
+            .bind("enabled", profile.enabled())
+            .bind("createdAt", now)
+            .bind("updatedAt", now)
+            .fetch()
+            .rowsUpdated())
+        .thenReturn(profile);
+  }
+
+  @Override
+  public Mono<ReleaseScriptProfileDefinition> findScriptProfileDefinition(String targetEnvironment, String profileId) {
+    TargetEnvironment environment = TargetEnvironment.from(targetEnvironment);
+    String id = ReleaseValues.requiredText(profileId, "profileId");
+    return databaseClient.sql("""
+            select *
+            from release_script_profile_definition
+            where target_environment = :targetEnvironment
+              and profile_id = :profileId
+            """)
+        .bind("targetEnvironment", environment.value())
+        .bind("profileId", id)
+        .map((row, metadata) -> scriptProfileDefinition(row))
+        .one();
+  }
+
+  @Override
+  public Flux<ReleaseScriptProfileDefinition> listScriptProfileDefinitions(String targetEnvironment) {
+    TargetEnvironment environment = TargetEnvironment.from(targetEnvironment);
+    return databaseClient.sql("""
+            select *
+            from release_script_profile_definition
+            where target_environment = :targetEnvironment
+            order by profile_id asc
+            """)
+        .bind("targetEnvironment", environment.value())
+        .map((row, metadata) -> scriptProfileDefinition(row))
+        .all();
+  }
+
+  @Override
+  public Mono<Void> deleteScriptProfileDefinition(String targetEnvironment, String profileId) {
+    TargetEnvironment environment = TargetEnvironment.from(targetEnvironment);
+    String id = ReleaseValues.requiredText(profileId, "profileId");
+    return databaseClient.sql("""
+            delete from release_script_profile_definition
+            where target_environment = :targetEnvironment
+              and profile_id = :profileId
+            """)
+        .bind("targetEnvironment", environment.value())
+        .bind("profileId", id)
         .fetch()
         .rowsUpdated()
         .then();
@@ -586,6 +700,22 @@ public class R2dbcReleaseCatalogStore implements ReleaseCatalogStore {
         true);
   }
 
+  private ReleaseScriptProfileDefinition scriptProfileDefinition(io.r2dbc.spi.Row row) {
+    return new ReleaseScriptProfileDefinition(
+        row.get("profile_id", String.class),
+        TargetEnvironment.from(row.get("target_environment", String.class)),
+        row.get("display_name", String.class),
+        row.get("executable_path", String.class),
+        row.get("working_directory", String.class),
+        stringList(row.get("arguments_json", String.class), "script profile arguments"),
+        stringList(row.get("required_parameters_json", String.class), "script profile required parameters"),
+        stringList(row.get("allowed_parameters_json", String.class), "script profile allowed parameters"),
+        integerList(row.get("success_exit_codes_json", String.class), "script profile success exit codes"),
+        number(row.get("timeout_seconds")).intValue(),
+        Boolean.TRUE.equals(row.get("approved", Boolean.class)),
+        Boolean.TRUE.equals(row.get("enabled", Boolean.class)));
+  }
+
   private PlanRow planRow(io.r2dbc.spi.Row row) {
     return new PlanRow(
         row.get("release_id", String.class),
@@ -643,6 +773,30 @@ public class R2dbcReleaseCatalogStore implements ReleaseCatalogStore {
       return objectMapper.writeValueAsString(scriptProfile.parameters());
     } catch (JsonProcessingException exception) {
       throw new IllegalStateException("release server script parameters cannot be serialized", exception);
+    }
+  }
+
+  private String json(Object value, String fieldName) {
+    try {
+      return objectMapper.writeValueAsString(value);
+    } catch (JsonProcessingException exception) {
+      throw new IllegalStateException(fieldName + " cannot be serialized", exception);
+    }
+  }
+
+  private List<String> stringList(String json, String fieldName) {
+    try {
+      return objectMapper.readValue(json, STRING_LIST_TYPE);
+    } catch (JsonProcessingException exception) {
+      throw new IllegalStateException(fieldName + " are invalid", exception);
+    }
+  }
+
+  private List<Integer> integerList(String json, String fieldName) {
+    try {
+      return objectMapper.readValue(json, INTEGER_LIST_TYPE);
+    } catch (JsonProcessingException exception) {
+      throw new IllegalStateException(fieldName + " are invalid", exception);
     }
   }
 

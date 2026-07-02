@@ -65,7 +65,25 @@ public record ReleaseWorkerRequest(
 
   public record ReleaseScriptProfile(
       String profileId,
-      List<ReleaseScriptParameter> parameters) {
+      List<ReleaseScriptParameter> parameters,
+      ReleaseScriptProfileDefinition definition) {
+
+    public ReleaseScriptProfile(String profileId, List<ReleaseScriptParameter> parameters) {
+      this(profileId, parameters, null);
+    }
+  }
+
+  public record ReleaseScriptProfileDefinition(
+      String executablePath,
+      List<String> arguments,
+      List<String> requiredParameters,
+      List<String> allowedParameters,
+      List<Integer> successExitCodes,
+      int timeoutSeconds,
+      String workingDirectory,
+      List<String> targetEnvironments,
+      boolean approved,
+      boolean enabled) {
   }
 
   public record ReleaseScriptParameter(

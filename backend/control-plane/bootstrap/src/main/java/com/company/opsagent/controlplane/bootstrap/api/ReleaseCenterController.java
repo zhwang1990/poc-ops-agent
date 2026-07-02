@@ -12,6 +12,7 @@ import com.company.opsagent.controlplane.modules.release.ReleaseCredentialServic
 import com.company.opsagent.controlplane.modules.release.ReleaseCredentialSummary;
 import com.company.opsagent.controlplane.modules.release.ReleaseEnvironmentPolicy;
 import com.company.opsagent.controlplane.modules.release.ReleasePlan;
+import com.company.opsagent.controlplane.modules.release.ReleaseScriptProfileDefinition;
 import com.company.opsagent.controlplane.modules.release.ReleaseScriptProfile;
 import com.company.opsagent.controlplane.modules.release.ReleaseServer;
 import com.company.opsagent.controlplane.modules.release.ReleaseWorkflowException;
@@ -78,6 +79,19 @@ public class ReleaseCenterController {
       "credentialAlias",
       "scriptProfile",
       "enabled");
+  private static final Set<String> SCRIPT_PROFILE_DEFINITION_FIELDS = Set.of(
+      "profileId",
+      "targetEnvironment",
+      "displayName",
+      "executablePath",
+      "workingDirectory",
+      "arguments",
+      "requiredParameters",
+      "allowedParameters",
+      "successExitCodes",
+      "timeoutSeconds",
+      "approved",
+      "enabled");
   private static final Set<String> PLAN_FIELDS = Set.of(
       "applicationId",
       "targetEnvironment",
@@ -117,6 +131,12 @@ public class ReleaseCenterController {
     return releaseCatalogStore.listServers(targetEnvironment).collectList();
   }
 
+  @GetMapping("/script-profiles")
+  public Mono<List<ReleaseScriptProfileDefinition>> scriptProfiles(
+      @RequestParam("targetEnvironment") String targetEnvironment) {
+    return releaseCatalogStore.listScriptProfileDefinitions(targetEnvironment).collectList();
+  }
+
   @GetMapping("/plans")
   public Mono<List<ReleasePlan>> plans() {
     return releaseCatalogStore.listPlans().collectList();
@@ -141,7 +161,7 @@ public class ReleaseCenterController {
   @PostMapping("/servers")
   public Mono<ReleaseServer> createServer(@RequestBody JsonNode request) {
     ServerRequest parsed = parseServerRequest(request);
-    return releaseCatalogStore.saveServer(ReleaseServer.create(
+    ReleaseServer server = ReleaseServer.create(
         parsed.nodeId(),
         parsed.targetEnvironment(),
         serverType(parsed.serverType()),
@@ -150,7 +170,9 @@ public class ReleaseCenterController {
         parsed.applicationPath(),
         parsed.credentialAlias(),
         parsed.scriptProfile(),
-        parsed.enabled() == null || parsed.enabled()));
+        parsed.enabled() == null || parsed.enabled());
+    return validateServerScriptProfile(server)
+        .then(releaseCatalogStore.saveServer(server));
   }
 
   @DeleteMapping("/servers/{nodeId}")
@@ -159,6 +181,32 @@ public class ReleaseCenterController {
       throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "nodeId is required");
     }
     return releaseCatalogStore.deleteServer(nodeId)
+        .thenReturn(ResponseEntity.noContent().build());
+  }
+
+  @PostMapping("/script-profiles")
+  public Mono<ReleaseScriptProfileDefinition> createScriptProfile(@RequestBody JsonNode request) {
+    ScriptProfileDefinitionRequest parsed = parseScriptProfileDefinitionRequest(request);
+    return releaseCatalogStore.saveScriptProfileDefinition(ReleaseScriptProfileDefinition.create(
+        parsed.profileId(),
+        parsed.targetEnvironment(),
+        parsed.displayName(),
+        parsed.executablePath(),
+        parsed.workingDirectory(),
+        parsed.arguments(),
+        parsed.requiredParameters(),
+        parsed.allowedParameters(),
+        parsed.successExitCodes() == null ? List.of(0) : parsed.successExitCodes(),
+        parsed.timeoutSeconds() == null ? 300 : parsed.timeoutSeconds(),
+        Boolean.TRUE.equals(parsed.approved()),
+        parsed.enabled() == null || parsed.enabled()));
+  }
+
+  @DeleteMapping("/script-profiles/{targetEnvironment}/{profileId}")
+  public Mono<ResponseEntity<Void>> deleteScriptProfile(
+      @PathVariable("targetEnvironment") String targetEnvironment,
+      @PathVariable("profileId") String profileId) {
+    return releaseCatalogStore.deleteScriptProfileDefinition(targetEnvironment, profileId)
         .thenReturn(ResponseEntity.noContent().build());
   }
 
@@ -283,6 +331,11 @@ public class ReleaseCenterController {
     return parse(request, ServerRequest.class, "release server request is invalid");
   }
 
+  private ScriptProfileDefinitionRequest parseScriptProfileDefinitionRequest(JsonNode request) {
+    validateObjectFields(request, SCRIPT_PROFILE_DEFINITION_FIELDS, "release script profile request");
+    return parse(request, ScriptProfileDefinitionRequest.class, "release script profile request is invalid");
+  }
+
   private PlanRequest parsePlanRequest(JsonNode request) {
     validateObjectFields(request, PLAN_FIELDS, "release plan request");
     PlanRequest parsed = parse(request, PlanRequest.class, "release plan request is invalid");
@@ -332,6 +385,38 @@ public class ReleaseCenterController {
       return Mono.error(new IllegalArgumentException("release artifact environment does not match"));
     }
     return Mono.just(artifact);
+  }
+
+  private Mono<Void> validateServerScriptProfile(ReleaseServer server) {
+    if (server.managementMode() != ManagementMode.LIBERTY_SCRIPT_PROFILE) {
+      return Mono.empty();
+    }
+    ReleaseScriptProfile scriptProfile = server.scriptProfile();
+    return releaseCatalogStore
+        .findScriptProfileDefinition(server.targetEnvironment().value(), scriptProfile.profileId())
+        .switchIfEmpty(Mono.error(new ResponseStatusException(HttpStatus.BAD_REQUEST, "script profile is not configured")))
+        .flatMap(definition -> {
+          if (!definition.executable()) {
+            return Mono.error(new ResponseStatusException(HttpStatus.BAD_REQUEST, "script profile is not approved and enabled"));
+          }
+          validateServerScriptParameters(scriptProfile, definition);
+          return Mono.empty();
+        });
+  }
+
+  private void validateServerScriptParameters(
+      ReleaseScriptProfile scriptProfile,
+      ReleaseScriptProfileDefinition definition) {
+    Set<String> allowed = Set.copyOf(definition.allowedParameters());
+    Set<String> submitted = scriptProfile.parameters().stream()
+        .map(parameter -> parameter.name())
+        .collect(Collectors.toSet());
+    if (!allowed.containsAll(submitted)) {
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "script profile parameter is not allowed");
+    }
+    if (!submitted.containsAll(definition.requiredParameters())) {
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "script profile required parameter is missing");
+    }
   }
 
   private List<ReleaseServer> selectNodes(List<ReleaseServer> servers, List<String> nodeIds) {
@@ -407,6 +492,21 @@ public class ReleaseCenterController {
       String applicationPath,
       String credentialAlias,
       ReleaseScriptProfile scriptProfile,
+      Boolean enabled) {
+  }
+
+  private record ScriptProfileDefinitionRequest(
+      String profileId,
+      String targetEnvironment,
+      String displayName,
+      String executablePath,
+      String workingDirectory,
+      List<String> arguments,
+      List<String> requiredParameters,
+      List<String> allowedParameters,
+      List<Integer> successExitCodes,
+      Integer timeoutSeconds,
+      Boolean approved,
       Boolean enabled) {
   }
 

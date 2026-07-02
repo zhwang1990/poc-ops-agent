@@ -18,6 +18,7 @@ import {
   releaseArtifactSchema,
   releaseCredentialSummarySchema,
   releasePlanSchema,
+  releaseScriptProfileDefinitionSchema,
   releaseServerSchema,
 } from "./release-center-schemas.js";
 import {
@@ -292,6 +293,33 @@ describe("release center schemas", () => {
 
     expect(parsed.scriptProfile?.profileId).toBe("liberty-war-deploy");
     expect(parsed.scriptProfile?.parameters[0].name).toBe("serverName");
+  });
+
+  test("accepts approved Liberty script profile definitions without secrets", () => {
+    const parsed = releaseScriptProfileDefinitionSchema.parse({
+      profileId: "liberty-war-deploy",
+      targetEnvironment: "dev",
+      displayName: "Liberty WAR deploy",
+      executablePath: "C:\\ops\\scripts\\liberty-war-deploy.cmd",
+      workingDirectory: "C:\\ops-agent\\work\\release",
+      arguments: ["{{param.serverName}}", "{{param.applicationName}}", "{{param.artifactPath}}"],
+      requiredParameters: ["serverName", "applicationName", "artifactPath"],
+      allowedParameters: ["serverName", "applicationName", "artifactPath"],
+      successExitCodes: [0],
+      timeoutSeconds: 600,
+      approved: true,
+      enabled: true,
+    });
+
+    expect(parsed.profileId).toBe("liberty-war-deploy");
+    expect(parsed.targetEnvironment).toBe("dev");
+    expect(parsed.arguments[2]).toBe("{{param.artifactPath}}");
+    expect(() =>
+      releaseScriptProfileDefinitionSchema.parse({
+        ...parsed,
+        requiredParameters: ["apiToken"],
+      }),
+    ).toThrow();
   });
 });
 

@@ -28,11 +28,11 @@
 
 ## 发布中心 Liberty 脚本 Profile
 
-- Liberty 脚本发布只允许 `LIBERTY_SCRIPT_PROFILE` 管理模式调用 Worker 侧预注册脚本 Profile。
-- 操作台和控制面只能提交 `profileId` 与受约束的 `name/value` 参数，不能提交脚本路径、命令行或 shell 片段。
-- Worker 使用 `ProcessBuilder` 参数数组执行已配置的 `executable-path` 与 `arguments` 模板，不通过 shell 拼接命令。
+- Liberty 脚本发布只允许 `LIBERTY_SCRIPT_PROFILE` 管理模式调用控制面随已授权请求下发的已审核脚本 Profile 定义。
+- 操作台和发布单只能提交 `profileId` 与受约束的 `name/value` 参数，不能临时提交脚本路径、命令行或 shell 片段。
+- Worker 使用 `ProcessBuilder` 参数数组执行已审核定义中的 `executablePath` 与 `arguments` 模板，不通过 shell 拼接命令。
 - 未引用 `{{artifactPath}}`、`{{artifactId}}`、`{{artifactStorageKey}}` 或 `{{artifactChecksum}}` 的 Profile 可以无制品执行；引用任一制品占位符时必须提供受控 WAR 制品上下文。
-- Profile 必须配置必填参数、允许参数、超时、成功退出码和受限工作目录；未配置或参数不匹配时必须失败关闭。
+- Profile 必须配置必填参数、允许参数、超时、成功退出码和受限工作目录，并且处于已审核和已启用状态；未配置、未审核、未启用或参数不匹配时必须失败关闭。
 - 脚本参数不得携带密码、密钥或 token；敏感材料只能通过凭据别名、短期凭据或等价受控边界提供。
 
 ## SQL 工作台只读边界

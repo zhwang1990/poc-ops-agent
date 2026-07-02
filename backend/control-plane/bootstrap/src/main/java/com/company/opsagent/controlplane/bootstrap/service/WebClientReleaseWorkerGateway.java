@@ -11,8 +11,10 @@ import com.company.opsagent.controlplane.modules.release.ReleaseCatalogStore;
 import com.company.opsagent.controlplane.modules.release.ReleaseNodeExecutionResult;
 import com.company.opsagent.controlplane.modules.release.ReleaseNodeStep;
 import com.company.opsagent.controlplane.modules.release.ReleasePlan;
+import com.company.opsagent.controlplane.modules.release.ReleaseScriptProfileDefinition;
 import com.company.opsagent.controlplane.modules.release.ReleaseServer;
 import com.company.opsagent.controlplane.modules.release.ReleaseWorkerGateway;
+import com.company.opsagent.controlplane.modules.release.ManagementMode;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -73,7 +75,18 @@ public class WebClientReleaseWorkerGateway implements ReleaseWorkerGateway {
             artifact,
             releaseCatalogStore.findServer(node.nodeId())
                 .switchIfEmpty(Mono.error(new IllegalStateException("release server not found"))))
-        .map(tuple -> request(plan, node, tuple.getT1().orElse(null), tuple.getT2(), now));
+        .flatMap(tuple -> {
+          ReleaseServer server = tuple.getT2();
+          if (server.managementMode() != ManagementMode.LIBERTY_SCRIPT_PROFILE) {
+            return Mono.just(request(plan, node, tuple.getT1().orElse(null), server, null, now));
+          }
+          return releaseCatalogStore
+              .findScriptProfileDefinition(server.targetEnvironment().value(), server.scriptProfile().profileId())
+              .switchIfEmpty(Mono.error(new IllegalStateException("release script profile not found")))
+              .filter(ReleaseScriptProfileDefinition::executable)
+              .switchIfEmpty(Mono.error(new IllegalStateException("release script profile is not executable")))
+              .map(definition -> request(plan, node, tuple.getT1().orElse(null), server, definition, now));
+        });
   }
 
   private ReleaseWorkerRequest request(
@@ -81,6 +94,7 @@ public class WebClientReleaseWorkerGateway implements ReleaseWorkerGateway {
       ReleaseNodeStep node,
       ReleaseArtifact artifact,
       ReleaseServer server,
+      ReleaseScriptProfileDefinition scriptProfileDefinition,
       OffsetDateTime now) {
     ReleaseWorkerCommand command = new ReleaseWorkerCommand(
         "1.0",
@@ -103,7 +117,7 @@ public class WebClientReleaseWorkerGateway implements ReleaseWorkerGateway {
             server.managementEndpoint(),
             server.applicationPath(),
             server.credentialAlias(),
-            scriptProfile(server.scriptProfile()))),
+            scriptProfile(server.scriptProfile(), scriptProfileDefinition))),
         new OperatorContext("release-center", List.of("ROLE_ops-admin")),
         new PolicyDecisionReference(
             "release-policy:" + plan.releaseId(),
@@ -180,7 +194,8 @@ public class WebClientReleaseWorkerGateway implements ReleaseWorkerGateway {
   }
 
   private ReleaseScriptProfile scriptProfile(
-      com.company.opsagent.controlplane.modules.release.ReleaseScriptProfile scriptProfile) {
+      com.company.opsagent.controlplane.modules.release.ReleaseScriptProfile scriptProfile,
+      ReleaseScriptProfileDefinition scriptProfileDefinition) {
     if (scriptProfile == null) {
       return null;
     }
@@ -188,7 +203,26 @@ public class WebClientReleaseWorkerGateway implements ReleaseWorkerGateway {
         scriptProfile.profileId(),
         scriptProfile.parameters().stream()
             .map(this::scriptParameter)
-            .toList());
+            .toList(),
+        scriptProfileDefinition(scriptProfileDefinition));
+  }
+
+  private ReleaseScriptProfileDefinitionPayload scriptProfileDefinition(
+      ReleaseScriptProfileDefinition definition) {
+    if (definition == null) {
+      return null;
+    }
+    return new ReleaseScriptProfileDefinitionPayload(
+        definition.executablePath(),
+        definition.arguments(),
+        definition.requiredParameters(),
+        definition.allowedParameters(),
+        definition.successExitCodes(),
+        definition.timeoutSeconds(),
+        definition.workingDirectory(),
+        List.of(definition.targetEnvironment().value()),
+        definition.approved(),
+        definition.enabled());
   }
 
   private ReleaseScriptParameter scriptParameter(
@@ -259,7 +293,21 @@ public class WebClientReleaseWorkerGateway implements ReleaseWorkerGateway {
 
   private record ReleaseScriptProfile(
       String profileId,
-      List<ReleaseScriptParameter> parameters) {
+      List<ReleaseScriptParameter> parameters,
+      ReleaseScriptProfileDefinitionPayload definition) {
+  }
+
+  private record ReleaseScriptProfileDefinitionPayload(
+      String executablePath,
+      List<String> arguments,
+      List<String> requiredParameters,
+      List<String> allowedParameters,
+      List<Integer> successExitCodes,
+      int timeoutSeconds,
+      String workingDirectory,
+      List<String> targetEnvironments,
+      boolean approved,
+      boolean enabled) {
   }
 
   private record ReleaseScriptParameter(

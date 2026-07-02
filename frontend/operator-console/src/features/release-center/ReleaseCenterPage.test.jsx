@@ -518,6 +518,78 @@ describe("ReleaseCenterPage", () => {
     expect(await screen.findByRole("button", { name: "Copy artifact path for liberty-dev-1" })).toBeInTheDocument();
   });
 
+  it("registers an approved Liberty script profile from the profiles tab", async () => {
+    /** @type {unknown} */
+    let savedProfile = null;
+    server.use(
+      http.get("/auth/session", () =>
+        HttpResponse.json({
+          authenticated: true,
+          subject: "operator-1",
+          username: "ops.release",
+          roles: ["ROLE_ops-release"],
+          authenticationType: "built-in",
+        }),
+      ),
+      http.get("/internal/release-center/applications", () => HttpResponse.json([releaseApplication])),
+      http.get("/internal/release-center/artifacts", () => HttpResponse.json([releaseArtifact])),
+      http.get("/internal/release-center/plans", () => HttpResponse.json([])),
+      http.get("/internal/release-center/servers", () => HttpResponse.json([])),
+      http.get("/internal/release-center/script-profiles", () => HttpResponse.json([])),
+      http.post("/internal/release-center/script-profiles", async ({ request }) => {
+        const requestBody = /** @type {Record<string, unknown>} */ (await request.json());
+        savedProfile = requestBody;
+        return HttpResponse.json(requestBody);
+      }),
+    );
+
+    renderReleaseCenter();
+
+    await userEvent.click(await screen.findByRole("tab", { name: "Script profiles" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Add script profile" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "New script profile" });
+    await userEvent.type(within(dialog).getByLabelText("Profile ID"), "liberty-war-deploy");
+    await userEvent.type(within(dialog).getByLabelText("Display name"), "Liberty WAR deploy");
+    await userEvent.type(
+      within(dialog).getByLabelText("Executable path"),
+      "C:\\ops\\scripts\\liberty-war-deploy.cmd",
+    );
+    await userEvent.type(within(dialog).getByLabelText("Working directory"), "C:\\ops-agent\\work\\release");
+    await userEvent.type(
+      within(dialog).getByLabelText("Arguments"),
+      "{{param.serverName}}\n{{param.applicationName}}\n{{param.artifactPath}}",
+    );
+    await userEvent.type(
+      within(dialog).getByLabelText("Required parameters"),
+      "serverName\napplicationName\nartifactPath",
+    );
+    await userEvent.type(
+      within(dialog).getByLabelText("Allowed parameters"),
+      "serverName\napplicationName\nartifactPath",
+    );
+    await userEvent.click(within(dialog).getByLabelText("Approved"));
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save script profile" }));
+
+    await waitFor(() =>
+      expect(savedProfile).toEqual({
+        profileId: "liberty-war-deploy",
+        targetEnvironment: "dev",
+        displayName: "Liberty WAR deploy",
+        executablePath: "C:\\ops\\scripts\\liberty-war-deploy.cmd",
+        workingDirectory: "C:\\ops-agent\\work\\release",
+        arguments: ["{{param.serverName}}", "{{param.applicationName}}", "{{param.artifactPath}}"],
+        requiredParameters: ["serverName", "applicationName", "artifactPath"],
+        allowedParameters: ["serverName", "applicationName", "artifactPath"],
+        successExitCodes: [0],
+        timeoutSeconds: 600,
+        approved: true,
+        enabled: true,
+      }),
+    );
+    expect(await screen.findByText("liberty-war-deploy")).toBeInTheDocument();
+  });
+
   it("edits a release server from the servers tab", async () => {
     /** @type {unknown} */
     let savedServer = null;

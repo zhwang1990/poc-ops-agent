@@ -58,6 +58,99 @@ class LibertyScriptProfileReleaseAdapterTest {
   }
 
   @Test
+  void deployRunsApprovedRequestScriptProfileDefinition() throws Exception {
+    Path output = tempDir.resolve("request-profile-output.txt");
+    LibertyScriptProfileReleaseAdapter adapter = new LibertyScriptProfileReleaseAdapter(
+        tempDir,
+        Map.of(),
+        clock);
+
+    ReleaseWorkerResult result = adapter.deploy(request(
+        (ReleaseWorkerRequest.ReleaseArtifactReference) null,
+        new ReleaseWorkerRequest.ReleaseScriptProfile(
+            "liberty-war-deploy",
+            List.of(
+                new ReleaseWorkerRequest.ReleaseScriptParameter("serverName", "defaultServer"),
+                new ReleaseWorkerRequest.ReleaseScriptParameter("applicationName", "orders"),
+                new ReleaseWorkerRequest.ReleaseScriptParameter("artifactPath", "\\\\jenkins\\share\\orders\\latest\\orders.war")),
+            new ReleaseWorkerRequest.ReleaseScriptProfileDefinition(
+                javaExecutable().toString(),
+                List.of(
+                    "-cp",
+                    System.getProperty("java.class.path"),
+                    LibertyScriptProbe.class.getName(),
+                    output.toString(),
+                    "{{param.serverName}}",
+                    "{{param.applicationName}}",
+                    "{{param.artifactPath}}"),
+                List.of("serverName", "applicationName", "artifactPath"),
+                List.of("serverName", "applicationName", "artifactPath"),
+                List.of(0),
+                10,
+                tempDir.toString(),
+                List.of("dev"),
+                true,
+                true))))
+        .block();
+
+    assertEquals(ReleaseWorkerStatus.SUCCEEDED, result.status());
+    String captured = Files.readString(output, StandardCharsets.UTF_8);
+    assertTrue(captured.contains("defaultServer"));
+    assertTrue(captured.contains("orders"));
+    assertTrue(captured.contains("\\\\jenkins\\share\\orders\\latest\\orders.war"));
+  }
+
+  @Test
+  void deployRejectsUnapprovedRequestScriptProfileDefinition() {
+    ReleaseWorkerResult result = new LibertyScriptProfileReleaseAdapter(tempDir, Map.of(), clock)
+        .deploy(request(
+            (ReleaseWorkerRequest.ReleaseArtifactReference) null,
+            new ReleaseWorkerRequest.ReleaseScriptProfile(
+                "liberty-war-deploy",
+                List.of(new ReleaseWorkerRequest.ReleaseScriptParameter("serverName", "defaultServer")),
+                new ReleaseWorkerRequest.ReleaseScriptProfileDefinition(
+                    javaExecutable().toString(),
+                    List.of("{{param.serverName}}"),
+                    List.of("serverName"),
+                    List.of("serverName"),
+                    List.of(0),
+                    10,
+                    tempDir.toString(),
+                    List.of("dev"),
+                    false,
+                    true))))
+        .block();
+
+    assertEquals(ReleaseWorkerStatus.REJECTED, result.status());
+    assertEquals("LIBERTY_SCRIPT_PROFILE_NOT_APPROVED", result.errorCode());
+  }
+
+  @Test
+  void deployRejectsRequestScriptProfileDefinitionForDifferentEnvironment() {
+    ReleaseWorkerResult result = new LibertyScriptProfileReleaseAdapter(tempDir, Map.of(), clock)
+        .deploy(request(
+            (ReleaseWorkerRequest.ReleaseArtifactReference) null,
+            new ReleaseWorkerRequest.ReleaseScriptProfile(
+                "liberty-war-deploy",
+                List.of(new ReleaseWorkerRequest.ReleaseScriptParameter("serverName", "defaultServer")),
+                new ReleaseWorkerRequest.ReleaseScriptProfileDefinition(
+                    javaExecutable().toString(),
+                    List.of("{{param.serverName}}"),
+                    List.of("serverName"),
+                    List.of("serverName"),
+                    List.of(0),
+                    10,
+                    tempDir.toString(),
+                    List.of("sit"),
+                    true,
+                    true))))
+        .block();
+
+    assertEquals(ReleaseWorkerStatus.REJECTED, result.status());
+    assertEquals("LIBERTY_SCRIPT_PROFILE_ENVIRONMENT_NOT_ALLOWED", result.errorCode());
+  }
+
+  @Test
   void deployRejectsUnknownScriptProfileParameter() throws Exception {
     byte[] artifactBytes = "war-content".getBytes(StandardCharsets.UTF_8);
     Files.write(tempDir.resolve("artifact-1.war"), artifactBytes);

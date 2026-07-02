@@ -96,7 +96,12 @@ public class LibertyScriptProfileReleaseAdapter implements ReleaseAdapter {
     ReleaseWorkerRequest.ReleaseArtifactReference artifact = command.artifact();
     ReleaseWorkerRequest.ReleaseNodeTarget node = command.nodes().getFirst();
     ReleaseWorkerRequest.ReleaseScriptProfile requestedProfile = node.scriptProfile();
-    ReleaseWorkerProperties.Liberty.ScriptProfile configuredProfile = scriptProfiles.get(requestedProfile.profileId());
+    ReleaseWorkerProperties.Liberty.ScriptProfile configuredProfile;
+    try {
+      configuredProfile = configuredProfile(requestedProfile);
+    } catch (IllegalArgumentException exception) {
+      return rejected(request, "LIBERTY_SCRIPT_PROFILE_INVALID", exception.getMessage());
+    }
     Path artifactPath = artifact == null ? null : artifactPath(artifact.storageKey());
     Path workingDirectory = workingDirectory(configuredProfile);
     Path outputPath = workingDirectory.resolve(outputFileName(request.executionRequestId())).normalize();
@@ -171,7 +176,16 @@ public class LibertyScriptProfileReleaseAdapter implements ReleaseAdapter {
     if (!PROFILE_ID_PATTERN.matcher(requestedProfile.profileId()).matches()) {
       return rejected(request, "LIBERTY_SCRIPT_PROFILE_INVALID", "Liberty script profile id is invalid");
     }
-    ReleaseWorkerProperties.Liberty.ScriptProfile configuredProfile = scriptProfiles.get(requestedProfile.profileId());
+    ReleaseWorkerResult definitionError = validateRequestedDefinition(request, requestedProfile.definition());
+    if (definitionError != null) {
+      return definitionError;
+    }
+    ReleaseWorkerProperties.Liberty.ScriptProfile configuredProfile;
+    try {
+      configuredProfile = configuredProfile(requestedProfile);
+    } catch (IllegalArgumentException exception) {
+      return rejected(request, "LIBERTY_SCRIPT_PROFILE_INVALID", exception.getMessage());
+    }
     if (configuredProfile == null) {
       return rejected(request, "LIBERTY_SCRIPT_PROFILE_NOT_CONFIGURED", "Liberty script profile is not configured on this Worker");
     }
@@ -184,6 +198,44 @@ public class LibertyScriptProfileReleaseAdapter implements ReleaseAdapter {
       return artifactError;
     }
     return validateParameters(request, requestedProfile, configuredProfile);
+  }
+
+  private ReleaseWorkerResult validateRequestedDefinition(
+      ReleaseWorkerRequest request,
+      ReleaseWorkerRequest.ReleaseScriptProfileDefinition definition) {
+    if (definition == null) {
+      return null;
+    }
+    if (!definition.approved() || !definition.enabled()) {
+      return rejected(request, "LIBERTY_SCRIPT_PROFILE_NOT_APPROVED", "Liberty script profile is not approved and enabled");
+    }
+    List<String> targetEnvironments = definition.targetEnvironments() == null
+        ? List.of()
+        : definition.targetEnvironments();
+    if (!targetEnvironments.contains(request.command().targetEnvironment())) {
+      return rejected(
+          request,
+          "LIBERTY_SCRIPT_PROFILE_ENVIRONMENT_NOT_ALLOWED",
+          "Liberty script profile is not allowed for the target environment");
+    }
+    return null;
+  }
+
+  private ReleaseWorkerProperties.Liberty.ScriptProfile configuredProfile(
+      ReleaseWorkerRequest.ReleaseScriptProfile requestedProfile) {
+    ReleaseWorkerRequest.ReleaseScriptProfileDefinition definition = requestedProfile.definition();
+    if (definition == null) {
+      return scriptProfiles.get(requestedProfile.profileId());
+    }
+    ReleaseWorkerProperties.Liberty.ScriptProfile configuredProfile = new ReleaseWorkerProperties.Liberty.ScriptProfile();
+    configuredProfile.setExecutablePath(isBlank(definition.executablePath()) ? null : Path.of(definition.executablePath()));
+    configuredProfile.setArguments(definition.arguments() == null ? List.of() : definition.arguments());
+    configuredProfile.setRequiredParameters(definition.requiredParameters() == null ? List.of() : definition.requiredParameters());
+    configuredProfile.setAllowedParameters(definition.allowedParameters() == null ? List.of() : definition.allowedParameters());
+    configuredProfile.setSuccessExitCodes(definition.successExitCodes() == null ? List.of() : definition.successExitCodes());
+    configuredProfile.setTimeout(Duration.ofSeconds(definition.timeoutSeconds()));
+    configuredProfile.setWorkingDirectory(isBlank(definition.workingDirectory()) ? null : Path.of(definition.workingDirectory()));
+    return configuredProfile;
   }
 
   private ReleaseWorkerResult validateArtifact(

@@ -367,6 +367,23 @@ class ContractsTest {
         .toList();
     assertTrue(managementModes.contains("LIBERTY_SCRIPT_PROFILE"));
     assertTrue(nodeProperties.has("scriptProfile"));
+    JsonNode definition = nodeProperties.path("scriptProfile").path("properties").path("definition");
+    assertEquals(List.of("object", "null"), StreamSupport.stream(definition.path("type").spliterator(), false)
+        .map(JsonNode::asText)
+        .toList());
+    for (String fieldName : List.of(
+        "executablePath",
+        "arguments",
+        "requiredParameters",
+        "allowedParameters",
+        "successExitCodes",
+        "timeoutSeconds",
+        "workingDirectory",
+        "targetEnvironments",
+        "approved",
+        "enabled")) {
+      assertTrue(definition.path("properties").has(fieldName), "missing script profile definition field: " + fieldName);
+    }
   }
 
   @Test

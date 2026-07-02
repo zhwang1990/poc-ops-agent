@@ -6,10 +6,16 @@ import { z } from "zod";
  * @typedef {z.infer<typeof releaseArtifactSchema>} ReleaseArtifact
  * @typedef {z.infer<typeof releasePlanSchema>} ReleasePlan
  * @typedef {z.infer<typeof releaseCredentialSummarySchema>} ReleaseCredentialSummary
+ * @typedef {z.infer<typeof releaseScriptProfileDefinitionSchema>} ReleaseScriptProfileDefinition
  */
 
 const nonBlankString = z.string().trim().min(1);
 const sha256String = nonBlankString.regex(/^sha256:[a-fA-F0-9]{3,}$/);
+const scriptParameterNameSchema = nonBlankString
+  .regex(/^[A-Za-z][A-Za-z0-9_.-]{0,63}$/)
+  .refine((value) => !/(password|secret|token)/i.test(value), {
+    message: "script profile parameters must not contain secret material",
+  });
 
 export const targetEnvironmentSchema = z
   .enum(["dev", "sit", "uat", "DEV", "SIT", "UAT"])
@@ -29,7 +35,7 @@ export const managementModeSchema = z.enum([
 
 export const releaseScriptParameterSchema = z
   .object({
-    name: nonBlankString.regex(/^[A-Za-z][A-Za-z0-9_.-]{0,63}$/),
+    name: scriptParameterNameSchema,
     value: nonBlankString.max(500),
   })
   .strict();
@@ -40,6 +46,37 @@ export const releaseScriptProfileSchema = z
     parameters: z.array(releaseScriptParameterSchema).max(40),
   })
   .strict();
+
+export const releaseScriptProfileDefinitionSchema = z
+  .object({
+    profileId: nonBlankString.regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$/),
+    targetEnvironment: targetEnvironmentSchema,
+    displayName: nonBlankString.max(160),
+    executablePath: nonBlankString.max(500),
+    workingDirectory: nonBlankString.max(500),
+    arguments: z.array(nonBlankString.max(500)).min(1).max(40),
+    requiredParameters: z.array(scriptParameterNameSchema).max(40),
+    allowedParameters: z.array(scriptParameterNameSchema).max(40),
+    successExitCodes: z.array(z.number().int().min(0).max(255)).min(1).max(20),
+    timeoutSeconds: z.number().int().min(1).max(7200),
+    approved: z.boolean(),
+    enabled: z.boolean(),
+  })
+  .strict()
+  .superRefine((profile, context) => {
+    const allowed = new Set(profile.allowedParameters);
+    for (const required of profile.requiredParameters) {
+      if (!allowed.has(required)) {
+        context.addIssue({
+          code: "custom",
+          path: ["allowedParameters"],
+          message: "allowedParameters must include requiredParameters",
+        });
+      }
+    }
+  });
+
+export const releaseScriptProfileDefinitionListSchema = z.array(releaseScriptProfileDefinitionSchema);
 
 export const releaseApplicationSchema = z
   .object({

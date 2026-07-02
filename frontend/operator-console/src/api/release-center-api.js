@@ -11,6 +11,8 @@ import {
   releasePlanCreateRequestSchema,
   releasePlanListSchema,
   releasePlanSchema,
+  releaseScriptProfileDefinitionListSchema,
+  releaseScriptProfileDefinitionSchema,
   releaseServerDeleteResponseSchema,
   releaseServerListSchema,
   releaseServerSchema,
@@ -67,6 +69,42 @@ export function deleteReleaseServer(nodeId) {
     method: "DELETE",
     schema: releaseServerDeleteResponseSchema,
   });
+}
+
+/**
+ * @param {string} targetEnvironment
+ */
+export function listReleaseScriptProfiles(targetEnvironment) {
+  return requestJson(
+    `/internal/release-center/script-profiles?targetEnvironment=${encodeURIComponent(targetEnvironment)}`,
+    { schema: releaseScriptProfileDefinitionListSchema },
+  );
+}
+
+/**
+ * @param {unknown} input
+ */
+export function saveReleaseScriptProfile(input) {
+  const request = releaseScriptProfileDefinitionSchema.parse(input);
+  return requestJson("/internal/release-center/script-profiles", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+    schema: releaseScriptProfileDefinitionSchema,
+  });
+}
+
+/**
+ * @param {{targetEnvironment: string, profileId: string}} input
+ */
+export function deleteReleaseScriptProfile(input) {
+  return requestJson(
+    `/internal/release-center/script-profiles/${encodeURIComponent(input.targetEnvironment)}/${encodeURIComponent(input.profileId)}`,
+    {
+      method: "DELETE",
+      schema: releaseServerDeleteResponseSchema,
+    },
+  );
 }
 
 export function listReleasePlans() {
