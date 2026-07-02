@@ -113,9 +113,9 @@ Worker 配置必须至少约束以下内容：
 - `npm run test`：通过，21 个前端测试文件、230 个测试用例完成。
 - `tools\ci\check-repository.ps1`：通过，仓库结构和治理检查完成。
 - `tools\ci\scan-secrets.ps1`：通过，未发现新增密钥或敏感制品。
-- `tools\ci\check-contracts.ps1`：未通过，原因是既有 `sql-assistant-advice/manifest.json` 和 `sql-assistant-advice/manifest.signature.json` 存在生成漂移；发布中心新增的 `release-log-analysis-read` Skill 已单独通过 `validate`、`generate` 和 `contracts test`。
+- `tools\ci\check-contracts.ps1`：2026-07-02 已重新通过；Skill 契约包生成器固定 LF 换行后，`manifest.json` 的原始字节摘要和 `manifest.signature.json` 已保持一致。
 
-阻塞项关闭前，不得把该切片声明为可发布版本。若只验证发布中心本次变更范围，必须在验证记录中注明上述契约漂移不属于发布中心新增文件。
+后续新增或修改 Skill 源包时，必须同时运行 `tools\skills\skill-package-tool.ps1 generate-all --check`，避免源包与签名契约包再次漂移。
 
 ## 失败注入记录格式
 
