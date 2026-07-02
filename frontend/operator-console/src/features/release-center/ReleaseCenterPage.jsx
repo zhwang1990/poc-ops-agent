@@ -46,6 +46,7 @@ import styles from "./ReleaseCenterPage.module.css";
 /** @typedef {import("../../schemas/release-center-schemas.js").ReleaseServer} ReleaseServer */
 /** @typedef {"plans" | "artifacts" | "applications" | "servers" | "policies" | "credentials"} ReleaseTabId */
 /** @typedef {"PENDING_TARGETS" | "SCRIPT_PROFILE" | "ARTIFACT"} ReleaseArtifactMode */
+/** @typedef {ReleaseApplication & { source?: "CATALOG" | "SCRIPT_PROFILE" }} ReleaseApplicationTarget */
 
 const TABS = [
   { id: "plans", label: "发布单", icon: ListChecks },
@@ -102,11 +103,16 @@ export function ReleaseCenterPage() {
     applications.find((application) => application.applicationId === selectedPlan?.applicationId) ??
     applications[0] ??
     null;
+  const enabledServers = useMemo(() => servers.filter((server) => server.enabled), [servers]);
+  const inferredScriptApplication = useMemo(
+    () => inferLibertyScriptApplication(enabledServers),
+    [enabledServers],
+  );
+  const selectedReleaseApplication = selectedApplication ?? inferredScriptApplication;
   const selectedArtifact =
     artifacts.find((artifact) => artifact.applicationId === selectedApplication?.applicationId) ??
     artifacts[0] ??
     null;
-  const enabledServers = useMemo(() => servers.filter((server) => server.enabled), [servers]);
   const releaseArtifactMode = releaseArtifactModeFor(enabledServers);
   const artifactRequired = releaseArtifactMode === "ARTIFACT";
   const scriptArtifactPathMissing =
@@ -114,7 +120,7 @@ export function ReleaseCenterPage() {
   const canUpload = Boolean(selectedApplication) && !uploadMutation.isPending;
   const canSubmitCreatePlan =
     Boolean(
-      selectedApplication &&
+      selectedReleaseApplication &&
         enabledServers.length > 0 &&
         (!artifactRequired || selectedArtifact) &&
         !scriptArtifactPathMissing,
@@ -143,21 +149,21 @@ export function ReleaseCenterPage() {
 
   function handleCreatePlan() {
     if (
-      !selectedApplication ||
+      !selectedReleaseApplication ||
       enabledServers.length === 0 ||
       (artifactRequired && !selectedArtifact) ||
       scriptArtifactPathMissing
     ) {
       return;
     }
-    const artifactFields = selectedArtifact
+    const artifactFields = artifactRequired && selectedArtifact
       ? {
           artifactId: selectedArtifact.artifactId,
           parametersHash: selectedArtifact.checksum,
         }
       : {};
     createPlanMutation.mutate({
-        applicationId: selectedApplication.applicationId,
+        applicationId: selectedReleaseApplication.applicationId,
         targetEnvironment,
         nodeIds: enabledServers.map((server) => server.nodeId),
         ...artifactFields,
@@ -296,7 +302,7 @@ export function ReleaseCenterPage() {
         onSubmit={handleCreatePlan}
         open={createDialogOpen}
         releaseArtifactMode={releaseArtifactMode}
-        selectedApplication={selectedApplication}
+        selectedApplication={selectedReleaseApplication}
         selectedArtifact={selectedArtifact}
         scriptArtifactPathMissing={scriptArtifactPathMissing}
         targetEnvironment={targetEnvironment}
@@ -314,7 +320,7 @@ export function ReleaseCenterPage() {
  *   onSubmit: () => void,
  *   open: boolean,
  *   releaseArtifactMode: ReleaseArtifactMode,
- *   selectedApplication: ReleaseApplication | null,
+ *   selectedApplication: ReleaseApplicationTarget | null,
  *   selectedArtifact: ReleaseArtifact | null,
  *   scriptArtifactPathMissing: boolean,
  *   targetEnvironment: string,
@@ -415,26 +421,53 @@ function usesOnlyLibertyScriptProfiles(servers) {
 }
 
 /**
+ * @param {ReleaseServer[]} servers
+ * @returns {ReleaseApplicationTarget | null}
+ */
+function inferLibertyScriptApplication(servers) {
+  if (servers.length === 0 || !usesOnlyLibertyScriptProfiles(servers)) {
+    return null;
+  }
+  const applicationNames = servers.map((server) => scriptParameterValue(server, "applicationName").trim());
+  if (applicationNames.some((applicationName) => applicationName.length === 0)) {
+    return null;
+  }
+  const uniqueApplicationNames = new Set(applicationNames);
+  if (uniqueApplicationNames.size !== 1) {
+    return null;
+  }
+  const applicationId = applicationNames[0];
+  return {
+    applicationId,
+    displayName: `${applicationId}（脚本参数）`,
+    artifactType: "WAR",
+    healthCheckPath: "/health",
+    enabled: true,
+    source: "SCRIPT_PROFILE",
+  };
+}
+
+/**
  * @param {ReleaseArtifact | null} selectedArtifact
  * @param {ReleaseArtifactMode} releaseArtifactMode
  * @param {ReleaseServer[]} enabledServers
  */
 function artifactSummary(selectedArtifact, releaseArtifactMode, enabledServers) {
-  if (selectedArtifact) {
-    return `${selectedArtifact.artifactId} / ${selectedArtifact.checksum}`;
-  }
   if (releaseArtifactMode === "PENDING_TARGETS") {
     return "等待发布节点确定发布方式";
   }
-  if (releaseArtifactMode === "ARTIFACT") {
-    return "缺少可发布制品";
+  if (releaseArtifactMode === "SCRIPT_PROFILE") {
+    const paths = libertySharedArtifactPaths(enabledServers);
+    if (paths.length === 0) {
+      return "缺少 Liberty 制品共享路径";
+    }
+    const uniquePaths = [...new Set(paths)];
+    return uniquePaths.length === 1 ? uniquePaths[0] : uniquePaths.join(", ");
   }
-  const paths = libertySharedArtifactPaths(enabledServers);
-  if (paths.length === 0) {
-    return "缺少 Liberty 制品共享路径";
+  if (selectedArtifact) {
+    return `${selectedArtifact.artifactId} / ${selectedArtifact.checksum}`;
   }
-  const uniquePaths = [...new Set(paths)];
-  return uniquePaths.length === 1 ? uniquePaths[0] : uniquePaths.join(", ");
+  return "缺少可发布制品";
 }
 
 /**
