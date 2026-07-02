@@ -23,17 +23,17 @@
 - 控制面发布中心总开关，默认关闭。
 - 按环境执行开关，`dev`、`sit`、`uat` 分别控制，默认关闭。
 - Tomcat WAR 上传开关，默认关闭。
-- Liberty HTTPS 适配器开关，默认关闭。
-- Liberty 脚本 Profile 配置，默认空配置；未配置 Profile 时 Worker 必须失败关闭。
+- Liberty 脚本 Profile 发布开关，默认关闭；Worker 侧 Profile 可以封装调用 HTTPS / JAR 发布能力的成熟脚本。
+- Liberty 脚本 Profile 配置，默认空配置；未配置 Profile 或缺少必需参数时 Worker 必须失败关闭。
 - 日志分析只读 Skill 开关，默认关闭。
 
 任何开关开启前必须确认对应策略、审计、指标和告警已经生效。
 
 ## Liberty 脚本 Profile
 
-Liberty 脚本发布只允许执行已经安全评审并部署到 Worker 侧配置中的脚本 Profile。操作台新增服务器时只能填写 `scriptProfile.profileId` 和脚本所需的 `name/value` 参数，不能填写脚本路径、命令行、shell 片段或明文密钥。
+Liberty 脚本发布只允许执行已经安全评审并部署到 Worker 侧配置中的脚本 Profile。操作台新增或修改服务器时只能填写 `scriptProfile.profileId` 和脚本所需的 `name/value` 参数，不能填写脚本路径、命令行、shell 片段或明文密钥。
 
-当 Worker 侧 Profile 的 `arguments` 不引用 `{{artifactPath}}`、`{{artifactId}}`、`{{artifactStorageKey}}` 或 `{{artifactChecksum}}` 时，发布单可以不绑定制品；控制面会基于服务器节点、Profile ID 和脚本参数生成确认用参数哈希。若 Profile 引用了任一制品占位符，Worker 必须在缺少制品上下文时失败关闭。
+Liberty 发布不要求操作台上传制品，但必须在脚本参数中提供 `artifactPath`。`artifactPath` 是以 `//` 开头的共享目录路径，通常作为脚本第三个参数传给经评审脚本，由脚本调用成熟 JAR / HTTPS 发布能力读取制品。控制面创建发布单时不绑定平台上传制品，但会要求所有启用的 Liberty 脚本节点都配置 `artifactPath`，并把该值纳入参数哈希。Worker 仍必须只执行预登记 Profile，不得接受操作台传入的脚本路径或命令行。
 
 Worker 配置必须至少约束以下内容：
 
@@ -44,6 +44,10 @@ Worker 配置必须至少约束以下内容：
 - `artifact-storage-path` 和 `working-directory`：受限工作区；脚本不得从操作台输入中获得任意文件路径。
 
 脚本参数不得携带 `password`、`secret`、`token` 等敏感材料。需要凭据时只允许使用凭据别名或短期凭据边界，且不得把明文写入日志、审计、Prompt、制品或测试数据。
+
+## 服务器配置维护
+
+操作台允许在 `dev`、`sit`、`uat` 范围内新增、修改和删除发布服务器配置。修改服务器时节点 ID 保持只读；如果需要更换节点 ID，必须新增一个节点并删除旧节点。删除服务器只移除发布中心目录配置，不会删除目标系统上的服务、制品、脚本或历史工作流记录；历史发布单仍以当时绑定的节点、参数哈希和审计事件为准。
 
 ## 凭据轮换
 

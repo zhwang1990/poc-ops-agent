@@ -51,8 +51,11 @@ public class ReleaseWorkflowService {
       }
       List<ReleaseNodeStep> nodes = enabledNodes(environment, servers);
       String normalizedArtifactId = ReleaseValues.optionalText(artifactId);
-      if (normalizedArtifactId == null && !allNodesUseLibertyScriptProfile(nodes)) {
-        throw new ReleaseWorkflowException("RELEASE_ARTIFACT_REQUIRED", "release artifact is required for this release mode");
+      if (normalizedArtifactId == null) {
+        if (!allNodesUseLibertyScriptProfile(nodes)) {
+          throw new ReleaseWorkflowException("RELEASE_ARTIFACT_REQUIRED", "release artifact is required for this release mode");
+        }
+        requireLibertySharedArtifactPaths(servers);
       }
       String effectiveParametersHash = normalizedArtifactId == null
           ? scriptProfileParametersHash(servers)
@@ -295,6 +298,31 @@ public class ReleaseWorkflowService {
     return nodes.stream()
         .allMatch(node -> node.serverType() == ServerType.LIBERTY
             && node.managementMode() == ManagementMode.LIBERTY_SCRIPT_PROFILE);
+  }
+
+  private static void requireLibertySharedArtifactPaths(List<ReleaseServer> servers) {
+    List<ReleaseServer> enabledServers = servers.stream()
+        .filter(ReleaseServer::enabled)
+        .toList();
+    for (ReleaseServer server : enabledServers) {
+      String artifactPath = scriptProfileParameter(server.scriptProfile(), "artifactPath");
+      if (artifactPath == null || !artifactPath.startsWith("//")) {
+        throw new ReleaseWorkflowException(
+            "RELEASE_SCRIPT_ARTIFACT_PATH_REQUIRED",
+            "Liberty script releases require artifactPath script parameter starting with //");
+      }
+    }
+  }
+
+  private static String scriptProfileParameter(ReleaseScriptProfile scriptProfile, String name) {
+    ReleaseScriptProfile profile = ReleaseValues.required(scriptProfile, "scriptProfile");
+    return profile.parameters().stream()
+        .filter(parameter -> parameter.name().equals(name))
+        .map(ReleaseScriptParameter::value)
+        .map(String::trim)
+        .filter(value -> !value.isEmpty())
+        .findFirst()
+        .orElse(null);
   }
 
   private static String requiredArtifactParametersHash(String parametersHash) {

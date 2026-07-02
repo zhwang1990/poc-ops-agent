@@ -78,6 +78,7 @@ export const releaseServerSchema = z
   .strict();
 
 export const releaseServerListSchema = z.array(releaseServerSchema);
+export const releaseServerDeleteResponseSchema = z.undefined();
 
 export const releaseArtifactSchema = z
   .object({

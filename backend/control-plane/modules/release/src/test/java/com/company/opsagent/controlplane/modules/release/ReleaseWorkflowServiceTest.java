@@ -66,6 +66,25 @@ class ReleaseWorkflowServiceTest {
   }
 
   @Test
+  void createLibertyScriptPlanRequiresSharedArtifactPathParameter() {
+    ReleaseWorkflowService service = service((plan, node) -> Mono.just(ReleaseNodeExecutionResult.succeeded()));
+
+    StepVerifier.create(service.createPlan(
+            "rel-1",
+            "orders",
+            "sit",
+            null,
+            List.of(libertyScriptServerWithoutArtifactPath("node-1", "sit")),
+            ReleaseEnvironmentPolicy.defaultFor(TargetEnvironment.SIT),
+            "sha256:abc123"))
+        .expectErrorSatisfies(error -> {
+          ReleaseWorkflowException exception = assertInstanceOf(ReleaseWorkflowException.class, error);
+          assertEquals("RELEASE_SCRIPT_ARTIFACT_PATH_REQUIRED", exception.code());
+        })
+        .verify();
+  }
+
+  @Test
   void createTomcatPlanStillRequiresArtifact() {
     ReleaseWorkflowService service = service((plan, node) -> Mono.just(ReleaseNodeExecutionResult.succeeded()));
 
@@ -199,6 +218,24 @@ class ReleaseWorkflowServiceTest {
   }
 
   private static ReleaseServer libertyScriptServer(String nodeId, String targetEnvironment) {
+    return ReleaseServer.create(
+        nodeId,
+        targetEnvironment,
+        ServerType.LIBERTY,
+        ManagementMode.LIBERTY_SCRIPT_PROFILE,
+        "https://" + nodeId + ".example",
+        "/orders",
+        null,
+        new ReleaseScriptProfile(
+            "liberty-war-deploy",
+            List.of(
+                new ReleaseScriptParameter("serverName", "defaultServer"),
+                new ReleaseScriptParameter("applicationName", "orders"),
+                new ReleaseScriptParameter("artifactPath", "//jenkins/share/orders/latest/orders.war"))),
+        true);
+  }
+
+  private static ReleaseServer libertyScriptServerWithoutArtifactPath(String nodeId, String targetEnvironment) {
     return ReleaseServer.create(
         nodeId,
         targetEnvironment,

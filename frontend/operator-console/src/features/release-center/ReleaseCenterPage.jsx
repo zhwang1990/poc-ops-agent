@@ -3,17 +3,20 @@ import {
   BadgeCheck,
   CheckCircle2,
   Code2,
+  Copy,
   FileArchive,
   KeyRound,
   ListChecks,
   Network,
   Package,
+  Pencil,
   Play,
   PlusCircle,
   RefreshCw,
   Rocket,
   Server,
   ShieldCheck,
+  Trash2,
   UploadCloud,
 } from "lucide-react";
 
@@ -28,6 +31,7 @@ import {
   useReleaseArtifacts,
   useConfirmReleasePlan,
   useCreateReleasePlan,
+  useDeleteReleaseServer,
   useExecuteReleasePlan,
   useReleasePlans,
   useReleaseServers,
@@ -41,6 +45,7 @@ import styles from "./ReleaseCenterPage.module.css";
 /** @typedef {import("../../schemas/release-center-schemas.js").ReleasePlan} ReleasePlan */
 /** @typedef {import("../../schemas/release-center-schemas.js").ReleaseServer} ReleaseServer */
 /** @typedef {"plans" | "artifacts" | "applications" | "servers" | "policies" | "credentials"} ReleaseTabId */
+/** @typedef {"PENDING_TARGETS" | "SCRIPT_PROFILE" | "ARTIFACT"} ReleaseArtifactMode */
 
 const TABS = [
   { id: "plans", label: "发布单", icon: ListChecks },
@@ -59,7 +64,7 @@ const TARGET_ENVIRONMENTS = [
 const SERVER_TYPE_OPTIONS = ["TOMCAT", "LIBERTY"];
 const MANAGEMENT_MODE_OPTIONS_BY_SERVER_TYPE = {
   TOMCAT: ["TOMCAT_WAR_UPLOAD", "TOMCAT_MANAGER_API"],
-  LIBERTY: ["LIBERTY_SCRIPT_PROFILE", "LIBERTY_HTTPS"],
+  LIBERTY: ["LIBERTY_SCRIPT_PROFILE"],
 };
 
 /**
@@ -102,10 +107,18 @@ export function ReleaseCenterPage() {
     artifacts[0] ??
     null;
   const enabledServers = useMemo(() => servers.filter((server) => server.enabled), [servers]);
-  const artifactRequired = !usesOnlyLibertyScriptProfiles(enabledServers);
+  const releaseArtifactMode = releaseArtifactModeFor(enabledServers);
+  const artifactRequired = releaseArtifactMode === "ARTIFACT";
+  const scriptArtifactPathMissing =
+    releaseArtifactMode === "SCRIPT_PROFILE" && !hasCompleteLibertySharedArtifactPaths(enabledServers);
   const canUpload = Boolean(selectedApplication) && !uploadMutation.isPending;
   const canSubmitCreatePlan =
-    Boolean(selectedApplication && enabledServers.length > 0 && (!artifactRequired || selectedArtifact)) &&
+    Boolean(
+      selectedApplication &&
+        enabledServers.length > 0 &&
+        (!artifactRequired || selectedArtifact) &&
+        !scriptArtifactPathMissing,
+    ) &&
     !createPlanMutation.isPending;
 
   function handleUploadClick() {
@@ -129,7 +142,12 @@ export function ReleaseCenterPage() {
   }
 
   function handleCreatePlan() {
-    if (!selectedApplication || enabledServers.length === 0 || (artifactRequired && !selectedArtifact)) {
+    if (
+      !selectedApplication ||
+      enabledServers.length === 0 ||
+      (artifactRequired && !selectedArtifact) ||
+      scriptArtifactPathMissing
+    ) {
       return;
     }
     const artifactFields = selectedArtifact
@@ -271,15 +289,16 @@ export function ReleaseCenterPage() {
         </section>
       </main>
       <CreatePlanDialog
-        artifactRequired={artifactRequired}
         canSubmit={canSubmitCreatePlan}
         enabledServers={enabledServers}
         isPending={createPlanMutation.isPending}
         onClose={() => setCreateDialogOpen(false)}
         onSubmit={handleCreatePlan}
         open={createDialogOpen}
+        releaseArtifactMode={releaseArtifactMode}
         selectedApplication={selectedApplication}
         selectedArtifact={selectedArtifact}
+        scriptArtifactPathMissing={scriptArtifactPathMissing}
         targetEnvironment={targetEnvironment}
       />
     </WorkspacePageFrame>
@@ -288,33 +307,36 @@ export function ReleaseCenterPage() {
 
 /**
  * @param {{
- *   artifactRequired: boolean,
  *   canSubmit: boolean,
  *   enabledServers: ReleaseServer[],
  *   isPending: boolean,
  *   onClose: () => void,
  *   onSubmit: () => void,
  *   open: boolean,
+ *   releaseArtifactMode: ReleaseArtifactMode,
  *   selectedApplication: ReleaseApplication | null,
  *   selectedArtifact: ReleaseArtifact | null,
+ *   scriptArtifactPathMissing: boolean,
  *   targetEnvironment: string,
  * }} props
  */
 function CreatePlanDialog({
-  artifactRequired,
   canSubmit,
   enabledServers,
   isPending,
   onClose,
   onSubmit,
   open,
+  releaseArtifactMode,
   selectedApplication,
   selectedArtifact,
+  scriptArtifactPathMissing,
   targetEnvironment,
 }) {
   const missingItems = [
     selectedApplication ? null : "缺少已启用应用",
-    artifactRequired && !selectedArtifact ? "缺少可发布制品" : null,
+    releaseArtifactMode === "ARTIFACT" && !selectedArtifact ? "缺少可发布制品" : null,
+    scriptArtifactPathMissing ? "缺少 Liberty 制品共享路径" : null,
     enabledServers.length > 0 ? null : "缺少可用发布节点",
   ].filter(Boolean);
 
@@ -337,8 +359,12 @@ function CreatePlanDialog({
           />
           <CreatePlanField
             label="制品"
-            tone={!artifactRequired || selectedArtifact ? "default" : "warning"}
-            value={artifactSummary(selectedArtifact, artifactRequired)}
+            tone={
+              (releaseArtifactMode === "ARTIFACT" && !selectedArtifact) || scriptArtifactPathMissing
+                ? "warning"
+                : "default"
+            }
+            value={artifactSummary(selectedArtifact, releaseArtifactMode, enabledServers)}
           />
           <CreatePlanField
             label="节点"
@@ -370,22 +396,45 @@ function CreatePlanDialog({
 
 /**
  * @param {ReleaseServer[]} servers
+ * @returns {ReleaseArtifactMode}
+ */
+function releaseArtifactModeFor(servers) {
+  if (servers.length === 0) {
+    return "PENDING_TARGETS";
+  }
+  return usesOnlyLibertyScriptProfiles(servers) ? "SCRIPT_PROFILE" : "ARTIFACT";
+}
+
+/**
+ * @param {ReleaseServer[]} servers
  */
 function usesOnlyLibertyScriptProfiles(servers) {
-  return servers.length > 0 && servers.every(
+  return servers.every(
     (server) => server.serverType === "LIBERTY" && server.managementMode === "LIBERTY_SCRIPT_PROFILE",
   );
 }
 
 /**
  * @param {ReleaseArtifact | null} selectedArtifact
- * @param {boolean} artifactRequired
+ * @param {ReleaseArtifactMode} releaseArtifactMode
+ * @param {ReleaseServer[]} enabledServers
  */
-function artifactSummary(selectedArtifact, artifactRequired) {
+function artifactSummary(selectedArtifact, releaseArtifactMode, enabledServers) {
   if (selectedArtifact) {
     return `${selectedArtifact.artifactId} / ${selectedArtifact.checksum}`;
   }
-  return artifactRequired ? "缺少可发布制品" : "无需制品，调用脚本 Profile";
+  if (releaseArtifactMode === "PENDING_TARGETS") {
+    return "等待发布节点确定发布方式";
+  }
+  if (releaseArtifactMode === "ARTIFACT") {
+    return "缺少可发布制品";
+  }
+  const paths = libertySharedArtifactPaths(enabledServers);
+  if (paths.length === 0) {
+    return "缺少 Liberty 制品共享路径";
+  }
+  const uniquePaths = [...new Set(paths)];
+  return uniquePaths.length === 1 ? uniquePaths[0] : uniquePaths.join(", ");
 }
 
 /**
@@ -618,10 +667,48 @@ function ApplicationsPanel({ applications, query }) {
  */
 function ServersPanel({ query, servers, targetEnvironment }) {
   const [serverDialogOpen, setServerDialogOpen] = useState(false);
+  const [editingServer, setEditingServer] = useState(/** @type {ReleaseServer | null} */ (null));
+  const [pendingDeleteNodeId, setPendingDeleteNodeId] = useState("");
+  const [copiedPathNodeId, setCopiedPathNodeId] = useState("");
   const saveServerMutation = useSaveReleaseServer();
+  const deleteServerMutation = useDeleteReleaseServer();
   const queryState = queryFeedback([query], "服务器读取失败");
   if (queryState) {
     return queryState;
+  }
+
+  /**
+   * @param {ReleaseServer} server
+   */
+  function openEditServer(server) {
+    setEditingServer(server);
+    setServerDialogOpen(true);
+  }
+
+  function openCreateServer() {
+    setEditingServer(null);
+    setServerDialogOpen(true);
+  }
+
+  /**
+   * @param {ReleaseServer} server
+   */
+  function deleteServer(server) {
+    deleteServerMutation.mutate(
+      { nodeId: server.nodeId, targetEnvironment: server.targetEnvironment },
+      { onSuccess: () => setPendingDeleteNodeId("") },
+    );
+  }
+
+  /**
+   * @param {string} nodeId
+   * @param {string} artifactPath
+   */
+  function copyArtifactPath(nodeId, artifactPath) {
+    if (navigator.clipboard) {
+      void navigator.clipboard.writeText(artifactPath);
+    }
+    setCopiedPathNodeId(nodeId);
   }
 
   return (
@@ -636,7 +723,7 @@ function ServersPanel({ query, servers, targetEnvironment }) {
             aria-label="Add release server"
             className={styles.compactActionButton}
             disabled={saveServerMutation.isPending}
-            onClick={() => setServerDialogOpen(true)}
+            onClick={openCreateServer}
             variant="secondary"
           >
             <PlusCircle aria-hidden="true" size={15} />
@@ -652,18 +739,60 @@ function ServersPanel({ query, servers, targetEnvironment }) {
           />
         ) : (
           <section className={styles.tablePanel} aria-label="服务器配置列表">
-            <div className={styles.tableHeader}>
+            <div className={`${styles.tableHeader} ${styles.serverTableRow}`}>
               <span>节点</span>
               <span>类型</span>
               <span>策略</span>
-              <span>凭据</span>
+              <span>制品 / 路径</span>
+              <span>操作</span>
             </div>
             {servers.map((server) => (
-              <div className={styles.tableRow} key={server.nodeId}>
-                <strong>{server.nodeId}</strong>
+              <div className={`${styles.tableRow} ${styles.serverTableRow}`} key={server.nodeId}>
+                <div className={styles.serverIdentity}>
+                  <strong>{server.nodeId}</strong>
+                  <span>{server.applicationPath ?? "未配置应用路径"}</span>
+                </div>
                 <span>{server.serverType}</span>
                 <span>{server.managementMode}</span>
-                <span>{server.credentialAlias ?? "未绑定"}</span>
+                <ServerArtifactCell
+                  copied={copiedPathNodeId === server.nodeId}
+                  onCopy={(artifactPath) => copyArtifactPath(server.nodeId, artifactPath)}
+                  server={server}
+                />
+                <div className={`${styles.rowActions} ${styles.serverRowActions}`}>
+                  <Button
+                    aria-label={`Edit ${server.nodeId}`}
+                    className={styles.iconButton}
+                    disabled={saveServerMutation.isPending}
+                    onClick={() => openEditServer(server)}
+                    title="编辑服务器"
+                    variant="secondary"
+                  >
+                    <Pencil aria-hidden="true" size={15} />
+                  </Button>
+                  {pendingDeleteNodeId === server.nodeId ? (
+                    <Button
+                      aria-label={`Confirm delete ${server.nodeId}`}
+                      className={styles.compactDangerButton}
+                      disabled={deleteServerMutation.isPending}
+                      onClick={() => deleteServer(server)}
+                      variant="danger"
+                    >
+                      确认删除
+                    </Button>
+                  ) : (
+                    <Button
+                      aria-label={`Delete ${server.nodeId}`}
+                      className={styles.iconButton}
+                      disabled={deleteServerMutation.isPending}
+                      onClick={() => setPendingDeleteNodeId(server.nodeId)}
+                      title="删除服务器"
+                      variant="secondary"
+                    >
+                      <Trash2 aria-hidden="true" size={15} />
+                    </Button>
+                  )}
+                </div>
               </div>
             ))}
           </section>
@@ -674,11 +803,18 @@ function ServersPanel({ query, servers, targetEnvironment }) {
         <ServerDialog
           error={saveServerMutation.error}
           isPending={saveServerMutation.isPending}
-          key={targetEnvironment}
-          onClose={() => setServerDialogOpen(false)}
+          key={`${targetEnvironment}-${editingServer?.nodeId ?? "new"}`}
+          initialServer={editingServer}
+          onClose={() => {
+            setServerDialogOpen(false);
+            setEditingServer(null);
+          }}
           onSubmit={(server) =>
             saveServerMutation.mutate(server, {
-              onSuccess: () => setServerDialogOpen(false),
+              onSuccess: () => {
+                setServerDialogOpen(false);
+                setEditingServer(null);
+              },
             })
           }
           open={serverDialogOpen}
@@ -691,7 +827,49 @@ function ServersPanel({ query, servers, targetEnvironment }) {
 
 /**
  * @param {{
+ *   copied: boolean,
+ *   onCopy: (artifactPath: string) => void,
+ *   server: ReleaseServer,
+ * }} props
+ */
+function ServerArtifactCell({ copied, onCopy, server }) {
+  const artifactPath = scriptParameterValue(server, "artifactPath");
+  if (server.serverType !== "LIBERTY") {
+    return <span>平台上传 WAR</span>;
+  }
+  if (!artifactPath) {
+    return <span>缺少 artifactPath 参数</span>;
+  }
+  return (
+    <div className={styles.artifactPathCell}>
+      {isSharedArtifactPath(artifactPath) ? (
+        <span title={artifactPath}>{artifactPath}</span>
+      ) : isHttpUrl(artifactPath) ? (
+        <a href={artifactPath} rel="noreferrer" target="_blank">
+          {artifactPath}
+        </a>
+      ) : (
+        <span data-tone="warning" title={artifactPath}>
+          制品路径必须以 // 开头
+        </span>
+      )}
+      <Button
+        aria-label={`Copy artifact path for ${server.nodeId}`}
+        className={styles.iconButton}
+        onClick={() => onCopy(artifactPath)}
+        title={copied ? "已复制" : "复制制品路径"}
+        variant="secondary"
+      >
+        <Copy aria-hidden="true" size={15} />
+      </Button>
+    </div>
+  );
+}
+
+/**
+ * @param {{
  *   error: unknown,
+ *   initialServer: ReleaseServer | null,
  *   isPending: boolean,
  *   onClose: () => void,
  *   onSubmit: (server: unknown) => void,
@@ -699,8 +877,11 @@ function ServersPanel({ query, servers, targetEnvironment }) {
  *   targetEnvironment: string,
  * }} props
  */
-function ServerDialog({ error, isPending, onClose, onSubmit, open, targetEnvironment }) {
-  const [form, setForm] = useState(() => createDefaultServerForm(targetEnvironment));
+function ServerDialog({ error, initialServer, isPending, onClose, onSubmit, open, targetEnvironment }) {
+  const [form, setForm] = useState(() =>
+    initialServer ? createServerFormFromServer(initialServer) : createDefaultServerForm(targetEnvironment),
+  );
+  const editing = Boolean(initialServer);
   const isScriptProfileMode = form.managementMode === "LIBERTY_SCRIPT_PROFILE";
   const credentialReady = isScriptProfileMode || Boolean(form.credentialAlias.trim());
   const scriptProfileReady =
@@ -804,14 +985,14 @@ function ServerDialog({ error, isPending, onClose, onSubmit, open, targetEnviron
 
   return (
     <Dialog
-      closeLabel="关闭新增服务器"
+      closeLabel={editing ? "关闭编辑服务器" : "关闭新增服务器"}
       description="服务器配置只登记非生产发布目标，真正执行仍由服务端策略、工作流和 Worker 隔离控制。"
       eyebrow={`Server / ${targetEnvironment}`}
       icon={<Server size={18} />}
       onClose={onClose}
       open={open}
       size="wide"
-      title="新增服务器"
+      title={editing ? "编辑服务器" : "新增服务器"}
     >
       <form className={styles.serverForm} onSubmit={handleSubmit}>
         <div className={styles.formGrid}>
@@ -821,6 +1002,7 @@ function ServerDialog({ error, isPending, onClose, onSubmit, open, targetEnviron
               aria-label="Node ID"
               onChange={(event) => updateField("nodeId", event.currentTarget.value)}
               placeholder="tomcat-dev-1"
+              readOnly={editing}
               value={form.nodeId}
             />
           </label>
@@ -978,8 +1160,33 @@ function createDefaultServerForm(targetEnvironment) {
     scriptParameters: [
       { id: "serverName", name: "serverName", value: "defaultServer" },
       { id: "applicationName", name: "applicationName", value: "orders" },
+      { id: "artifactPath", name: "artifactPath", value: "//jenkins/share/orders/latest/orders.war" },
     ],
     enabled: true,
+  };
+}
+
+/**
+ * @param {ReleaseServer} server
+ * @returns {ReleaseServerForm}
+ */
+function createServerFormFromServer(server) {
+  return {
+    nodeId: server.nodeId,
+    targetEnvironment: server.targetEnvironment,
+    serverType: server.serverType,
+    managementMode: server.serverType === "LIBERTY" ? "LIBERTY_SCRIPT_PROFILE" : server.managementMode,
+    managementEndpoint: server.managementEndpoint,
+    applicationPath: server.applicationPath ?? "",
+    credentialAlias: server.credentialAlias ?? "",
+    scriptProfileId: server.scriptProfile?.profileId ?? "liberty-war-deploy",
+    scriptParameters:
+      server.scriptProfile?.parameters.map((parameter, index) => ({
+        id: `${parameter.name}-${index}`,
+        name: parameter.name,
+        value: parameter.value,
+      })) ?? createDefaultServerForm(server.targetEnvironment).scriptParameters,
+    enabled: server.enabled,
   };
 }
 
@@ -992,6 +1199,49 @@ function managementModeOptions(serverType) {
     return MANAGEMENT_MODE_OPTIONS_BY_SERVER_TYPE.LIBERTY;
   }
   return MANAGEMENT_MODE_OPTIONS_BY_SERVER_TYPE.TOMCAT;
+}
+
+/**
+ * @param {ReleaseServer} server
+ * @param {string} name
+ */
+function scriptParameterValue(server, name) {
+  return server.scriptProfile?.parameters.find((parameter) => parameter.name === name)?.value ?? "";
+}
+
+/**
+ * @param {ReleaseServer[]} servers
+ */
+function hasCompleteLibertySharedArtifactPaths(servers) {
+  return servers.every((server) => {
+    if (server.serverType !== "LIBERTY" || server.managementMode !== "LIBERTY_SCRIPT_PROFILE") {
+      return true;
+    }
+    return isSharedArtifactPath(scriptParameterValue(server, "artifactPath"));
+  });
+}
+
+/**
+ * @param {ReleaseServer[]} servers
+ */
+function libertySharedArtifactPaths(servers) {
+  return servers
+    .map((server) => scriptParameterValue(server, "artifactPath"))
+    .filter((artifactPath) => isSharedArtifactPath(artifactPath));
+}
+
+/**
+ * @param {string} value
+ */
+function isHttpUrl(value) {
+  return /^https?:\/\//i.test(value);
+}
+
+/**
+ * @param {string} value
+ */
+function isSharedArtifactPath(value) {
+  return value.trim().startsWith("//");
 }
 
 function PoliciesPanel() {

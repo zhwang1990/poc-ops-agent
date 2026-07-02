@@ -57,6 +57,12 @@ public class InMemoryReleaseCatalogStore implements ReleaseCatalogStore {
   }
 
   @Override
+  public Mono<Void> deleteServer(String nodeId) {
+    servers.remove(ReleaseValues.requiredText(nodeId, "nodeId"));
+    return Mono.empty();
+  }
+
+  @Override
   public Mono<ReleaseArtifact> saveArtifact(ReleaseArtifact artifact) {
     artifacts.put(artifact.artifactId(), artifact);
     return Mono.just(artifact);
