@@ -35,6 +35,11 @@ findstr /I /C:"Admin#2026Demo" "%START_SCRIPT%" >nul || (
   exit /b 1
 )
 
+findstr /I /C:"-pl control-plane/bootstrap,execution-worker -am -DskipTests install" "%START_SCRIPT%" >nul || (
+  echo start-demo.cmd must refresh reactor-built backend modules before launching services
+  exit /b 1
+)
+
 findstr /I /C:"npm-dev-always-runs" "%START_SCRIPT%" >nul || (
   echo start-demo.cmd must run npm dev even when node_modules already exists
   exit /b 1

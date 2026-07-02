@@ -1,7 +1,7 @@
 {
   "publishedBy": "release-platform",
   "publishedAt": "2026-07-01T12:00:00+08:00",
-  "checksumSha256": "6ada73d3a4f88870948aeb3a7e70039e3045a5a93e8d33199c9665a526efe519",
+  "checksumSha256": "23ec8ed983a1479ace04c1119ef56feac8d12d093cc6e2dedf50afe68a333687",
   "signatureAlgorithm": "HmacSHA256",
-  "signature": "daac5cdfaf311f88206ca23d600e704e62d9c6ba2b0971a1ab25c836b947ed07"
+  "signature": "fa0e5a9307ec36c1a3765aa3dc3f20f16d6313347dac61e7c9ce28e13ba1c7a0"
 }

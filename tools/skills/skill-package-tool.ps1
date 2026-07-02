@@ -107,7 +107,7 @@ function ConvertTo-CanonicalJson {
             $lines.Add($entry)
         }
         $lines.Add($padding + "}")
-        return ($lines -join [Environment]::NewLine)
+        return ($lines -join "`n")
     }
     if ($Value -is [System.Collections.IEnumerable]) {
         $items = @($Value)
@@ -124,7 +124,7 @@ function ConvertTo-CanonicalJson {
             $lines.Add($entry)
         }
         $lines.Add($padding + "]")
-        return ($lines -join [Environment]::NewLine)
+        return ($lines -join "`n")
     }
     return Convert-JsonString ([string] $Value)
 }
@@ -135,7 +135,7 @@ function Convert-ToJsonFile {
         [object] $Value
     )
     $json = ConvertTo-CanonicalJson -Value $Value
-    Write-Utf8NoBom -Path $Path -Content ($json + [Environment]::NewLine)
+    Write-Utf8NoBom -Path $Path -Content ($json + "`n")
 }
 
 function Parse-Scalar {
