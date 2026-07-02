@@ -7,6 +7,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.company.opsagent.contracts.agent.AgentTaskResult;
 import com.company.opsagent.contracts.agent.AgentToolResult;
+import com.company.opsagent.contracts.events.AgentRuntimeProgressPayload;
+import com.company.opsagent.contracts.events.AgentRuntimeProgressPayloadKind;
 import com.company.opsagent.contracts.events.AgentToolCallCompletedPayload;
 import com.company.opsagent.contracts.events.AgentToolCallRejectedPayload;
 import com.company.opsagent.contracts.events.AgentToolCallRequestedPayload;
@@ -134,6 +136,44 @@ class ContractsTest {
     assertTrue(typeEnum.contains("AGENT_TOOL_CALL_REQUESTED"));
     assertTrue(typeEnum.contains("AGENT_TOOL_CALL_COMPLETED"));
     assertTrue(typeEnum.contains("AGENT_TOOL_CALL_REJECTED"));
+  }
+
+  @Test
+  void acceptsAgentRuntimeProgressSemanticEventWithoutSdkEventNames() throws Exception {
+    OffsetDateTime now = OffsetDateTime.now();
+    new SemanticEvent(
+        "1.0",
+        "55555555-5555-4555-8555-555555555555",
+        "11111111-1111-4111-8111-111111111111",
+        10_001,
+        now,
+        SemanticEventType.AGENT_RUNTIME_PROGRESS,
+        new AgentRuntimeProgressPayload(
+            SemanticEventType.AGENT_RUNTIME_PROGRESS,
+            AgentRuntimeProgressPayloadKind.MODEL_CALL_COMPLETED,
+            "model call completed",
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            12,
+            5,
+            17,
+            0.42,
+            false));
+
+    JsonNode schema = new ObjectMapper()
+        .readTree(Path.of("events/semantic-event-v1.schema.json").toFile());
+    List<String> typeEnum = StreamSupport.stream(
+            schema.path("properties").path("type").path("enum").spliterator(),
+            false)
+        .map(JsonNode::asText)
+        .toList();
+    assertTrue(typeEnum.contains("AGENT_RUNTIME_PROGRESS"));
+    assertNoSchemaPropertyNamed(schema, Set.of("sourceEventType", "delta", "thinking"));
   }
 
   @Test
@@ -300,6 +340,33 @@ class ContractsTest {
 
     assertEquals("WAR", artifactType.path("const").asText());
     assertFalse(artifactType.has("enum"));
+  }
+
+  @Test
+  void releaseCommandSchemaAllowsArtifactlessLibertyScriptProfiles() throws Exception {
+    JsonNode schema = new ObjectMapper()
+        .readTree(Path.of("release/release-command-v1.schema.json").toFile());
+
+    List<String> required = StreamSupport.stream(schema.path("required").spliterator(), false)
+        .map(JsonNode::asText)
+        .toList();
+    assertFalse(required.contains("artifact"));
+
+    List<String> artifactTypes = StreamSupport.stream(
+            schema.path("properties").path("artifact").path("type").spliterator(),
+            false)
+        .map(JsonNode::asText)
+        .toList();
+    assertTrue(artifactTypes.containsAll(List.of("object", "null")));
+
+    JsonNode nodeProperties = schema.path("properties").path("nodes").path("items").path("properties");
+    List<String> managementModes = StreamSupport.stream(
+            nodeProperties.path("managementMode").path("enum").spliterator(),
+            false)
+        .map(JsonNode::asText)
+        .toList();
+    assertTrue(managementModes.contains("LIBERTY_SCRIPT_PROFILE"));
+    assertTrue(nodeProperties.has("scriptProfile"));
   }
 
   @Test

@@ -37,6 +37,54 @@ class ReleaseWorkflowServiceTest {
   }
 
   @Test
+  void createLibertyScriptPlanDoesNotRequireArtifact() {
+    InMemoryReleaseEventSink eventSink = new InMemoryReleaseEventSink();
+    ReleaseWorkflowService service = new ReleaseWorkflowService(
+        (plan, node) -> Mono.just(ReleaseNodeExecutionResult.succeeded()),
+        CLOCK,
+        eventSink);
+
+    ReleasePlan plan = service.createPlan(
+        "rel-1",
+        "orders",
+        "sit",
+        null,
+        List.of(libertyScriptServer("node-1", "sit")),
+        ReleaseEnvironmentPolicy.defaultFor(TargetEnvironment.SIT),
+        "sha256:abc123")
+        .block();
+
+    assertEquals(null, plan.artifactId());
+    assertFalse("sha256:abc123".equals(plan.parametersHash()));
+    assertEquals(ReleaseStatus.WAIT_CONFIRM, plan.status());
+    assertEquals(ManagementMode.LIBERTY_SCRIPT_PROFILE, plan.nodes().get(0).managementMode());
+    ReleaseEventPayload.Created payload = assertInstanceOf(
+        ReleaseEventPayload.Created.class,
+        eventSink.events().getFirst().payload());
+    assertEquals("SCRIPT_PROFILE", payload.artifactType());
+    assertEquals(plan.parametersHash(), payload.artifactChecksum());
+  }
+
+  @Test
+  void createTomcatPlanStillRequiresArtifact() {
+    ReleaseWorkflowService service = service((plan, node) -> Mono.just(ReleaseNodeExecutionResult.succeeded()));
+
+    StepVerifier.create(service.createPlan(
+            "rel-1",
+            "orders",
+            "dev",
+            null,
+            List.of(server("node-1", "dev")),
+            ReleaseEnvironmentPolicy.defaultFor(TargetEnvironment.DEV),
+            "sha256:abc123"))
+        .expectErrorSatisfies(error -> {
+          ReleaseWorkflowException exception = assertInstanceOf(ReleaseWorkflowException.class, error);
+          assertEquals("RELEASE_ARTIFACT_REQUIRED", exception.code());
+        })
+        .verify();
+  }
+
+  @Test
   void confirmRejectsMismatchedParametersHashWithStableErrorCode() {
     ReleaseWorkflowService service = service((plan, node) -> Mono.just(ReleaseNodeExecutionResult.succeeded()));
     ReleasePlan plan = service.createPlan(
@@ -147,6 +195,23 @@ class ReleaseWorkflowServiceTest {
         ServerType.TOMCAT,
         ManagementMode.TOMCAT_WAR_UPLOAD,
         "https://" + nodeId + ".example",
+        true);
+  }
+
+  private static ReleaseServer libertyScriptServer(String nodeId, String targetEnvironment) {
+    return ReleaseServer.create(
+        nodeId,
+        targetEnvironment,
+        ServerType.LIBERTY,
+        ManagementMode.LIBERTY_SCRIPT_PROFILE,
+        "https://" + nodeId + ".example",
+        "/orders",
+        null,
+        new ReleaseScriptProfile(
+            "liberty-war-deploy",
+            List.of(
+                new ReleaseScriptParameter("serverName", "defaultServer"),
+                new ReleaseScriptParameter("applicationName", "orders"))),
         true);
   }
 }

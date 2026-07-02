@@ -83,7 +83,7 @@
 
 .environmentSwitch {
   display: grid;
-  width: 168px;
+  width: 186px;
   grid-template-columns: repeat(3, 1fr);
   padding: 3px;
   border: 1px solid var(--release-line);
@@ -93,6 +93,10 @@
 
 .environmentButton {
   appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
   min-width: 0;
   height: 32px;
   border: 0;
@@ -107,8 +111,26 @@
   text-transform: uppercase;
 }
 
+.environmentButton span {
+  min-width: 22px;
+  line-height: 1;
+  text-align: left;
+}
+
+.environmentIcon {
+  width: 13px;
+  height: 13px;
+  flex: 0 0 auto;
+  color: oklch(0.54 0.052 238);
+}
+
 .environmentButton:hover {
   color: var(--release-blue);
+}
+
+.environmentButton:hover .environmentIcon,
+.environmentButtonActive .environmentIcon {
+  color: currentColor;
 }
 
 .environmentButton:focus-visible,
@@ -365,6 +387,48 @@
   font-weight: 850;
 }
 
+.panelStack {
+  display: grid;
+  gap: 10px;
+}
+
+.panelHeader {
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.panelTitle {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.panelTitle strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--release-ink);
+  font-size: 14px;
+  font-weight: 870;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compactActionButton {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
 .tablePanel {
   display: grid;
   gap: 8px;
@@ -417,6 +481,204 @@
   color: var(--release-ink);
   font-size: 13px;
   font-weight: 870;
+}
+
+.createPlanDialog {
+  display: grid;
+  gap: 14px;
+}
+
+.createPlanGrid {
+  display: grid;
+  gap: 10px;
+}
+
+.createPlanField {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+  padding: 10px 12px;
+  border: 1px solid var(--release-line);
+  border-radius: 8px;
+  background: var(--release-surface);
+}
+
+.createPlanField[data-tone="warning"] {
+  border-color: oklch(0.78 0.105 76);
+  background: oklch(0.965 0.036 76);
+}
+
+.createPlanField span,
+.createPlanWarnings span {
+  color: var(--release-muted);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.createPlanField strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--release-ink);
+  font-size: 13px;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.createPlanWarnings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.createPlanWarnings span {
+  padding: 5px 8px;
+  border: 1px solid oklch(0.78 0.105 76);
+  border-radius: 8px;
+  background: oklch(0.965 0.036 76);
+  color: oklch(0.43 0.088 76);
+}
+
+.dialogActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 2px;
+}
+
+.serverForm {
+  display: grid;
+  gap: 14px;
+}
+
+.formGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.formField,
+.toggleField {
+  min-width: 0;
+  border: 1px solid var(--release-line);
+  border-radius: 8px;
+  background: var(--release-surface);
+}
+
+.formField {
+  display: grid;
+  gap: 6px;
+  padding: 9px 10px;
+}
+
+.formField span,
+.toggleField span {
+  color: var(--release-muted);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.formField input,
+.formField select {
+  min-width: 0;
+  height: 32px;
+  border: 1px solid oklch(0.82 0.026 232);
+  border-radius: 7px;
+  background: oklch(0.995 0.004 232);
+  color: var(--release-ink);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.formField input {
+  padding: 0 9px;
+}
+
+.formField select {
+  padding: 0 7px;
+}
+
+.formField input:focus,
+.formField select:focus {
+  border-color: oklch(0.62 0.09 236);
+  outline: 2px solid oklch(0.63 0.098 236 / 0.22);
+  outline-offset: 1px;
+}
+
+.formField input[readonly] {
+  background: var(--release-soft);
+  color: var(--release-muted);
+}
+
+.toggleField {
+  display: flex;
+  min-height: 58px;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 10px;
+}
+
+.toggleField input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--release-blue);
+}
+
+.scriptProfilePanel {
+  display: grid;
+  gap: 10px;
+  padding: 10px 10px 12px;
+  border: 1px solid var(--release-line);
+  border-radius: 8px;
+  background: oklch(0.985 0.009 232);
+}
+
+.scriptParameterHeader {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.scriptParameterHeader strong {
+  color: var(--release-ink);
+  font-size: 12px;
+}
+
+.scriptParameterList {
+  display: grid;
+  gap: 8px;
+}
+
+.scriptParameterRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 88px;
+  gap: 8px 10px;
+  align-items: end;
+}
+
+.removeParameterButton {
+  width: 88px;
+  height: 32px;
+  min-height: 0;
+  align-self: end;
+  margin-bottom: 10px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.formError {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid oklch(0.72 0.118 18);
+  border-radius: 8px;
+  background: oklch(0.96 0.035 18);
+  color: var(--release-red);
+  font-size: 12px;
+  font-weight: 760;
 }
 
 .inventoryPanel {
@@ -489,6 +751,14 @@
   }
 
   .policyGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .formGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .scriptParameterRow {
     grid-template-columns: 1fr;
   }
 }

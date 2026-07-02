@@ -333,7 +333,19 @@ public class PolicyEnforcementWebFilter implements WebFilter {
       if (method == HttpMethod.GET && "/internal/release-center/applications".equals(path)) {
         return new ActionDescriptor("release.catalog.read", path);
       }
+      if (method == HttpMethod.GET && "/internal/release-center/servers".equals(path)) {
+        return new ActionDescriptor("release.catalog.read", path);
+      }
+      if (method == HttpMethod.GET && "/internal/release-center/plans".equals(path)) {
+        return new ActionDescriptor("release.catalog.read", path);
+      }
+      if (method == HttpMethod.GET && "/internal/release-center/artifacts".equals(path)) {
+        return new ActionDescriptor("release.catalog.read", path);
+      }
       if (method == HttpMethod.POST && "/internal/release-center/applications".equals(path)) {
+        return new ActionDescriptor("release.catalog.write", path);
+      }
+      if (method == HttpMethod.POST && "/internal/release-center/servers".equals(path)) {
         return new ActionDescriptor("release.catalog.write", path);
       }
       if (method == HttpMethod.POST && "/internal/release-center/credentials".equals(path)) {
@@ -341,6 +353,17 @@ public class PolicyEnforcementWebFilter implements WebFilter {
       }
       if (method == HttpMethod.POST && "/internal/release-center/artifacts/tomcat-war".equals(path)) {
         return new ActionDescriptor("release.catalog.write", path);
+      }
+      if (method == HttpMethod.POST && "/internal/release-center/plans".equals(path)) {
+        return new ActionDescriptor("release.plan.create", path);
+      }
+      if (method == HttpMethod.POST && path.startsWith("/internal/release-center/plans/")
+          && path.endsWith("/confirm")) {
+        return new ActionDescriptor("release.plan.confirm", path);
+      }
+      if (method == HttpMethod.POST && path.startsWith("/internal/release-center/plans/")
+          && path.endsWith("/execute")) {
+        return new ActionDescriptor("release.plan.execute", path);
       }
       if (method == HttpMethod.POST && path.startsWith("/internal/release-center/servers/")
           && path.endsWith("/test")) {

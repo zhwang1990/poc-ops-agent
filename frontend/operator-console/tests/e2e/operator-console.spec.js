@@ -81,8 +81,10 @@ test("发布中心页面在桌面视口中展示非生产发布配置", async ({
   }
   await expect(page.getByText("orders", { exact: true })).toBeVisible();
   await expect(page.getByText("node-1", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "上传 WAR" })).toBeDisabled();
-  await expect(page.getByRole("button", { name: "新建发布单" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "上传 WAR" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "新建发布单" })).toBeEnabled();
+  await tabs.getByRole("tab", { name: "服务器" }).click();
+  await expect(page.getByRole("button", { name: "新增服务器" })).toBeVisible();
   await assertNoHorizontalOverflow(page);
   await attachVisualEvidence(page, testInfo, "release");
 });
@@ -271,6 +273,12 @@ async function mockConsoleApi(page) {
     });
   });
 
+  await page.route("**/internal/release-center/artifacts**", async (route) => {
+    await route.fulfill({
+      json: releaseArtifacts,
+    });
+  });
+
   await page.route("**/internal/release-center/servers**", async (route) => {
     await route.fulfill({
       json: releaseServers,
@@ -373,6 +381,22 @@ const releaseServers = [
     managementEndpoint: "https://tomcat-dev.example",
     applicationPath: "/orders",
     credentialAlias: "tomcat-dev",
+    enabled: true,
+  },
+];
+
+const releaseArtifacts = [
+  {
+    artifactId: "artifact-1",
+    applicationId: "orders",
+    targetEnvironment: "dev",
+    artifactType: "WAR",
+    checksum: "sha256:abc123",
+    originalFilename: "orders.war",
+    storageKey: "artifact-1.war",
+    byteSize: 3,
+    uploadedBy: "operator-1",
+    sourceType: "OPERATOR_UPLOAD",
     enabled: true,
   },
 ];

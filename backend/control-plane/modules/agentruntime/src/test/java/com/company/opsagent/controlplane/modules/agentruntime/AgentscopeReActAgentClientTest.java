@@ -1,6 +1,7 @@
 package com.company.opsagent.controlplane.modules.agentruntime;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -20,6 +21,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
@@ -69,6 +71,113 @@ class AgentscopeReActAgentClientTest {
     assertEquals(List.of("node-health"), toolSchemas.get().stream()
         .map(ToolSchema::getName)
         .toList());
+  }
+
+  @Test
+  void streamsSanitizedProgressEventsWhenSinkIsConfigured() {
+    List<AgentRuntimeProgressEvent> receivedEvents = new CopyOnWriteArrayList<>();
+    AgentRuntimeProgressSink progressSink = (runtimeRequest, event) -> {
+      assertEquals("workflow-1", runtimeRequest.workflowId());
+      receivedEvents.add(event);
+      return Mono.empty();
+    };
+    Model model = new Model() {
+      @Override
+      public Flux<ChatResponse> stream(
+          List<Msg> messages,
+          List<ToolSchema> tools,
+          GenerateOptions options) {
+        return Flux.just(ChatResponse.builder()
+            .id("response-1")
+            .content(List.of(TextBlock.builder().text("node-1 is healthy").build()))
+            .finishReason("stop")
+            .build());
+      }
+
+      @Override
+      public String getModelName() {
+        return "fake-streaming-model";
+      }
+    };
+    var client = new AgentscopeReActAgentClient(
+        model,
+        3,
+        Duration.ofSeconds(5),
+        Integer.MAX_VALUE,
+        objectMapper,
+        java.time.Clock.systemUTC(),
+        progressSink,
+        new AgentscopeRuntimeEventMapper());
+
+    StepVerifier.create(client.run(new AgentscopeAgentInvocation(
+            runtimeRequest(),
+            List.of(readOnlyTool()),
+            unusedToolExecutor())))
+        .assertNext(response -> {
+          assertEquals("SUCCEEDED", response.status());
+          assertEquals("node-1 is healthy", response.summary());
+        })
+        .verifyComplete();
+
+    assertFalse(receivedEvents.isEmpty());
+    assertTrue(receivedEvents.stream()
+        .anyMatch(event -> event.kind() == AgentRuntimeProgressKind.MODEL_CALL_STARTED));
+    assertTrue(receivedEvents.stream()
+        .anyMatch(event -> event.kind() == AgentRuntimeProgressKind.AGENT_RESULT_READY));
+    assertTrue(receivedEvents.stream()
+        .noneMatch(event -> event.sourceEventType().startsWith("THINKING")));
+    assertTrue(receivedEvents.stream()
+        .noneMatch(event -> event.message().contains("node-1 is healthy")));
+  }
+
+  @Test
+  void streamsProgressEventsAroundPlatformToolExecutionWhenSinkIsConfigured() {
+    List<AgentRuntimeProgressEvent> receivedEvents = new CopyOnWriteArrayList<>();
+    AgentRuntimeProgressSink progressSink = (runtimeRequest, event) -> {
+      receivedEvents.add(event);
+      return Mono.empty();
+    };
+    AgentToolExecutor toolExecutor = (runtimeRequest, toolCall) -> Mono.just(new AgentToolResult(
+        "1.0",
+        toolCall.toolCallId(),
+        toolCall.taskId(),
+        toolCall.workflowId(),
+        "SUCCEEDED",
+        toolCall.skill().outputSchemaId(),
+        objectMapper.createObjectNode()
+            .put("nodeId", toolCall.parameters().get("nodeId"))
+            .put("status", "UP"),
+        null,
+        null,
+        OffsetDateTime.of(2026, 6, 23, 10, 0, 0, 0, ZoneOffset.UTC)));
+    var client = new AgentscopeReActAgentClient(
+        new TwoStepToolUseModel(),
+        4,
+        Duration.ofSeconds(5),
+        Integer.MAX_VALUE,
+        objectMapper,
+        java.time.Clock.systemUTC(),
+        progressSink,
+        new AgentscopeRuntimeEventMapper());
+
+    StepVerifier.create(client.run(new AgentscopeAgentInvocation(
+            runtimeRequest(),
+            List.of(readOnlyTool()),
+            toolExecutor)))
+        .assertNext(response -> {
+          assertEquals("SUCCEEDED", response.status());
+          assertEquals("node-1 is healthy", response.summary());
+          assertEquals(1, response.toolCallCount());
+          assertEquals(1, response.toolResults().size());
+        })
+        .verifyComplete();
+
+    assertTrue(receivedEvents.stream()
+        .anyMatch(event -> event.kind() == AgentRuntimeProgressKind.TOOL_CALL_STARTED));
+    assertTrue(receivedEvents.stream()
+        .anyMatch(event -> event.kind() == AgentRuntimeProgressKind.TOOL_RESULT_COMPLETED));
+    assertTrue(receivedEvents.stream()
+        .anyMatch(event -> event.kind() == AgentRuntimeProgressKind.AGENT_RESULT_READY));
   }
 
   @Test

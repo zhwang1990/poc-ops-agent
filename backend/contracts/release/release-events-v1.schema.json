@@ -85,7 +85,7 @@
         "applicationId": { "type": "string", "minLength": 1, "maxLength": 120 },
         "targetEnvironment": { "type": "string", "enum": ["dev", "sit", "uat"] },
         "operation": { "type": "string", "enum": ["DEPLOY", "START", "STOP", "RESTART", "ROLLBACK"] },
-        "artifactType": { "const": "WAR" },
+        "artifactType": { "type": "string", "enum": ["WAR", "SCRIPT_PROFILE"] },
         "artifactChecksum": { "type": "string", "pattern": "^sha256:[a-fA-F0-9]{3,}$" },
         "nodeIds": {
           "type": "array",

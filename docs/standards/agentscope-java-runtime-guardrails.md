@@ -2,7 +2,7 @@
 
 ## 适用范围
 
-本文约束 AgentScope Java 作为主 Agent Runtime 接入 P1 只读诊断 MVP 的实现方式。所有实现必须同时遵守 `AGENTS.md`、模块地图、已接受 ADR 和版本化契约。
+本文约束 AgentScope Java 作为主 Agent Runtime 接入 P1 只读诊断 MVP 的实现方式。P1 已于 2026-07-01 完成验收；P2 继续沿用这些约束作为只读诊断和日志分析类 Agent 能力的安全基线。所有实现必须同时遵守 `AGENTS.md`、模块地图、已接受 ADR 和版本化契约。
 
 ## Prompt 输入
 

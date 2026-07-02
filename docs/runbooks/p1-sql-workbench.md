@@ -34,7 +34,7 @@ ops-agent:
 
 ## Worker SQL 出口配置
 
-Worker 默认配置为空列表，表示拒绝所有 SQL 目标。启用真实开发或测试查询前，必须同时配置连接目录、出口 allowlist 和 KeyStore 凭据源。
+部署环境中的 Worker SQL 出口安全基线是空连接目录和空 allowlist，表示拒绝所有 SQL 目标。仓库内置 `backend/execution-worker/src/main/resources/application.yaml` 仅为本地 H2 smoke 预置 `h2-local-test` 的 `localhost:9092` 测试绑定，不得复制为生产配置。启用真实开发或测试查询前，必须同时配置连接目录、出口 allowlist 和 KeyStore 凭据源。
 
 ```yaml
 ops-agent:
@@ -70,6 +70,39 @@ ops-agent:
 5. `username` 是只读数据库账号名；如省略，Worker 会使用 `credential-alias` 作为账号名，仅适合别名与账号名一致的环境。
 6. `key-store-path` 和 `store-password` 必须由部署系统或受控密钥系统注入，不得提交真实值。
 
+## SQL 凭据 KeyStore 写入工具
+
+真实数据库密码必须先写入 Worker 本地 `JCEKS` KeyStore，操作台和控制面只引用 `credentialAlias`。当前仓库提供 `SqlCredentialKeyStoreTool` 写入工具；不要使用 `keytool -importpass` 手工导入数据库密码，因为当前 Worker 读取逻辑要求别名内容与 `JavaKeyStorePasswordProvider` 的 UTF-8 密码读取方式兼容。
+
+Windows 本地联调示例：
+
+```powershell
+backend\mvnw.cmd -f backend\pom.xml -pl execution-worker-sqlworkbench -DskipTests compile
+
+$env:OPS_AGENT_SQL_KEYSTORE_PASSWORD = "<由部署系统或受控密钥系统注入的 KeyStore 解锁口令>"
+$keyStorePath = "C:\secure\ops-agent\sql-credentials.jceks"
+$credentialAlias = "as400-dev-readonly"
+$secret = Read-Host "输入 AS/400 只读账号密码" -AsSecureString
+$secretPtr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secret)
+try {
+  $plainSecret = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($secretPtr)
+  $plainSecret | java -cp backend\execution-worker-sqlworkbench\target\classes `
+    com.company.opsagent.executionworker.sqlworkbench.SqlCredentialKeyStoreTool `
+    put `
+    --store $keyStorePath `
+    --alias $credentialAlias `
+    --store-password-env OPS_AGENT_SQL_KEYSTORE_PASSWORD `
+    --secret-stdin
+} finally {
+  if ($secretPtr -ne [IntPtr]::Zero) {
+    [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($secretPtr)
+  }
+  Remove-Variable plainSecret -ErrorAction SilentlyContinue
+}
+```
+
+工具成功后只输出别名和 KeyStore 路径，不输出数据库密码。随后 Worker 启动时必须通过 `ops-agent.worker.sql-credentials.key-store-path` 和 `ops-agent.worker.sql-credentials.store-password` 指向同一个 KeyStore 和解锁口令；`sql-egress.connections[].credential-alias` 与操作台新建连接中的 `credentialAlias` 必须一致。
+
 ## 新建连接链路
 
 1. 管理员先在 Worker 侧 KeyStore 中预置真实数据库密码，并记录 `credentialAlias`。
@@ -78,6 +111,8 @@ ops-agent:
 4. 控制面保存连接元数据并将连接置为待绑定或待探测状态。
 5. 用户触发探测时，控制面通过签名 Worker 请求调用探测端点。
 6. Worker 校验本地连接目录、出口 allowlist 和 KeyStore 别名后返回稳定探测状态。
+
+操作台新建连接时，控制面会根据连接名称生成 `connectionId`：将名称转为小写，并把非字母数字字符替换为 `-`。例如连接名称 `as400-development` 会生成 `as400-development`。Worker 配置中的 `sql-egress.connections[].connection-id` 必须与该值一致；如名称冲突导致控制面追加 `-2` 后缀，也必须同步更新 Worker 连接目录后再探测。
 
 探测状态包括：
 
@@ -122,7 +157,7 @@ npm run build
 
 ## 回滚
 
-1. 清空 Worker `sql-egress.connections` 和 `sql-egress.allowed-targets`。
+1. 清空或覆盖 Worker `sql-egress.connections` 和 `sql-egress.allowed-targets`；如使用仓库内置配置启动，也必须移除本地 `h2-local-test` smoke 绑定。
 2. 移除 Worker KeyStore 挂载和 `sql-credentials` 注入。
 3. 保留控制面连接目录，但将受影响连接标记为不可用或等待重新探测。
 4. 确认 SQL 页面只能继续做校验和 DML 预检，不再触发真实执行。

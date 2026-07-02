@@ -21,7 +21,7 @@ public record ReleasePlan(
     releaseId = ReleaseValues.requiredText(releaseId, "releaseId");
     applicationId = ReleaseValues.requiredText(applicationId, "applicationId");
     targetEnvironment = ReleaseValues.required(targetEnvironment, "targetEnvironment");
-    artifactId = ReleaseValues.requiredText(artifactId, "artifactId");
+    artifactId = ReleaseValues.optionalText(artifactId);
     status = ReleaseValues.required(status, "status");
     nodes = List.copyOf(ReleaseValues.required(nodes, "nodes"));
     if (nodes.isEmpty()) {

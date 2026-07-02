@@ -30,6 +30,8 @@ CREATE TABLE IF NOT EXISTS release_server (
   management_endpoint VARCHAR(500) NOT NULL,
   application_path VARCHAR(500),
   credential_alias VARCHAR(160),
+  script_profile_id VARCHAR(120),
+  script_parameters_json CLOB,
   enabled BOOLEAN NOT NULL,
   created_at TIMESTAMP WITH TIME ZONE NOT NULL,
   updated_at TIMESTAMP WITH TIME ZONE NOT NULL
@@ -65,7 +67,7 @@ CREATE TABLE IF NOT EXISTS release_plan (
   workflow_id VARCHAR(120) NOT NULL,
   application_id VARCHAR(120) NOT NULL,
   target_environment VARCHAR(20) NOT NULL,
-  artifact_id VARCHAR(120) NOT NULL,
+  artifact_id VARCHAR(120),
   operation VARCHAR(40) NOT NULL,
   status VARCHAR(80) NOT NULL,
   parameters_hash VARCHAR(160) NOT NULL,

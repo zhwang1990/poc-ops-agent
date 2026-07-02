@@ -44,6 +44,11 @@ public class InMemoryReleaseCatalogStore implements ReleaseCatalogStore {
   }
 
   @Override
+  public Mono<ReleaseServer> findServer(String nodeId) {
+    return Mono.justOrEmpty(servers.get(ReleaseValues.requiredText(nodeId, "nodeId")));
+  }
+
+  @Override
   public Flux<ReleaseServer> listServers(String targetEnvironment) {
     TargetEnvironment environment = TargetEnvironment.from(targetEnvironment);
     return Flux.fromIterable(servers.values())
@@ -58,6 +63,19 @@ public class InMemoryReleaseCatalogStore implements ReleaseCatalogStore {
   }
 
   @Override
+  public Flux<ReleaseArtifact> listArtifacts(String targetEnvironment) {
+    TargetEnvironment environment = TargetEnvironment.from(targetEnvironment);
+    return Flux.fromIterable(artifacts.values())
+        .filter(artifact -> artifact.targetEnvironment() == environment)
+        .sort(Comparator.comparing(ReleaseArtifact::artifactId));
+  }
+
+  @Override
+  public Mono<ReleaseArtifact> findArtifact(String artifactId) {
+    return Mono.justOrEmpty(artifacts.get(ReleaseValues.requiredText(artifactId, "artifactId")));
+  }
+
+  @Override
   public Mono<ReleaseCredential> saveCredential(ReleaseCredential credential) {
     credentials.put(credential.credentialAlias(), credential);
     return Mono.just(credential);
@@ -67,4 +85,23 @@ public class InMemoryReleaseCatalogStore implements ReleaseCatalogStore {
   public Mono<ReleaseCredential> findCredential(String credentialAlias) {
     return Mono.justOrEmpty(credentials.get(credentialAlias));
   }
+
+  @Override
+  public Mono<ReleasePlan> savePlan(ReleasePlan plan) {
+    plans.put(plan.releaseId(), plan);
+    return Mono.just(plan);
+  }
+
+  @Override
+  public Mono<ReleasePlan> findPlan(String releaseId) {
+    return Mono.justOrEmpty(plans.get(ReleaseValues.requiredText(releaseId, "releaseId")));
+  }
+
+  @Override
+  public Flux<ReleasePlan> listPlans() {
+    return Flux.fromIterable(plans.values())
+        .sort(Comparator.comparing(ReleasePlan::updatedAt).reversed());
+  }
+
+  private final Map<String, ReleasePlan> plans = new ConcurrentHashMap<>();
 }

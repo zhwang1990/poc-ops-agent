@@ -26,20 +26,30 @@
 - 需要密钥、专用认证、SDK、复杂协议或目标系统会话的 Skill，必须先完成安全评审，并以专用适配器或内部受控网关方式接入。
 - 当前 `weather-current-read:1.0.0` 使用该通用适配器配置；默认 `endpoint-url` 为空，因此未配置受控天气源时会失败关闭。
 
-## SQL 工作台 P1 边界
+## 发布中心 Liberty 脚本 Profile
+
+- Liberty 脚本发布只允许 `LIBERTY_SCRIPT_PROFILE` 管理模式调用 Worker 侧预注册脚本 Profile。
+- 操作台和控制面只能提交 `profileId` 与受约束的 `name/value` 参数，不能提交脚本路径、命令行或 shell 片段。
+- Worker 使用 `ProcessBuilder` 参数数组执行已配置的 `executable-path` 与 `arguments` 模板，不通过 shell 拼接命令。
+- 未引用 `{{artifactPath}}`、`{{artifactId}}`、`{{artifactStorageKey}}` 或 `{{artifactChecksum}}` 的 Profile 可以无制品执行；引用任一制品占位符时必须提供受控 WAR 制品上下文。
+- Profile 必须配置必填参数、允许参数、超时、成功退出码和受限工作目录；未配置或参数不匹配时必须失败关闭。
+- 脚本参数不得携带密码、密钥或 token；敏感材料只能通过凭据别名、短期凭据或等价受控边界提供。
+
+## SQL 工作台只读边界
 
 - SQL 工作台 Worker 侧代码位于 `backend/execution-worker-sqlworkbench`，由 `execution-worker` 作为运行时依赖加载；这不新增部署服务或模块编号。
 - SQL 查询入口会在 Worker 内再次使用 AST 校验，只接受单条 `SELECT`。
-- Worker 在解析 JDBC `DataSource` 前会先执行本地 SQL 出口 allowlist；默认 allowlist 为空，因此未显式配置的连接会被拒绝。
+- Worker 在解析 JDBC `DataSource` 前会先执行本地 SQL 出口 allowlist；部署安全基线要求环境配置为空或显式替换，未显式批准的连接会被拒绝。
+- 仓库内置 `application.yaml` 仅为本地 SQL 工作台 smoke 预置 `h2-local-test` 的 `localhost:9092` 绑定，不代表生产默认配置。
 - SQL 连接目录只允许 `development` 和 `test` 环境，并且只保存连接元数据和凭据别名，不保存真实密码或密钥。
 - JTOpen 仅用于 Db2 for i JDBC 适配，不允许控制面或浏览器直接连接 AS/400。
 - 当前默认执行器未配置真实连接和 KeyStore；只有通过 allowlist 的开发或测试连接才会继续进入后续连接解析。
-- P1 真实联调允许管理员启动时人工解锁 Java KeyStore；P2 前必须替换为无人值守安全解锁。
+- P1 真实联调允许管理员启动时人工解锁 Java KeyStore；P2 若继续推进真实目标系统联调，必须将无人值守安全解锁纳入启用门禁。
 - SQL 出口 allowlist 是应用层保护，不替代防火墙、私有网络、mTLS、短期目标系统凭据或 Windows 隔离。
 
 ## 传输认证边界
 
-- 控制面到 Worker 的 P1 HTTP 调用支持应用层 HMAC 签名认证。
+- 控制面到 Worker 的 P1/P2 HTTP 调用支持应用层 HMAC 签名认证。
 - 启用 `ops-agent.worker.transport-auth.enabled=true` 后，Worker 会校验 Key ID、时间戳漂移和请求签名。
 - 未签名、错误签名或时间漂移过大的请求会在 HTTP 边界返回 `401`，不会进入执行器。
 - Worker 绑定非回环地址时必须启用传输认证，否则启动保护会失败。

@@ -2,7 +2,7 @@
 
 ## 适用范围
 
-本手册适用于 P2 发布中心非生产受控变更切片。发布中心只覆盖 `dev`、`sit`、`uat` 环境的 WAR 发布、启动、停止、重启、回滚和只读日志分析，不覆盖生产环境。
+本手册适用于 P2 发布中心非生产受控变更切片。发布中心只覆盖 `dev`、`sit`、`uat` 环境的 WAR 制品发布、Liberty 脚本 Profile 发布、启动、停止、重启、回滚和只读日志分析，不覆盖生产环境。
 
 ## 启用顺序
 
@@ -24,9 +24,26 @@
 - 按环境执行开关，`dev`、`sit`、`uat` 分别控制，默认关闭。
 - Tomcat WAR 上传开关，默认关闭。
 - Liberty HTTPS 适配器开关，默认关闭。
+- Liberty 脚本 Profile 配置，默认空配置；未配置 Profile 时 Worker 必须失败关闭。
 - 日志分析只读 Skill 开关，默认关闭。
 
 任何开关开启前必须确认对应策略、审计、指标和告警已经生效。
+
+## Liberty 脚本 Profile
+
+Liberty 脚本发布只允许执行已经安全评审并部署到 Worker 侧配置中的脚本 Profile。操作台新增服务器时只能填写 `scriptProfile.profileId` 和脚本所需的 `name/value` 参数，不能填写脚本路径、命令行、shell 片段或明文密钥。
+
+当 Worker 侧 Profile 的 `arguments` 不引用 `{{artifactPath}}`、`{{artifactId}}`、`{{artifactStorageKey}}` 或 `{{artifactChecksum}}` 时，发布单可以不绑定制品；控制面会基于服务器节点、Profile ID 和脚本参数生成确认用参数哈希。若 Profile 引用了任一制品占位符，Worker 必须在缺少制品上下文时失败关闭。
+
+Worker 配置必须至少约束以下内容：
+
+- `executable-path`：审核过的脚本或包装程序绝对路径。
+- `arguments`：参数模板，只能引用 `{{artifactPath}}`、`{{applicationId}}`、`{{nodeId}}`、`{{managementEndpoint}}`、`{{applicationPath}}`、`{{credentialAlias}}` 和 `{{param.<name>}}` 等受控占位符。
+- `required-parameters` 和 `allowed-parameters`：脚本参数白名单；未列入白名单的参数必须被拒绝。
+- `timeout` 和 `success-exit-codes`：超时与成功退出码；超时或非成功退出码必须返回失败状态。
+- `artifact-storage-path` 和 `working-directory`：受限工作区；脚本不得从操作台输入中获得任意文件路径。
+
+脚本参数不得携带 `password`、`secret`、`token` 等敏感材料。需要凭据时只允许使用凭据别名或短期凭据边界，且不得把明文写入日志、审计、Prompt、制品或测试数据。
 
 ## 凭据轮换
 

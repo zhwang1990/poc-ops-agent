@@ -2,7 +2,10 @@ package com.company.opsagent.controlplane.modules.workflow;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 
+import com.company.opsagent.contracts.events.AgentRuntimeProgressPayload;
+import com.company.opsagent.contracts.events.AgentRuntimeProgressPayloadKind;
 import com.company.opsagent.contracts.events.AgentToolCallRequestedPayload;
 import com.company.opsagent.contracts.events.SemanticEvent;
 import com.company.opsagent.contracts.events.SemanticEventType;
@@ -246,6 +249,44 @@ class R2dbcReadOnlyWorkflowStoreTest {
         .assertNext(event -> {
           assertEquals(4, event.sequence());
           assertEquals(SemanticEventType.AGENT_TOOL_CALL_REQUESTED, event.type());
+        })
+        .verifyComplete();
+  }
+
+  @Test
+  void reloadsAgentRuntimeProgressEventPayloads() {
+    var store = testStore();
+    OffsetDateTime now = OffsetDateTime.parse("2026-07-01T00:00:00Z");
+
+    StepVerifier.create(store.appendEvent("workflow-runtime", 10_001, new SemanticEvent(
+            "1.0",
+            "event-runtime-progress-1",
+            "workflow-runtime",
+            10_001,
+            now,
+            SemanticEventType.AGENT_RUNTIME_PROGRESS,
+            new AgentRuntimeProgressPayload(
+                SemanticEventType.AGENT_RUNTIME_PROGRESS,
+                AgentRuntimeProgressPayloadKind.MODEL_CALL_COMPLETED,
+                "model call completed",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                12,
+                5,
+                17,
+                0.42,
+                false)))
+        .thenMany(store.loadEventsAfter("workflow-runtime", 10_000)))
+        .assertNext(event -> {
+          assertEquals(SemanticEventType.AGENT_RUNTIME_PROGRESS, event.type());
+          var payload = assertInstanceOf(AgentRuntimeProgressPayload.class, event.payload());
+          assertEquals(AgentRuntimeProgressPayloadKind.MODEL_CALL_COMPLETED, payload.progressKind());
+          assertEquals(17, payload.totalTokens());
         })
         .verifyComplete();
   }

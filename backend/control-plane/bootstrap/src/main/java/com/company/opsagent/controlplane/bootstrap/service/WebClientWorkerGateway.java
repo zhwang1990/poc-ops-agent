@@ -9,6 +9,7 @@ import com.company.opsagent.controlplane.modules.workflow.WorkerGateway;
 import java.time.Clock;
 import java.time.OffsetDateTime;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
@@ -31,6 +32,7 @@ public class WebClientWorkerGateway implements WorkerGateway {
   public Mono<WorkerExecutionResult> execute(WorkerExecutionRequest request) {
     return webClient.post()
         .uri("/internal/executions/read-only")
+        .contentType(MediaType.APPLICATION_JSON)
         .headers(headers -> sign(headers, request))
         .bodyValue(request)
         .retrieve()

@@ -34,7 +34,7 @@ ops-agent:
 
 ## SQL 出口 allowlist
 
-Worker 的 SQL 查询路径在创建 JDBC 连接前会执行本地出口 allowlist。默认配置为空，表示拒绝所有 SQL 连接；只有显式列入连接目录且主机和端口同时出现在 allowlist 中的 `development` 或 `test` 连接才会继续进入后续连接解析。
+Worker 的 SQL 查询路径在创建 JDBC 连接前会执行本地出口 allowlist。部署环境的安全基线是空连接目录和空 allowlist，表示拒绝所有 SQL 连接；仓库内置 `application.yaml` 仅为本地 SQL 工作台 smoke 预置 `h2-local-test` 的 `localhost:9092` 绑定，不得作为生产默认配置。只有显式列入连接目录且主机和端口同时出现在 allowlist 中的 `development` 或 `test` 连接才会继续进入后续连接解析。
 
 示例：
 
@@ -99,7 +99,7 @@ ops-agent:
 1. `endpoint-url` 必须是不含用户名、密码、query 和 fragment 的基础 URL。
 2. `configured-http-skills` 只保存非敏感元数据、端点和响应字段白名单，不得保存 API Key、Token、Cookie 或 Basic Auth 信息。
 3. 如第三方天气源需要密钥，应先通过内部受控网关或后续短期凭据机制接入；不得把第三方密钥写入 Worker 配置。
-4. 响应只会透传 `allowed-response-fields` 中列出的字段，并由适配器补充 `source` 和 `generatedAt`。
+4. 响应只会透传 `allowed-response-fields` 中列出的字段，并由适配器补充 `generatedAt`；`source` 为可选非敏感标识，省略时不会输出该字段。
 5. 该机制是 Worker 应用层出口控制，不替代防火墙、私有网络、mTLS、短期目标系统凭据、Windows 隔离或网络层出口策略。
 
 ## 启用步骤

@@ -19,12 +19,27 @@ export const serverTypeSchema = z.enum(["TOMCAT", "LIBERTY"]);
 
 export const managementModeSchema = z.enum([
   "LIBERTY_HTTPS",
+  "LIBERTY_SCRIPT_PROFILE",
   "TOMCAT_WAR_UPLOAD",
   "TOMCAT_MANAGER_API",
   "NODE_AGENT_HTTPS",
   "CONTROLLED_SSH_TEMPLATE",
   "DISABLED",
 ]);
+
+export const releaseScriptParameterSchema = z
+  .object({
+    name: nonBlankString.regex(/^[A-Za-z][A-Za-z0-9_.-]{0,63}$/),
+    value: nonBlankString.max(500),
+  })
+  .strict();
+
+export const releaseScriptProfileSchema = z
+  .object({
+    profileId: nonBlankString.regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$/),
+    parameters: z.array(releaseScriptParameterSchema).max(40),
+  })
+  .strict();
 
 export const releaseApplicationSchema = z
   .object({
@@ -57,6 +72,7 @@ export const releaseServerSchema = z
     managementEndpoint: nonBlankString,
     applicationPath: nonBlankString.nullable().optional(),
     credentialAlias: nonBlankString.nullable().optional(),
+    scriptProfile: releaseScriptProfileSchema.nullable().optional(),
     enabled: z.boolean(),
   })
   .strict();
@@ -78,6 +94,8 @@ export const releaseArtifactSchema = z
     enabled: z.boolean(),
   })
   .strict();
+
+export const releaseArtifactListSchema = z.array(releaseArtifactSchema);
 
 export const releaseCredentialSummarySchema = z
   .object({
@@ -122,7 +140,7 @@ export const releasePlanSchema = z
     releaseId: nonBlankString,
     applicationId: nonBlankString,
     targetEnvironment: targetEnvironmentSchema,
-    artifactId: nonBlankString,
+    artifactId: nonBlankString.nullable().optional(),
     status: z.enum([
       "DRAFT",
       "WAIT_CONFIRM",
@@ -152,9 +170,9 @@ export const releasePlanCreateRequestSchema = z
   .object({
     applicationId: nonBlankString,
     targetEnvironment: targetEnvironmentSchema,
-    artifactId: nonBlankString,
+    artifactId: nonBlankString.optional(),
     nodeIds: z.array(nonBlankString).min(1),
-    parametersHash: sha256String,
+    parametersHash: sha256String.optional(),
   })
   .strict();
 

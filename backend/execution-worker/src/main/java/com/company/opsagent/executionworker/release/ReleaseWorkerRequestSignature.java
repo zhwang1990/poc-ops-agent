@@ -37,6 +37,7 @@ public final class ReleaseWorkerRequestSignature {
         value(artifact == null ? null : artifact.artifactId()),
         value(artifact == null ? null : artifact.type()),
         value(artifact == null ? null : artifact.checksum()),
+        value(artifact == null ? null : artifact.storageKey()),
         sha256Hex(command.nodes() == null ? "" : command.nodes().toString()),
         value(command.operator() == null ? null : command.operator().operatorId()),
         command.operator() == null ? "" : String.join(",", command.operator().roles()),

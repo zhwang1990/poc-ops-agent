@@ -10,6 +10,7 @@ public sealed interface SemanticEventPayload permits
     AgentToolCallRequestedPayload,
     AgentToolCallCompletedPayload,
     AgentToolCallRejectedPayload,
+    AgentRuntimeProgressPayload,
     WorkflowCompletedPayload,
     WorkflowFailedPayload {
 

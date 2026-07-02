@@ -34,14 +34,23 @@ class DynamicModelProviderAgentscopeAgentClientTest {
     store.setDefault(provider.providerId());
 
     AtomicReference<CapturedFactoryInput> captured = new AtomicReference<>();
+    AgentRuntimeProgressSink progressSink = (runtimeRequest, event) -> Mono.empty();
     AgentscopeAgentClient client = new DynamicModelProviderAgentscopeAgentClient(
         store,
         codec,
-        (apiKey, modelName, baseUrl, maxIters, maxToolCalls, timeout) -> {
-          captured.set(new CapturedFactoryInput(apiKey, modelName, baseUrl, maxIters, maxToolCalls, timeout));
+        (apiKey, modelName, baseUrl, maxIters, maxToolCalls, timeout, configuredProgressSink) -> {
+          captured.set(new CapturedFactoryInput(
+              apiKey,
+              modelName,
+              baseUrl,
+              maxIters,
+              maxToolCalls,
+              timeout,
+              configuredProgressSink));
           return invocation -> Mono.just(new AgentscopeAgentResponse("SUCCEEDED", "ok", 0));
         },
-        invocation -> Mono.just(new AgentscopeAgentResponse("LEGACY", "legacy", 0)));
+        invocation -> Mono.just(new AgentscopeAgentResponse("LEGACY", "legacy", 0)),
+        progressSink);
 
     StepVerifier.create(client.run(invocation()))
         .assertNext(response -> assertEquals("SUCCEEDED", response.status()))
@@ -53,6 +62,7 @@ class DynamicModelProviderAgentscopeAgentClientTest {
     assertEquals(7, captured.get().maxIters());
     assertEquals(4, captured.get().maxToolCalls());
     assertEquals(Duration.ofSeconds(17), captured.get().timeout());
+    assertEquals(progressSink, captured.get().progressSink());
   }
 
   @Test
@@ -60,9 +70,10 @@ class DynamicModelProviderAgentscopeAgentClientTest {
     AgentscopeAgentClient client = new DynamicModelProviderAgentscopeAgentClient(
         new InMemoryModelProviderStore(),
         new AesGcmModelProviderSecretCodec("0123456789abcdef0123456789abcdef"),
-        (apiKey, modelName, baseUrl, maxIters, maxToolCalls, timeout) -> invocation -> Mono.just(
+        (apiKey, modelName, baseUrl, maxIters, maxToolCalls, timeout, progressSink) -> invocation -> Mono.just(
             new AgentscopeAgentResponse("UNEXPECTED", "unexpected", 0)),
-        invocation -> Mono.just(new AgentscopeAgentResponse("LEGACY", "legacy", 0)));
+        invocation -> Mono.just(new AgentscopeAgentResponse("LEGACY", "legacy", 0)),
+        AgentRuntimeProgressSink.noop());
 
     StepVerifier.create(client.run(invocation()))
         .assertNext(response -> assertEquals("LEGACY", response.status()))
@@ -92,6 +103,7 @@ class DynamicModelProviderAgentscopeAgentClientTest {
       String baseUrl,
       int maxIters,
       int maxToolCalls,
-      Duration timeout) {
+      Duration timeout,
+      AgentRuntimeProgressSink progressSink) {
   }
 }

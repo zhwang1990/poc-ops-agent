@@ -2,6 +2,7 @@ import {
   releaseApplicationListSchema,
   releaseApplicationSaveRequestSchema,
   releaseApplicationSchema,
+  releaseArtifactListSchema,
   releaseArtifactSchema,
   releaseConnectionTestResultSchema,
   releaseCredentialRotateRequestSchema,
@@ -61,6 +62,16 @@ export function listReleasePlans() {
   return requestJson("/internal/release-center/plans", {
     schema: releasePlanListSchema,
   });
+}
+
+/**
+ * @param {string} targetEnvironment
+ */
+export function listReleaseArtifacts(targetEnvironment) {
+  return requestJson(
+    `/internal/release-center/artifacts?targetEnvironment=${encodeURIComponent(targetEnvironment)}`,
+    { schema: releaseArtifactListSchema },
+  );
 }
 
 /**

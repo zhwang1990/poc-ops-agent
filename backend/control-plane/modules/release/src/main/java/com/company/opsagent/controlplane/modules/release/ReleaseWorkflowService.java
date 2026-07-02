@@ -3,6 +3,9 @@ package com.company.opsagent.controlplane.modules.release;
 import java.time.Clock;
 import java.time.Instant;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
@@ -47,16 +50,23 @@ public class ReleaseWorkflowService {
         throw new ReleaseWorkflowException("RELEASE_ENVIRONMENT_DISABLED", "release environment is disabled");
       }
       List<ReleaseNodeStep> nodes = enabledNodes(environment, servers);
+      String normalizedArtifactId = ReleaseValues.optionalText(artifactId);
+      if (normalizedArtifactId == null && !allNodesUseLibertyScriptProfile(nodes)) {
+        throw new ReleaseWorkflowException("RELEASE_ARTIFACT_REQUIRED", "release artifact is required for this release mode");
+      }
+      String effectiveParametersHash = normalizedArtifactId == null
+          ? scriptProfileParametersHash(servers)
+          : requiredArtifactParametersHash(parametersHash);
       ReleaseStatus status = releasePolicy.confirmationRequired() ? ReleaseStatus.WAIT_CONFIRM : ReleaseStatus.DRAFT;
       Instant now = Instant.now(clock);
       return new ReleasePlan(
           releaseId,
           applicationId,
           environment,
-          artifactId,
+          normalizedArtifactId,
           status,
           nodes,
-          parametersHash,
+          effectiveParametersHash,
           null,
           releasePolicy.stopOnNodeFailure(),
           now,
@@ -197,7 +207,7 @@ public class ReleaseWorkflowService {
             plan.applicationId(),
             plan.targetEnvironment(),
             "DEPLOY",
-            "WAR",
+            plan.artifactId() == null ? "SCRIPT_PROFILE" : "WAR",
             plan.parametersHash(),
             plan.nodes().stream().map(ReleaseNodeStep::nodeId).toList(),
             "system",
@@ -279,5 +289,44 @@ public class ReleaseWorkflowService {
     return IntStream.range(0, enabledServers.size())
         .mapToObj(index -> ReleaseNodeStep.fromServer(index + 1, enabledServers.get(index)))
         .toList();
+  }
+
+  private static boolean allNodesUseLibertyScriptProfile(List<ReleaseNodeStep> nodes) {
+    return nodes.stream()
+        .allMatch(node -> node.serverType() == ServerType.LIBERTY
+            && node.managementMode() == ManagementMode.LIBERTY_SCRIPT_PROFILE);
+  }
+
+  private static String requiredArtifactParametersHash(String parametersHash) {
+    try {
+      return ReleaseValues.sha256Checksum(parametersHash);
+    } catch (IllegalArgumentException exception) {
+      throw new ReleaseWorkflowException(
+          "RELEASE_PARAMETERS_HASH_REQUIRED",
+          "release parameters hash is required for artifact releases");
+    }
+  }
+
+  private static String scriptProfileParametersHash(List<ReleaseServer> servers) {
+    List<ReleaseServer> enabledServers = servers.stream()
+        .filter(ReleaseServer::enabled)
+        .toList();
+    String material = enabledServers.stream()
+        .map(server -> server.nodeId() + "\n" + scriptProfileMaterial(server.scriptProfile()))
+        .reduce("", (left, right) -> left + right + "\n---\n");
+    try {
+      MessageDigest digest = MessageDigest.getInstance("SHA-256");
+      return "sha256:" + HexFormat.of().formatHex(digest.digest(material.getBytes(StandardCharsets.UTF_8)));
+    } catch (NoSuchAlgorithmException exception) {
+      throw new IllegalStateException("SHA-256 is not available", exception);
+    }
+  }
+
+  private static String scriptProfileMaterial(ReleaseScriptProfile scriptProfile) {
+    ReleaseScriptProfile profile = ReleaseValues.required(scriptProfile, "scriptProfile");
+    String parameters = profile.parameters().stream()
+        .map(parameter -> parameter.name() + "=" + parameter.value())
+        .reduce("", (left, right) -> left + right + "\n");
+    return profile.profileId() + "\n" + parameters;
   }
 }

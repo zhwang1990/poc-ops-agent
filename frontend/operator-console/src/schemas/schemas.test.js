@@ -18,6 +18,7 @@ import {
   releaseArtifactSchema,
   releaseCredentialSummarySchema,
   releasePlanSchema,
+  releaseServerSchema,
 } from "./release-center-schemas.js";
 import {
   sqlConnectionListSchema,
@@ -231,6 +232,25 @@ describe("release center schemas", () => {
     ).toThrow();
   });
 
+  test("accepts Liberty script release plans without artifacts", () => {
+    const parsed = releasePlanSchema.parse({
+      ...releasePlan,
+      artifactId: null,
+      nodes: [
+        {
+          nodeId: "liberty-script-1",
+          serverType: "LIBERTY",
+          managementMode: "LIBERTY_SCRIPT_PROFILE",
+          sequence: 1,
+          status: "PENDING",
+        },
+      ],
+    });
+
+    expect(parsed.artifactId).toBeNull();
+    expect(parsed.nodes[0].managementMode).toBe("LIBERTY_SCRIPT_PROFILE");
+  });
+
   test("rejects non-WAR Tomcat artifacts", () => {
     expect(() =>
       releaseArtifactSchema.parse({
@@ -249,6 +269,29 @@ describe("release center schemas", () => {
         secret: "plain-text",
       }),
     ).toThrow();
+  });
+
+  test("accepts Liberty script profile server parameters", () => {
+    const parsed = releaseServerSchema.parse({
+      nodeId: "dev-liberty-1",
+      targetEnvironment: "dev",
+      serverType: "LIBERTY",
+      managementMode: "LIBERTY_SCRIPT_PROFILE",
+      managementEndpoint: "https://liberty-dev.example",
+      applicationPath: "/orders",
+      credentialAlias: "liberty-dev",
+      scriptProfile: {
+        profileId: "liberty-war-deploy",
+        parameters: [
+          { name: "serverName", value: "defaultServer" },
+          { name: "applicationName", value: "orders" },
+        ],
+      },
+      enabled: true,
+    });
+
+    expect(parsed.scriptProfile?.profileId).toBe("liberty-war-deploy");
+    expect(parsed.scriptProfile?.parameters[0].name).toBe("serverName");
   });
 });
 
@@ -332,7 +375,51 @@ describe("semanticEventSchema", () => {
           policyDecisionId: "policy-v1:workflow-1:tool-call-2",
         },
       }).type,
-    ).toBe("AGENT_TOOL_CALL_REJECTED");
+      ).toBe("AGENT_TOOL_CALL_REJECTED");
+  });
+
+  test("accepts Agent runtime progress payloads without SDK event names", () => {
+    const event = {
+      contractVersion: "1.0",
+      eventId: "9cf516e0-561e-4cbf-8f18-c0b36a54b4de",
+      workflowId: "193b2852-cd76-46a2-a589-dd350d830e6a",
+      sequence: 10001,
+      timestamp: "2026-07-01T00:00:00Z",
+      type: "AGENT_RUNTIME_PROGRESS",
+      payload: {
+        payloadType: "AGENT_RUNTIME_PROGRESS",
+        progressKind: "MODEL_CALL_COMPLETED",
+        message: "model call completed",
+        replyId: null,
+        blockId: null,
+        toolCallId: null,
+        toolName: null,
+        agentId: null,
+        sessionId: null,
+        subagentId: null,
+        inputTokens: 12,
+        outputTokens: 5,
+        totalTokens: 17,
+        modelTimeSeconds: 0.42,
+        sensitiveContentSuppressed: false,
+      },
+    };
+
+    const parsed = semanticEventSchema.parse(event);
+    expect(parsed.payload.payloadType).toBe("AGENT_RUNTIME_PROGRESS");
+    if (parsed.payload.payloadType !== "AGENT_RUNTIME_PROGRESS") {
+      throw new Error("expected Agent runtime progress payload");
+    }
+    expect(parsed.payload.progressKind).toBe("MODEL_CALL_COMPLETED");
+    expect(() =>
+      semanticEventSchema.parse({
+        ...event,
+        payload: {
+          ...event.payload,
+          sourceEventType: "MODEL_CALL_END",
+        },
+      }),
+    ).toThrow();
   });
 });
 

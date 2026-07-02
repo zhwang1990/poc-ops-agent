@@ -21,6 +21,7 @@
         "AGENT_TOOL_CALL_REQUESTED",
         "AGENT_TOOL_CALL_COMPLETED",
         "AGENT_TOOL_CALL_REJECTED",
+        "AGENT_RUNTIME_PROGRESS",
         "WORKFLOW_COMPLETED",
         "WORKFLOW_FAILED"
       ]
@@ -33,6 +34,7 @@
         { "$ref": "#/$defs/agentToolCallRequestedPayload" },
         { "$ref": "#/$defs/agentToolCallCompletedPayload" },
         { "$ref": "#/$defs/agentToolCallRejectedPayload" },
+        { "$ref": "#/$defs/agentRuntimeProgressPayload" },
         { "$ref": "#/$defs/workflowCompletedPayload" },
         { "$ref": "#/$defs/workflowFailedPayload" }
       ]
@@ -136,6 +138,66 @@
         "errorCode": { "type": "string", "minLength": 1 },
         "message": { "type": "string", "minLength": 1 },
         "policyDecisionId": { "type": "string", "minLength": 1 }
+      }
+    },
+    "agentRuntimeProgressPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "payloadType",
+        "progressKind",
+        "message",
+        "replyId",
+        "blockId",
+        "toolCallId",
+        "toolName",
+        "agentId",
+        "sessionId",
+        "subagentId",
+        "inputTokens",
+        "outputTokens",
+        "totalTokens",
+        "modelTimeSeconds",
+        "sensitiveContentSuppressed"
+      ],
+      "properties": {
+        "payloadType": { "const": "AGENT_RUNTIME_PROGRESS" },
+        "progressKind": {
+          "type": "string",
+          "enum": [
+            "AGENT_STARTED",
+            "AGENT_ENDED",
+            "AGENT_RESULT_READY",
+            "MODEL_CALL_STARTED",
+            "MODEL_CALL_COMPLETED",
+            "TEXT_DELTA_AVAILABLE",
+            "TOOL_CALL_STARTED",
+            "TOOL_CALL_DELTA_AVAILABLE",
+            "TOOL_CALL_COMPLETED",
+            "TOOL_RESULT_STARTED",
+            "TOOL_RESULT_DELTA_AVAILABLE",
+            "TOOL_RESULT_COMPLETED",
+            "SUBAGENT_EXPOSED",
+            "ITERATION_LIMIT_EXCEEDED",
+            "USER_CONFIRMATION_REQUIRED",
+            "EXTERNAL_EXECUTION_REQUIRED",
+            "CUSTOM",
+            "UNKNOWN"
+          ]
+        },
+        "message": { "type": "string", "minLength": 1 },
+        "replyId": { "type": ["string", "null"], "minLength": 1 },
+        "blockId": { "type": ["string", "null"], "minLength": 1 },
+        "toolCallId": { "type": ["string", "null"], "minLength": 1 },
+        "toolName": { "type": ["string", "null"], "minLength": 1 },
+        "agentId": { "type": ["string", "null"], "minLength": 1 },
+        "sessionId": { "type": ["string", "null"], "minLength": 1 },
+        "subagentId": { "type": ["string", "null"], "minLength": 1 },
+        "inputTokens": { "type": "integer", "minimum": 0 },
+        "outputTokens": { "type": "integer", "minimum": 0 },
+        "totalTokens": { "type": "integer", "minimum": 0 },
+        "modelTimeSeconds": { "type": "number", "minimum": 0 },
+        "sensitiveContentSuppressed": { "type": "boolean" }
       }
     },
     "workflowCompletedPayload": {

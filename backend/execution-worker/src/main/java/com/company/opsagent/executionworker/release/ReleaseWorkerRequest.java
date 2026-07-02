@@ -31,12 +31,45 @@ public record ReleaseWorkerRequest(
   public record ReleaseArtifactReference(
       String artifactId,
       String type,
-      String checksum) {
+      String checksum,
+      String storageKey) {
+
+    public ReleaseArtifactReference(String artifactId, String type, String checksum) {
+      this(artifactId, type, checksum, null);
+    }
   }
 
   public record ReleaseNodeTarget(
       String nodeId,
       String serverType,
-      String managementMode) {
+      String managementMode,
+      String managementEndpoint,
+      String applicationPath,
+      String credentialAlias,
+      ReleaseScriptProfile scriptProfile) {
+
+    public ReleaseNodeTarget(String nodeId, String serverType, String managementMode) {
+      this(nodeId, serverType, managementMode, null, null, null, null);
+    }
+
+    public ReleaseNodeTarget(
+        String nodeId,
+        String serverType,
+        String managementMode,
+        String managementEndpoint,
+        String applicationPath,
+        String credentialAlias) {
+      this(nodeId, serverType, managementMode, managementEndpoint, applicationPath, credentialAlias, null);
+    }
+  }
+
+  public record ReleaseScriptProfile(
+      String profileId,
+      List<ReleaseScriptParameter> parameters) {
+  }
+
+  public record ReleaseScriptParameter(
+      String name,
+      String value) {
   }
 }

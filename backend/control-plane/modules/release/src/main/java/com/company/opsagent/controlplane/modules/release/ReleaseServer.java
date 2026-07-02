@@ -11,6 +11,7 @@ public record ReleaseServer(
     String managementEndpoint,
     String applicationPath,
     String credentialAlias,
+    ReleaseScriptProfile scriptProfile,
     boolean enabled) {
 
   public ReleaseServer {
@@ -21,6 +22,7 @@ public record ReleaseServer(
     managementEndpoint = normalizedEndpoint(managementEndpoint, managementMode);
     applicationPath = ReleaseValues.optionalText(applicationPath);
     credentialAlias = ReleaseValues.optionalText(credentialAlias);
+    scriptProfile = normalizedScriptProfile(serverType, managementMode, scriptProfile);
   }
 
   public static ReleaseServer create(
@@ -42,6 +44,28 @@ public record ReleaseServer(
       String applicationPath,
       String credentialAlias,
       boolean enabled) {
+    return create(
+        nodeId,
+        targetEnvironment,
+        serverType,
+        managementMode,
+        managementEndpoint,
+        applicationPath,
+        credentialAlias,
+        null,
+        enabled);
+  }
+
+  public static ReleaseServer create(
+      String nodeId,
+      String targetEnvironment,
+      ServerType serverType,
+      ManagementMode managementMode,
+      String managementEndpoint,
+      String applicationPath,
+      String credentialAlias,
+      ReleaseScriptProfile scriptProfile,
+      boolean enabled) {
     return new ReleaseServer(
         nodeId,
         TargetEnvironment.from(targetEnvironment),
@@ -50,7 +74,24 @@ public record ReleaseServer(
         managementEndpoint,
         applicationPath,
         credentialAlias,
+        scriptProfile,
         enabled);
+  }
+
+  private static ReleaseScriptProfile normalizedScriptProfile(
+      ServerType serverType,
+      ManagementMode managementMode,
+      ReleaseScriptProfile scriptProfile) {
+    if (managementMode == ManagementMode.LIBERTY_SCRIPT_PROFILE) {
+      if (serverType != ServerType.LIBERTY) {
+        throw new IllegalArgumentException("LIBERTY_SCRIPT_PROFILE requires LIBERTY server type");
+      }
+      return ReleaseValues.required(scriptProfile, "scriptProfile");
+    }
+    if (scriptProfile != null) {
+      throw new IllegalArgumentException("scriptProfile is only supported by LIBERTY_SCRIPT_PROFILE");
+    }
+    return null;
   }
 
   private static String normalizedEndpoint(String managementEndpoint, ManagementMode managementMode) {

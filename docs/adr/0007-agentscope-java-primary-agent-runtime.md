@@ -2,7 +2,7 @@
 
 - 状态：Accepted
 - 日期：2026-06-13
-- 更新日期：2026-06-28
+- 更新日期：2026-07-01
 - 负责人：架构负责人
 - 相关模块：M01、M02、M03、M04、M05、M07、M08、M09、M10、M11
 - 相关任务：AgentScope Java 主运行时接入
@@ -44,6 +44,8 @@ P1 主链路为：
 AgentScope ReAct 现在注册真实 `AgentTool`，模型 ToolUse 会先在 M04 转成强类型 `AgentToolCall`，再交给 M05 的平台守护执行器。M04 生成的 policy 引用只用于满足当前信封契约，M05 会忽略该引用并以服务端重新授权结果为准。Agent Tool 请求、完成和拒绝三类语义事件契约骨架、M05 发布接线、执行器级审计和多 Tool 幂等恢复演练已经补齐；终态 Agent workflow 会复用持久化的 `AgentTaskResult` 状态、摘要和 toolCallCount，避免幂等重试时把 Runtime 失败误报成通用终态失败。评测集和路由解释 API 仍需后续补齐。确定性单 Skill 只读入口继续作为联调、兼容和紧急回退路径。
 
 截至 2026-06-28，M04 已新增动态模型供应方设置：管理员可通过 M09 操作台维护 OpenAI-compatible `baseUrl`、模型名、运行限制和 API Key，并切换当前默认供应方。API Key 只允许在受保护请求中直接提交一次，控制面使用 `OPS_AGENT_MODEL_SECRET_MASTER_KEY` 派生的本地密钥进行 AES-GCM 加密后持久化；摘要 API 只返回指纹和配置版本，不返回明文或密文。测试配置通过 OpenAI-compatible `/chat/completions` 最小请求执行受控连通性探测，本地占位 Key 不出网，失败时只返回稳定摘要，不回显供应方响应体或 Key。Agent Runtime 每次运行前读取当前默认供应方并解密调用所需 Key，未设置默认供应方时才回退到旧的环境变量配置。
+
+截至 2026-07-01，M04 直接依赖的 AgentScope Java 已升级到 `io.agentscope:agentscope:2.0.0-RC4`。Maven Central 当前 2.0 线尚未发布最终版 `2.0.0`，因此 P1 先固定到该 2.0 release candidate，并继续把依赖限制在 `control-plane-agentruntime` 模块内。
 
 AgentScope Java 负责：
 
@@ -160,7 +162,7 @@ backend/contracts/skills/packages/<skill-slug>/
 
 - M05 必须把 Agent workflow 和 Tool Step 作为 P1 主路径维护。
 - M11 必须把目录式 Skill 包、Tool Catalog、模型行为、安全拒绝和恢复评测纳入门禁。
-- 当前接入版本为 AgentScope Java `1.0.12`，后续升级仍需版本稳定性、许可证和传递依赖审查。
+- 当前接入版本为 AgentScope Java `2.0.0-RC4`，后续升级到 2.0 正式版仍需版本稳定性、许可证和传递依赖审查。
 - 确定性单 Skill 入口从主路径降级为兼容和回退路径后，操作台与运行手册需要明确入口差异。
 
 ## 验证方式

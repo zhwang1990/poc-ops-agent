@@ -40,6 +40,31 @@ findstr /I /C:"npm-dev-always-runs" "%START_SCRIPT%" >nul || (
   exit /b 1
 )
 
+findstr /I /C:"call :freePort 8091" "%START_SCRIPT%" >nul || (
+  echo start-demo.cmd must free Worker port 8091 before startup
+  exit /b 1
+)
+
+findstr /I /C:"call :freePort 8080" "%START_SCRIPT%" >nul || (
+  echo start-demo.cmd must free Control Plane port 8080 before startup
+  exit /b 1
+)
+
+findstr /I /C:"taskkill /PID" "%START_SCRIPT%" >nul || (
+  echo start-demo.cmd must terminate fixed-port listeners instead of switching ports
+  exit /b 1
+)
+
+findstr /I /C:"8081" "%START_SCRIPT%" >nul && (
+  echo start-demo.cmd must not use an alternate Control Plane port
+  exit /b 1
+)
+
+findstr /I /C:"8092" "%START_SCRIPT%" >nul && (
+  echo start-demo.cmd must not use an alternate Worker port
+  exit /b 1
+)
+
 findstr /I /C:"taskkill /PID" "%STOP_SCRIPT%" >nul || (
   echo stop-demo.cmd must stop recorded PIDs
   exit /b 1

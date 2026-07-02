@@ -64,6 +64,8 @@ describe("WorkflowEventsPage", () => {
 
     expect(await screen.findByText("AGENT_TOOL_CALL_REQUESTED")).toBeInTheDocument();
     expect(await screen.findByText("AGENT_TOOL_CALL_COMPLETED")).toBeInTheDocument();
+    expect(await screen.findByText("AGENT_RUNTIME_PROGRESS")).toBeInTheDocument();
+    expect(screen.getByText("MODEL_CALL_COMPLETED: model call completed")).toBeInTheDocument();
     expect(await screen.findAllByText("weather-current-read@1.0.0")).toHaveLength(2);
     expect(screen.getByText(workflowId)).toBeInTheDocument();
   });
@@ -103,6 +105,31 @@ const agentToolEvents = [
       skillVersion: "1.0.0",
       status: "SUCCEEDED",
       outputSchemaId: "weather-current-read:1.0.0:output",
+    },
+  },
+  {
+    contractVersion: "1.0",
+    eventId: "00000000-0000-4000-8000-000000000403",
+    workflowId,
+    sequence: 3,
+    timestamp: "2026-06-24T10:00:02+08:00",
+    type: "AGENT_RUNTIME_PROGRESS",
+    payload: {
+      payloadType: "AGENT_RUNTIME_PROGRESS",
+      progressKind: "MODEL_CALL_COMPLETED",
+      message: "model call completed",
+      replyId: "reply-1",
+      blockId: null,
+      toolCallId: null,
+      toolName: null,
+      agentId: "agent-1",
+      sessionId: "session-1",
+      subagentId: null,
+      inputTokens: 10,
+      outputTokens: 20,
+      totalTokens: 30,
+      modelTimeSeconds: 1.25,
+      sensitiveContentSuppressed: true,
     },
   },
 ];

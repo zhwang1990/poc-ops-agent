@@ -39,6 +39,28 @@ class ReleaseCatalogModelTest {
   }
 
   @Test
+  void releaseServerAcceptsLibertyScriptProfileWithTypedParameters() {
+    ReleaseServer server = ReleaseServer.create(
+        "liberty-dev-1",
+        "dev",
+        ServerType.LIBERTY,
+        ManagementMode.LIBERTY_SCRIPT_PROFILE,
+        "https://liberty-dev.example",
+        "/orders",
+        "liberty-dev",
+        new ReleaseScriptProfile(
+            "liberty-war-deploy",
+            java.util.List.of(
+                new ReleaseScriptParameter("serverName", "defaultServer"),
+                new ReleaseScriptParameter("applicationName", "orders"))),
+        true);
+
+    assertEquals(ManagementMode.LIBERTY_SCRIPT_PROFILE, server.managementMode());
+    assertEquals("liberty-war-deploy", server.scriptProfile().profileId());
+    assertEquals("defaultServer", server.scriptProfile().parameters().get(0).value());
+  }
+
+  @Test
   void environmentPolicyRequiresConfirmationForSitAndUatByDefault() {
     assertTrue(ReleaseEnvironmentPolicy.defaultFor(TargetEnvironment.SIT).confirmationRequired());
     assertTrue(ReleaseEnvironmentPolicy.defaultFor(TargetEnvironment.UAT).confirmationRequired());

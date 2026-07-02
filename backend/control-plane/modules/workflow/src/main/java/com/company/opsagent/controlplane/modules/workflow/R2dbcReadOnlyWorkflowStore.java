@@ -3,6 +3,8 @@ package com.company.opsagent.controlplane.modules.workflow;
 import com.company.opsagent.contracts.events.SemanticEvent;
 import com.company.opsagent.contracts.events.SemanticEventPayload;
 import com.company.opsagent.contracts.events.SemanticEventType;
+import com.company.opsagent.contracts.events.AgentRuntimeProgressPayload;
+import com.company.opsagent.contracts.events.AgentRuntimeProgressPayloadKind;
 import com.company.opsagent.contracts.events.AgentToolCallCompletedPayload;
 import com.company.opsagent.contracts.events.AgentToolCallRejectedPayload;
 import com.company.opsagent.contracts.events.AgentToolCallRequestedPayload;
@@ -619,6 +621,22 @@ public class R2dbcReadOnlyWorkflowStore implements ReadOnlyWorkflowStore {
             payloadNode.get("errorCode").asText(),
             payloadNode.get("message").asText(),
             payloadNode.get("policyDecisionId").asText());
+        case AGENT_RUNTIME_PROGRESS -> new AgentRuntimeProgressPayload(
+            type,
+            AgentRuntimeProgressPayloadKind.valueOf(payloadNode.get("progressKind").asText()),
+            payloadNode.get("message").asText(),
+            nullableText(payloadNode, "replyId"),
+            nullableText(payloadNode, "blockId"),
+            nullableText(payloadNode, "toolCallId"),
+            nullableText(payloadNode, "toolName"),
+            nullableText(payloadNode, "agentId"),
+            nullableText(payloadNode, "sessionId"),
+            nullableText(payloadNode, "subagentId"),
+            payloadNode.get("inputTokens").asInt(),
+            payloadNode.get("outputTokens").asInt(),
+            payloadNode.get("totalTokens").asInt(),
+            payloadNode.get("modelTimeSeconds").asDouble(),
+            payloadNode.get("sensitiveContentSuppressed").asBoolean());
         case WORKFLOW_COMPLETED -> new WorkflowCompletedPayload(
             type,
             payloadNode.get("outputSchemaId").asText(),
@@ -639,6 +657,14 @@ public class R2dbcReadOnlyWorkflowStore implements ReadOnlyWorkflowStore {
     } catch (JsonProcessingException exception) {
       throw new IllegalStateException(exception);
     }
+  }
+
+  private String nullableText(JsonNode node, String fieldName) {
+    JsonNode field = node.get(fieldName);
+    if (field == null || field.isNull()) {
+      return null;
+    }
+    return field.asText();
   }
 
   private GenericExecuteSpec bindNullable(

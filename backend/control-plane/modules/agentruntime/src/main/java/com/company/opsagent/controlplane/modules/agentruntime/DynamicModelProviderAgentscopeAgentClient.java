@@ -18,7 +18,8 @@ public final class DynamicModelProviderAgentscopeAgentClient implements Agentsco
         String baseUrl,
         int maxIters,
         int maxToolCalls,
-        Duration timeout);
+        Duration timeout,
+        AgentRuntimeProgressSink progressSink);
   }
 
   private static final String LOCAL_FAKE_API_KEY = "OPS_AGENT_FAKE_API_KEY_REPLACE_ME";
@@ -27,16 +28,19 @@ public final class DynamicModelProviderAgentscopeAgentClient implements Agentsco
   private final ModelProviderSecretCodec secretCodec;
   private final OpenAiCompatibleClientFactory clientFactory;
   private final AgentscopeAgentClient fallbackClient;
+  private final AgentRuntimeProgressSink progressSink;
 
   public DynamicModelProviderAgentscopeAgentClient(
       ModelProviderStore store,
       ModelProviderSecretCodec secretCodec,
       OpenAiCompatibleClientFactory clientFactory,
-      AgentscopeAgentClient fallbackClient) {
+      AgentscopeAgentClient fallbackClient,
+      AgentRuntimeProgressSink progressSink) {
     this.store = store;
     this.secretCodec = secretCodec;
     this.clientFactory = clientFactory;
     this.fallbackClient = fallbackClient;
+    this.progressSink = progressSink == null ? AgentRuntimeProgressSink.noop() : progressSink;
   }
 
   @Override
@@ -70,6 +74,7 @@ public final class DynamicModelProviderAgentscopeAgentClient implements Agentsco
         provider.baseUrl(),
         provider.maxIterations(),
         provider.maxToolCalls(),
-        provider.timeout());
+        provider.timeout(),
+        progressSink);
   }
 }

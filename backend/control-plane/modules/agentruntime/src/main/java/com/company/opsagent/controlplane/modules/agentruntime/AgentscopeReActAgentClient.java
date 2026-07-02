@@ -3,6 +3,8 @@ package com.company.opsagent.controlplane.modules.agentruntime;
 import com.company.opsagent.contracts.agent.AgentToolResult;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.agentscope.core.ReActAgent;
+import io.agentscope.core.event.AgentEvent;
+import io.agentscope.core.event.AgentResultEvent;
 import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.MsgRole;
 import io.agentscope.core.model.Model;
@@ -13,6 +15,7 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import reactor.core.publisher.Mono;
 
 /**
@@ -38,6 +41,8 @@ public final class AgentscopeReActAgentClient implements AgentscopeAgentClient {
   private final int maxToolCalls;
   private final ObjectMapper objectMapper;
   private final Clock clock;
+  private final AgentRuntimeProgressSink progressSink;
+  private final AgentscopeRuntimeEventMapper progressEventMapper;
 
   public AgentscopeReActAgentClient(
       Model model,
@@ -70,12 +75,34 @@ public final class AgentscopeReActAgentClient implements AgentscopeAgentClient {
       int maxToolCalls,
       ObjectMapper objectMapper,
       Clock clock) {
+    this(
+        model,
+        maxIters,
+        timeout,
+        maxToolCalls,
+        objectMapper,
+        clock,
+        AgentRuntimeProgressSink.noop(),
+        new AgentscopeRuntimeEventMapper());
+  }
+
+  AgentscopeReActAgentClient(
+      Model model,
+      int maxIters,
+      Duration timeout,
+      int maxToolCalls,
+      ObjectMapper objectMapper,
+      Clock clock,
+      AgentRuntimeProgressSink progressSink,
+      AgentscopeRuntimeEventMapper progressEventMapper) {
     this.model = model;
     this.maxIters = maxIters;
     this.timeout = timeout;
     this.maxToolCalls = maxToolCalls <= 0 ? 1 : maxToolCalls;
     this.objectMapper = objectMapper;
     this.clock = clock;
+    this.progressSink = progressSink == null ? AgentRuntimeProgressSink.noop() : progressSink;
+    this.progressEventMapper = progressEventMapper == null ? new AgentscopeRuntimeEventMapper() : progressEventMapper;
   }
 
   @Override
@@ -111,7 +138,11 @@ public final class AgentscopeReActAgentClient implements AgentscopeAgentClient {
         .toolkit(toolkit)
         .maxIters(maxIters)
         .build();
-    return agent.call(toUserMessage(invocation))
+    Msg userMessage = toUserMessage(invocation);
+    if (progressSink != AgentRuntimeProgressSink.noop()) {
+      return runWithProgressEvents(invocation, agent, userMessage, stepSequence, toolResults);
+    }
+    return agent.call(userMessage)
         .timeout(timeout)
         .map(message -> new AgentscopeAgentResponse(
             "SUCCEEDED",
@@ -119,6 +150,41 @@ public final class AgentscopeReActAgentClient implements AgentscopeAgentClient {
             Math.toIntExact(stepSequence.get()),
             List.copyOf(toolResults)))
         .onErrorResume(error -> Mono.just(failedResponse(toolResults, stepSequence)));
+  }
+
+  private Mono<AgentscopeAgentResponse> runWithProgressEvents(
+      AgentscopeAgentInvocation invocation,
+      ReActAgent agent,
+      Msg userMessage,
+      AtomicLong stepSequence,
+      List<AgentToolResult> toolResults) {
+    AtomicReference<Msg> resultMessage = new AtomicReference<>();
+    return agent.streamEvents(userMessage)
+        .timeout(timeout)
+        .concatMap(event -> {
+          if (event instanceof AgentResultEvent resultEvent) {
+            resultMessage.set(resultEvent.getResult());
+          }
+          return emitProgressEvent(invocation.request(), event);
+        })
+        .then(Mono.fromSupplier(() -> {
+          Msg message = resultMessage.get();
+          if (message == null) {
+            return failedResponse(toolResults, stepSequence);
+          }
+          return new AgentscopeAgentResponse(
+              "SUCCEEDED",
+              summary(message),
+              Math.toIntExact(stepSequence.get()),
+              List.copyOf(toolResults));
+        }))
+        .onErrorResume(error -> Mono.just(failedResponse(toolResults, stepSequence)));
+  }
+
+  private Mono<Void> emitProgressEvent(AgentRuntimeRequest runtimeRequest, AgentEvent event) {
+    return progressEventMapper.map(event)
+        .map(progressEvent -> progressSink.emit(runtimeRequest, progressEvent))
+        .orElse(Mono.empty());
   }
 
   private Msg toUserMessage(AgentscopeAgentInvocation invocation) {

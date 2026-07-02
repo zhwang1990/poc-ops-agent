@@ -36,16 +36,14 @@
 - 不提供生产写执行、任意脚本执行、生产 SQL 连接、DML 执行、Commit 或 Rollback。
 - 不使用 Mock 成功数据伪装真实服务端能力；缺失接口必须显示禁用或错误状态。
 
-## 登录页源码状态
-
-以下状态基于 `main` / `origin/main` 上的 `ab57a00 登录页转react`。如果当前开发分支尚未同步该提交，工作树里仍可能看到旧的登录占位页。
+## 登录与会话状态
 
 - React 应用外壳、`/login`、`/agent`、`/skills` 和 `/sql` 路由已经建立。
 - `/login` 已接入 React 登录页视觉，包含原型化首屏、安全能力展示、用户名与密码输入，以及“登录”按钮。
-- 前端认证 API 当前封装 `/auth/session`、`POST /auth/login` 和 `GET /auth/logout`；登录页只在控制面返回已认证响应后跳转 `/overview`。
-- 内建身份模式的首次改密接口 `POST /auth/password` 尚未在前端封装；后续需要补齐强制改密页面和对应验收。
+- 前端认证 API 当前封装 `/auth/session`、`POST /auth/login` 和 `GET /auth/logout`；登录页只在控制面返回已认证响应后跳转 `/overview`，登出成功后回到 `/login`。
+- 内建身份模式的首次改密接口 `POST /auth/password` 尚未在前端封装；该能力转入 P2/P3 补齐强制改密页面和对应验收。
 - 受保护页面已接入 `ProtectedRoute`，匿名访问会先读取浏览器会话并跳转登录页。
-- `AppShell` 会话区域读取真实浏览器会话主体和角色；退出入口仍需后续补齐。
+- `AppShell` 会话区域读取真实浏览器会话主体和角色；退出入口已接入服务端登出流程。
 
 ## Agent 工作台
 

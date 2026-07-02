@@ -4,6 +4,7 @@ import com.company.opsagent.executionworker.release.ReleaseAdapter;
 import com.company.opsagent.executionworker.release.ReleaseAdapterRegistry;
 import com.company.opsagent.executionworker.release.ReleaseWorkerProperties;
 import com.company.opsagent.executionworker.release.TomcatWarUploadReleaseAdapter;
+import com.company.opsagent.executionworker.release.LibertyScriptProfileReleaseAdapter;
 import com.company.opsagent.executionworker.release.LibertyHttpsReleaseAdapter;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.net.http.HttpClient;
@@ -98,8 +99,26 @@ public class ExecutionWorkerConfiguration {
   }
 
   @Bean
-  TomcatWarUploadReleaseAdapter tomcatWarUploadReleaseAdapter(Clock workerClock) {
-    return new TomcatWarUploadReleaseAdapter(workerClock);
+  TomcatWarUploadReleaseAdapter tomcatWarUploadReleaseAdapter(
+      ReleaseWorkerProperties properties,
+      WorkerHttpEgressPolicy workerHttpEgressPolicy,
+      Clock workerClock) {
+    return new TomcatWarUploadReleaseAdapter(
+        properties.getTomcat().getArtifactStoragePath(),
+        properties.getTomcat().getCredentials(),
+        HttpClient.newHttpClient(),
+        workerHttpEgressPolicy,
+        workerClock);
+  }
+
+  @Bean
+  LibertyScriptProfileReleaseAdapter libertyScriptProfileReleaseAdapter(
+      ReleaseWorkerProperties properties,
+      Clock workerClock) {
+    return new LibertyScriptProfileReleaseAdapter(
+        properties.getLiberty().getArtifactStoragePath(),
+        properties.getLiberty().getScriptProfiles(),
+        workerClock);
   }
 
   @Bean

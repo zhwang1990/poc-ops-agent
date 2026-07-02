@@ -12,7 +12,6 @@
     "operation",
     "targetEnvironment",
     "applicationId",
-    "artifact",
     "nodes",
     "operator",
     "policyDecision",
@@ -33,13 +32,14 @@
     },
     "applicationId": { "type": "string", "minLength": 1, "maxLength": 120 },
     "artifact": {
-      "type": "object",
+      "type": ["object", "null"],
       "additionalProperties": false,
       "required": ["artifactId", "type", "checksum"],
       "properties": {
         "artifactId": { "type": "string", "minLength": 1, "maxLength": 160 },
         "type": { "const": "WAR" },
         "checksum": { "type": "string", "pattern": "^sha256:[a-fA-F0-9]{3,}$" },
+        "storageKey": { "type": "string", "minLength": 1, "maxLength": 255 },
         "fileName": { "type": "string", "minLength": 1, "maxLength": 260 },
         "sourceType": {
           "type": "string",
@@ -65,11 +65,36 @@
             "type": "string",
             "enum": [
               "LIBERTY_HTTPS",
+              "LIBERTY_SCRIPT_PROFILE",
               "TOMCAT_WAR_UPLOAD",
               "TOMCAT_MANAGER_API",
               "NODE_AGENT_HTTPS",
               "CONTROLLED_SSH_TEMPLATE"
             ]
+          },
+          "managementEndpoint": { "type": "string", "minLength": 1, "maxLength": 500 },
+          "applicationPath": { "type": "string", "minLength": 1, "maxLength": 255 },
+          "credentialAlias": { "type": ["string", "null"], "minLength": 1, "maxLength": 160 },
+          "scriptProfile": {
+            "type": ["object", "null"],
+            "additionalProperties": false,
+            "required": ["profileId", "parameters"],
+            "properties": {
+              "profileId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$" },
+              "parameters": {
+                "type": "array",
+                "maxItems": 40,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["name", "value"],
+                  "properties": {
+                    "name": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,63}$" },
+                    "value": { "type": "string", "minLength": 1, "maxLength": 500 }
+                  }
+                }
+              }
+            }
           },
           "expectedVersion": { "type": "string", "minLength": 1, "maxLength": 120 },
           "healthCheckId": { "type": "string", "minLength": 1, "maxLength": 120 }

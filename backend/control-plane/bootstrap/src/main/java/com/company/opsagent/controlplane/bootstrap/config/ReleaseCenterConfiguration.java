@@ -1,12 +1,17 @@
 package com.company.opsagent.controlplane.bootstrap.config;
 
+import com.company.opsagent.controlplane.bootstrap.service.WebClientReleaseWorkerGateway;
 import com.company.opsagent.controlplane.modules.release.AesGcmReleaseCredentialSecretCodec;
 import com.company.opsagent.controlplane.modules.release.FileSystemReleaseArtifactStore;
+import com.company.opsagent.controlplane.modules.release.InMemoryReleaseEventSink;
 import com.company.opsagent.controlplane.modules.release.R2dbcReleaseCatalogStore;
 import com.company.opsagent.controlplane.modules.release.ReleaseArtifactStore;
 import com.company.opsagent.controlplane.modules.release.ReleaseCatalogStore;
 import com.company.opsagent.controlplane.modules.release.ReleaseCredentialSecretCodec;
 import com.company.opsagent.controlplane.modules.release.ReleaseCredentialService;
+import com.company.opsagent.controlplane.modules.release.ReleaseEventSink;
+import com.company.opsagent.controlplane.modules.release.ReleaseWorkerGateway;
+import com.company.opsagent.controlplane.modules.release.ReleaseWorkflowService;
 import io.r2dbc.spi.ConnectionFactory;
 import java.time.Clock;
 import org.springframework.context.annotation.Bean;
@@ -16,6 +21,7 @@ import org.springframework.r2dbc.connection.init.ConnectionFactoryInitializer;
 import org.springframework.r2dbc.connection.init.ResourceDatabasePopulator;
 import org.springframework.r2dbc.core.DatabaseClient;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.web.reactive.function.client.WebClient;
 
 /**
  * 发布中心目录和迁移脚本装配。执行能力仍由后续功能开关控制。
@@ -59,6 +65,30 @@ public class ReleaseCenterConfiguration {
         releaseCatalogStore,
         releaseCredentialSecretCodec,
         Clock.systemUTC());
+  }
+
+  @Bean
+  ReleaseWorkerGateway releaseWorkerGateway(
+      WebClient.Builder webClientBuilder,
+      WorkerProperties properties,
+      ReleaseCatalogStore releaseCatalogStore) {
+    return new WebClientReleaseWorkerGateway(
+        webClientBuilder.baseUrl(properties.getBaseUrl()).build(),
+        properties,
+        releaseCatalogStore,
+        Clock.systemUTC());
+  }
+
+  @Bean
+  ReleaseEventSink releaseEventSink() {
+    return new InMemoryReleaseEventSink();
+  }
+
+  @Bean
+  ReleaseWorkflowService releaseWorkflowService(
+      ReleaseWorkerGateway releaseWorkerGateway,
+      ReleaseEventSink releaseEventSink) {
+    return new ReleaseWorkflowService(releaseWorkerGateway, Clock.systemUTC(), releaseEventSink);
   }
 
   @Bean

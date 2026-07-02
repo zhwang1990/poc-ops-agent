@@ -42,8 +42,8 @@ if not exist "%BACKEND_DIR%\mvnw.cmd" (
   goto :fail
 )
 
-call :checkPort 8091 "Worker" || goto :fail
-call :checkPort 8080 "Control Plane" || goto :fail
+call :freePort 8091 "Worker" || goto :fail
+call :freePort 8080 "Control Plane" || goto :fail
 call :checkPort 5173 "Operator Console" || goto :fail
 
 echo Logs:
@@ -115,6 +115,29 @@ if not errorlevel 1 (
   echo Port %PORT% for %NAME% is already in use.
   echo Stop the existing process or run tools\demo\stop-demo.cmd if it was started by this launcher.
   exit /b 1
+)
+exit /b 0
+
+:freePort
+set "PORT=%~1"
+set "NAME=%~2"
+set "FOUND_LISTENER="
+for /f "tokens=5" %%P in ('netstat -ano -p tcp ^| findstr /R /C:":%PORT% .*LISTENING"') do (
+  set "FOUND_LISTENER=1"
+  echo Port %PORT% for %NAME% is already in use by PID %%P.
+  echo Terminating PID %%P before restarting %NAME% on fixed port %PORT%...
+  taskkill /PID %%P /T /F >nul 2>nul
+  if errorlevel 1 (
+    echo PID %%P was already stopped or could not be stopped.
+  )
+)
+if defined FOUND_LISTENER (
+  timeout /t 2 /nobreak >nul
+  netstat -ano -p tcp | findstr /R /C:":%PORT% .*LISTENING" >nul
+  if not errorlevel 1 (
+    echo Port %PORT% for %NAME% is still in use after termination.
+    exit /b 1
+  )
 )
 exit /b 0
 

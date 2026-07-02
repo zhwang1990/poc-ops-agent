@@ -4,6 +4,14 @@ import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.http.MediaType.APPLICATION_OCTET_STREAM;
 import static org.springframework.http.MediaType.MULTIPART_FORM_DATA;
 
+import com.company.opsagent.controlplane.modules.release.ManagementMode;
+import com.company.opsagent.controlplane.modules.release.ArtifactType;
+import com.company.opsagent.controlplane.modules.release.ReleaseArtifact;
+import com.company.opsagent.controlplane.modules.release.ReleaseCatalogStore;
+import com.company.opsagent.controlplane.modules.release.ReleaseEnvironmentPolicy;
+import com.company.opsagent.controlplane.modules.release.ReleaseServer;
+import com.company.opsagent.controlplane.modules.release.ServerType;
+import com.company.opsagent.controlplane.modules.release.TargetEnvironment;
 import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
@@ -49,6 +57,9 @@ class ReleaseCenterControllerTest {
   @Autowired
   private WebTestClient webTestClient;
 
+  @Autowired
+  private ReleaseCatalogStore releaseCatalogStore;
+
   @Value("${ops-agent.security.shared-secret}")
   private String sharedSecret;
 
@@ -81,6 +92,192 @@ class ReleaseCenterControllerTest {
         .expectBody()
         .jsonPath("$[0].applicationId").isEqualTo("orders")
         .jsonPath("$[0].displayName").isEqualTo("订单服务");
+  }
+
+  @Test
+  void listsReleaseServersThroughPolicyProtectedApi() {
+    releaseCatalogStore.saveServer(ReleaseServer.create(
+            "dev-tomcat-1",
+            "dev",
+            ServerType.TOMCAT,
+            ManagementMode.TOMCAT_MANAGER_API,
+            "https://dev-tomcat-1.example.internal/manager",
+            "/orders",
+            "dev-tomcat",
+            true))
+        .block();
+
+    webTestClient.get()
+        .uri("/internal/release-center/servers?targetEnvironment=dev")
+        .headers(headers -> headers.setBearerAuth(token("alice", List.of("ops-reader"))))
+        .exchange()
+        .expectStatus().isOk()
+        .expectBody()
+        .jsonPath("$[0].nodeId").isEqualTo("dev-tomcat-1")
+        .jsonPath("$[0].targetEnvironment").isEqualTo("DEV")
+        .jsonPath("$[0].credentialAlias").isEqualTo("dev-tomcat");
+  }
+
+  @Test
+  void createsLibertyScriptProfileServerThroughPolicyProtectedApi() {
+    webTestClient.post()
+        .uri("/internal/release-center/servers")
+        .headers(headers -> headers.setBearerAuth(token("admin", List.of("ops-admin"))))
+        .contentType(APPLICATION_JSON)
+        .bodyValue("""
+            {
+              "nodeId": "dev-liberty-1",
+              "targetEnvironment": "dev",
+              "serverType": "LIBERTY",
+              "managementMode": "LIBERTY_SCRIPT_PROFILE",
+              "managementEndpoint": "https://liberty-dev.example",
+              "applicationPath": "/orders",
+              "credentialAlias": "liberty-dev",
+              "scriptProfile": {
+                "profileId": "liberty-war-deploy",
+                "parameters": [
+                  {"name": "serverName", "value": "defaultServer"},
+                  {"name": "applicationName", "value": "orders"}
+                ]
+              },
+              "enabled": true
+            }
+            """)
+        .exchange()
+        .expectStatus().isOk()
+        .expectBody()
+        .jsonPath("$.nodeId").isEqualTo("dev-liberty-1")
+        .jsonPath("$.managementMode").isEqualTo("LIBERTY_SCRIPT_PROFILE")
+        .jsonPath("$.scriptProfile.profileId").isEqualTo("liberty-war-deploy")
+        .jsonPath("$.scriptProfile.parameters[0].name").isEqualTo("serverName")
+        .jsonPath("$.scriptProfile.parameters[0].value").isEqualTo("defaultServer");
+  }
+
+  @Test
+  void listsReleasePlansThroughPolicyProtectedApi() {
+    webTestClient.get()
+        .uri("/internal/release-center/plans")
+        .headers(headers -> headers.setBearerAuth(token("alice", List.of("ops-reader"))))
+        .exchange()
+        .expectStatus().isOk()
+        .expectBody()
+        .jsonPath("$").isArray();
+  }
+
+  @Test
+  void createsAndExecutesDevReleasePlanThroughPolicyProtectedApi() {
+    seedReleaseCatalog("dev");
+
+    webTestClient.post()
+        .uri("/internal/release-center/plans")
+        .headers(headers -> headers.setBearerAuth(token("admin", List.of("ops-admin"))))
+        .contentType(APPLICATION_JSON)
+        .bodyValue("""
+            {
+              "applicationId": "orders",
+              "targetEnvironment": "dev",
+              "artifactId": "artifact-dev-1",
+              "nodeIds": ["dev-tomcat-1"],
+              "parametersHash": "sha256:abc123"
+            }
+            """)
+        .exchange()
+        .expectStatus().isOk()
+        .expectBody()
+        .jsonPath("$.releaseId").isNotEmpty()
+        .jsonPath("$.applicationId").isEqualTo("orders")
+        .jsonPath("$.targetEnvironment").isEqualTo("DEV")
+        .jsonPath("$.status").isEqualTo("DRAFT")
+        .jsonPath("$.nodes[0].nodeId").isEqualTo("dev-tomcat-1");
+
+    webTestClient.get()
+        .uri("/internal/release-center/plans")
+        .headers(headers -> headers.setBearerAuth(token("alice", List.of("ops-reader"))))
+        .exchange()
+        .expectStatus().isOk()
+        .expectBody()
+        .jsonPath("$[0].releaseId").isNotEmpty()
+        .jsonPath("$[0].status").isEqualTo("DRAFT");
+
+    webTestClient.post()
+        .uri("/internal/release-center/plans/rel-orders-dev/execute")
+        .headers(headers -> headers.setBearerAuth(token("admin", List.of("ops-admin"))))
+        .exchange()
+        .expectStatus().isOk()
+        .expectBody()
+        .jsonPath("$.releaseId").isEqualTo("rel-orders-dev")
+        .jsonPath("$.status").isEqualTo("PARTIAL_FAILED")
+        .jsonPath("$.nodes[0].status").isEqualTo("FAILED");
+  }
+
+  @Test
+  void createsLibertyScriptReleasePlanWithoutArtifactThroughPolicyProtectedApi() {
+    seedLibertyScriptCatalogWithoutArtifact("sit");
+
+    webTestClient.post()
+        .uri("/internal/release-center/plans")
+        .headers(headers -> headers.setBearerAuth(token("admin", List.of("ops-admin"))))
+        .contentType(APPLICATION_JSON)
+        .bodyValue("""
+            {
+              "applicationId": "orders",
+              "targetEnvironment": "sit",
+              "nodeIds": ["sit-liberty-1"],
+              "parametersHash": "sha256:abc123"
+            }
+            """)
+        .exchange()
+        .expectStatus().isOk()
+        .expectBody()
+        .jsonPath("$.releaseId").isEqualTo("rel-orders-sit")
+        .jsonPath("$.applicationId").isEqualTo("orders")
+        .jsonPath("$.targetEnvironment").isEqualTo("SIT")
+        .jsonPath("$.artifactId").doesNotExist()
+        .jsonPath("$.nodes[0].nodeId").isEqualTo("sit-liberty-1")
+        .jsonPath("$.nodes[0].managementMode").isEqualTo("LIBERTY_SCRIPT_PROFILE");
+  }
+
+  @Test
+  void sitReleasePlanRequiresMatchingConfirmationBeforeExecution() {
+    seedReleaseCatalog("sit");
+
+    webTestClient.post()
+        .uri("/internal/release-center/plans")
+        .headers(headers -> headers.setBearerAuth(token("admin", List.of("ops-admin"))))
+        .contentType(APPLICATION_JSON)
+        .bodyValue("""
+            {
+              "applicationId": "orders",
+              "targetEnvironment": "sit",
+              "artifactId": "artifact-sit-1",
+              "nodeIds": ["sit-tomcat-1"],
+              "parametersHash": "sha256:abc123"
+            }
+            """)
+        .exchange()
+        .expectStatus().isOk()
+        .expectBody()
+        .jsonPath("$.releaseId").isEqualTo("rel-orders-sit")
+        .jsonPath("$.status").isEqualTo("WAIT_CONFIRM");
+
+    webTestClient.post()
+        .uri("/internal/release-center/plans/rel-orders-sit/confirm")
+        .headers(headers -> headers.setBearerAuth(token("admin", List.of("ops-admin"))))
+        .contentType(APPLICATION_JSON)
+        .bodyValue("""
+            {
+              "confirmationId": "confirm-1",
+              "parametersHash": "sha256:def456"
+            }
+            """)
+        .exchange()
+        .expectStatus().isBadRequest();
+
+    webTestClient.post()
+        .uri("/internal/release-center/plans/rel-orders-sit/execute")
+        .headers(headers -> headers.setBearerAuth(token("admin", List.of("ops-admin"))))
+        .exchange()
+        .expectStatus().isBadRequest();
   }
 
   @Test
@@ -191,5 +388,69 @@ class ReleaseCenterControllerTest {
         .filename("orders.war")
         .contentType(APPLICATION_OCTET_STREAM);
     return builder.build();
+  }
+
+  private void seedReleaseCatalog(String targetEnvironment) {
+    TargetEnvironment environment = TargetEnvironment.from(targetEnvironment);
+    releaseCatalogStore.saveApplication(com.company.opsagent.controlplane.modules.release.ReleaseApplication.create(
+            "orders",
+            "订单服务",
+            ArtifactType.WAR,
+            "/health",
+            true))
+        .block();
+    releaseCatalogStore.saveEnvironmentPolicy(ReleaseEnvironmentPolicy.defaultFor(environment))
+        .block();
+    releaseCatalogStore.saveServer(ReleaseServer.create(
+            targetEnvironment + "-tomcat-1",
+            targetEnvironment,
+            ServerType.TOMCAT,
+            ManagementMode.TOMCAT_WAR_UPLOAD,
+            "https://" + targetEnvironment + "-tomcat-1.example.internal/manager",
+            "/orders",
+            targetEnvironment + "-tomcat",
+            true))
+        .block();
+    releaseCatalogStore.saveArtifact(ReleaseArtifact.create(
+            "artifact-" + targetEnvironment + "-1",
+            "orders",
+            targetEnvironment,
+            ArtifactType.WAR,
+            "sha256:abc123",
+            "orders.war",
+            "artifact-" + targetEnvironment + "-1.war",
+            3,
+            "admin",
+            "OPERATOR_UPLOAD",
+            true))
+        .block();
+  }
+
+  private void seedLibertyScriptCatalogWithoutArtifact(String targetEnvironment) {
+    TargetEnvironment environment = TargetEnvironment.from(targetEnvironment);
+    releaseCatalogStore.saveApplication(com.company.opsagent.controlplane.modules.release.ReleaseApplication.create(
+            "orders",
+            "璁㈠崟鏈嶅姟",
+            ArtifactType.WAR,
+            "/health",
+            true))
+        .block();
+    releaseCatalogStore.saveEnvironmentPolicy(ReleaseEnvironmentPolicy.defaultFor(environment))
+        .block();
+    releaseCatalogStore.saveServer(ReleaseServer.create(
+            targetEnvironment + "-liberty-1",
+            targetEnvironment,
+            ServerType.LIBERTY,
+            ManagementMode.LIBERTY_SCRIPT_PROFILE,
+            "https://" + targetEnvironment + "-liberty-1.example.internal",
+            "/orders",
+            null,
+            new com.company.opsagent.controlplane.modules.release.ReleaseScriptProfile(
+                "liberty-war-deploy",
+                List.of(
+                    new com.company.opsagent.controlplane.modules.release.ReleaseScriptParameter("serverName", "defaultServer"),
+                    new com.company.opsagent.controlplane.modules.release.ReleaseScriptParameter("applicationName", "orders"))),
+            true))
+        .block();
   }
 }

@@ -1,11 +1,15 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
+  BadgeCheck,
   CheckCircle2,
+  Code2,
   FileArchive,
   KeyRound,
   ListChecks,
+  Network,
   Package,
   Play,
+  PlusCircle,
   RefreshCw,
   Rocket,
   Server,
@@ -18,14 +22,22 @@ import { FeedbackState } from "../../components/feedback/FeedbackState.jsx";
 import { WorkspacePageFrame } from "../../components/layout/WorkspacePageFrame.jsx";
 import { WorkspaceStatusBar } from "../../components/layout/WorkspaceStatusBar.jsx";
 import { Button } from "../../components/primitives/Button.jsx";
+import { Dialog } from "../../components/primitives/Dialog.jsx";
 import {
   useReleaseApplications,
+  useReleaseArtifacts,
+  useConfirmReleasePlan,
+  useCreateReleasePlan,
+  useExecuteReleasePlan,
   useReleasePlans,
   useReleaseServers,
+  useSaveReleaseServer,
+  useUploadTomcatWar,
 } from "./use-release-center.js";
 import styles from "./ReleaseCenterPage.module.css";
 
 /** @typedef {import("../../schemas/release-center-schemas.js").ReleaseApplication} ReleaseApplication */
+/** @typedef {import("../../schemas/release-center-schemas.js").ReleaseArtifact} ReleaseArtifact */
 /** @typedef {import("../../schemas/release-center-schemas.js").ReleasePlan} ReleasePlan */
 /** @typedef {import("../../schemas/release-center-schemas.js").ReleaseServer} ReleaseServer */
 /** @typedef {"plans" | "artifacts" | "applications" | "servers" | "policies" | "credentials"} ReleaseTabId */
@@ -39,15 +51,45 @@ const TABS = [
   { id: "credentials", label: "凭据", icon: KeyRound },
 ];
 
-const TARGET_ENVIRONMENTS = ["dev", "sit", "uat"];
+const TARGET_ENVIRONMENTS = [
+  { id: "dev", label: "DEV", icon: Code2 },
+  { id: "sit", label: "SIT", icon: Network },
+  { id: "uat", label: "UAT", icon: BadgeCheck },
+];
+const SERVER_TYPE_OPTIONS = ["TOMCAT", "LIBERTY"];
+const MANAGEMENT_MODE_OPTIONS_BY_SERVER_TYPE = {
+  TOMCAT: ["TOMCAT_WAR_UPLOAD", "TOMCAT_MANAGER_API"],
+  LIBERTY: ["LIBERTY_SCRIPT_PROFILE", "LIBERTY_HTTPS"],
+};
+
+/**
+ * @typedef {{
+ *   nodeId: string,
+ *   targetEnvironment: string,
+ *   serverType: string,
+ *   managementMode: string,
+ *   managementEndpoint: string,
+ *   applicationPath: string,
+ *   credentialAlias: string,
+ *   scriptProfileId: string,
+ *   scriptParameters: Array<{id: string, name: string, value: string}>,
+ *   enabled: boolean,
+ * }} ReleaseServerForm
+ */
 
 export function ReleaseCenterPage() {
   const [activeTab, setActiveTab] = useState(/** @type {ReleaseTabId} */ ("plans"));
   const [targetEnvironment, setTargetEnvironment] = useState("dev");
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const applicationsQuery = useReleaseApplications();
+  const artifactsQuery = useReleaseArtifacts(targetEnvironment);
   const plansQuery = useReleasePlans();
   const serversQuery = useReleaseServers(targetEnvironment);
+  const uploadMutation = useUploadTomcatWar();
+  const createPlanMutation = useCreateReleasePlan();
+  const fileInputRef = useRef(/** @type {HTMLInputElement | null} */ (null));
   const applications = useMemo(() => applicationsQuery.data ?? [], [applicationsQuery.data]);
+  const artifacts = useMemo(() => artifactsQuery.data ?? [], [artifactsQuery.data]);
   const plans = useMemo(() => plansQuery.data ?? [], [plansQuery.data]);
   const servers = useMemo(() => serversQuery.data ?? [], [serversQuery.data]);
   const selectedPlan = plans[0] ?? null;
@@ -55,6 +97,57 @@ export function ReleaseCenterPage() {
     applications.find((application) => application.applicationId === selectedPlan?.applicationId) ??
     applications[0] ??
     null;
+  const selectedArtifact =
+    artifacts.find((artifact) => artifact.applicationId === selectedApplication?.applicationId) ??
+    artifacts[0] ??
+    null;
+  const enabledServers = useMemo(() => servers.filter((server) => server.enabled), [servers]);
+  const artifactRequired = !usesOnlyLibertyScriptProfiles(enabledServers);
+  const canUpload = Boolean(selectedApplication) && !uploadMutation.isPending;
+  const canSubmitCreatePlan =
+    Boolean(selectedApplication && enabledServers.length > 0 && (!artifactRequired || selectedArtifact)) &&
+    !createPlanMutation.isPending;
+
+  function handleUploadClick() {
+    fileInputRef.current?.click();
+  }
+
+  /**
+   * @param {React.ChangeEvent<HTMLInputElement>} event
+   */
+  function handleFileChange(event) {
+    const file = event.currentTarget.files?.[0];
+    if (!file || !selectedApplication) {
+      return;
+    }
+    uploadMutation.mutate({
+      applicationId: selectedApplication.applicationId,
+      targetEnvironment,
+      file,
+    });
+    event.currentTarget.value = "";
+  }
+
+  function handleCreatePlan() {
+    if (!selectedApplication || enabledServers.length === 0 || (artifactRequired && !selectedArtifact)) {
+      return;
+    }
+    const artifactFields = selectedArtifact
+      ? {
+          artifactId: selectedArtifact.artifactId,
+          parametersHash: selectedArtifact.checksum,
+        }
+      : {};
+    createPlanMutation.mutate({
+        applicationId: selectedApplication.applicationId,
+        targetEnvironment,
+        nodeIds: enabledServers.map((server) => server.nodeId),
+        ...artifactFields,
+      },
+      {
+        onSuccess: () => setCreateDialogOpen(false),
+      });
+  }
 
   return (
     <WorkspacePageFrame className={styles.releaseCanvas}>
@@ -73,27 +166,47 @@ export function ReleaseCenterPage() {
           </div>
 
           <div aria-label="目标环境" className={styles.environmentSwitch}>
-            {TARGET_ENVIRONMENTS.map((environment) => (
-              <button
-                aria-pressed={targetEnvironment === environment}
-                className={`${styles.environmentButton} ${
-                  targetEnvironment === environment ? styles.environmentButtonActive : ""
-                }`}
-                key={environment}
-                onClick={() => setTargetEnvironment(environment)}
-                type="button"
-              >
-                {environment}
-              </button>
-            ))}
+            {TARGET_ENVIRONMENTS.map((environment) => {
+              const EnvironmentIcon = environment.icon;
+              const selected = targetEnvironment === environment.id;
+              return (
+                <button
+                  aria-pressed={selected}
+                  className={`${styles.environmentButton} ${selected ? styles.environmentButtonActive : ""}`}
+                  key={environment.id}
+                  onClick={() => setTargetEnvironment(environment.id)}
+                  type="button"
+                >
+                  <EnvironmentIcon aria-hidden="true" className={styles.environmentIcon} size={13} />
+                  <span>{environment.label}</span>
+                </button>
+              );
+            })}
           </div>
 
           <div className={styles.summaryActions}>
-            <Button className={styles.actionButton} disabled variant="secondary">
+            <input
+              accept=".war"
+              aria-label="选择 WAR 制品"
+              hidden
+              onChange={handleFileChange}
+              ref={fileInputRef}
+              type="file"
+            />
+            <Button
+              className={styles.actionButton}
+              disabled={!canUpload}
+              onClick={handleUploadClick}
+              variant="secondary"
+            >
               <UploadCloud aria-hidden="true" size={16} />
               上传 WAR
             </Button>
-            <Button className={styles.actionButton} disabled>
+            <Button
+              className={styles.actionButton}
+              disabled={createPlanMutation.isPending}
+              onClick={() => setCreateDialogOpen(true)}
+            >
               <Rocket aria-hidden="true" size={16} />
               新建发布单
             </Button>
@@ -134,10 +247,11 @@ export function ReleaseCenterPage() {
                 activeTab={activeTab}
                 applications={applications}
                 applicationsQuery={applicationsQuery}
+                artifacts={artifacts}
+                artifactsQuery={artifactsQuery}
                 plans={plans}
                 plansQuery={plansQuery}
                 selectedApplication={selectedApplication}
-                selectedPlan={selectedPlan}
                 servers={servers}
                 serversQuery={serversQuery}
                 targetEnvironment={targetEnvironment}
@@ -148,13 +262,141 @@ export function ReleaseCenterPage() {
           <InventoryPanel
             applications={applications}
             applicationsQuery={applicationsQuery}
+            artifacts={artifacts}
+            artifactsQuery={artifactsQuery}
             servers={servers}
             serversQuery={serversQuery}
             targetEnvironment={targetEnvironment}
           />
         </section>
       </main>
+      <CreatePlanDialog
+        artifactRequired={artifactRequired}
+        canSubmit={canSubmitCreatePlan}
+        enabledServers={enabledServers}
+        isPending={createPlanMutation.isPending}
+        onClose={() => setCreateDialogOpen(false)}
+        onSubmit={handleCreatePlan}
+        open={createDialogOpen}
+        selectedApplication={selectedApplication}
+        selectedArtifact={selectedArtifact}
+        targetEnvironment={targetEnvironment}
+      />
     </WorkspacePageFrame>
+  );
+}
+
+/**
+ * @param {{
+ *   artifactRequired: boolean,
+ *   canSubmit: boolean,
+ *   enabledServers: ReleaseServer[],
+ *   isPending: boolean,
+ *   onClose: () => void,
+ *   onSubmit: () => void,
+ *   open: boolean,
+ *   selectedApplication: ReleaseApplication | null,
+ *   selectedArtifact: ReleaseArtifact | null,
+ *   targetEnvironment: string,
+ * }} props
+ */
+function CreatePlanDialog({
+  artifactRequired,
+  canSubmit,
+  enabledServers,
+  isPending,
+  onClose,
+  onSubmit,
+  open,
+  selectedApplication,
+  selectedArtifact,
+  targetEnvironment,
+}) {
+  const missingItems = [
+    selectedApplication ? null : "缺少已启用应用",
+    artifactRequired && !selectedArtifact ? "缺少可发布制品" : null,
+    enabledServers.length > 0 ? null : "缺少可用发布节点",
+  ].filter(Boolean);
+
+  return (
+    <Dialog
+      closeLabel="关闭新建发布单"
+      description="发布单会绑定当前环境、制品 checksum 或脚本参数哈希，以及已启用节点，执行仍由服务端策略与 Worker 控制。"
+      eyebrow={`Release / ${targetEnvironment}`}
+      icon={<Rocket size={18} />}
+      onClose={onClose}
+      open={open}
+      size="wide"
+      title="新建发布单"
+    >
+      <div className={styles.createPlanDialog}>
+        <div className={styles.createPlanGrid}>
+          <CreatePlanField
+            label="应用"
+            value={selectedApplication ? `${selectedApplication.displayName} / ${selectedApplication.applicationId}` : "未配置"}
+          />
+          <CreatePlanField
+            label="制品"
+            tone={!artifactRequired || selectedArtifact ? "default" : "warning"}
+            value={artifactSummary(selectedArtifact, artifactRequired)}
+          />
+          <CreatePlanField
+            label="节点"
+            tone={enabledServers.length > 0 ? "default" : "warning"}
+            value={enabledServers.length > 0 ? enabledServers.map((server) => server.nodeId).join(", ") : "缺少可用发布节点"}
+          />
+        </div>
+
+        {missingItems.length > 0 ? (
+          <div className={styles.createPlanWarnings} role="status">
+            {missingItems.map((item) => (
+              <span key={item}>{item}</span>
+            ))}
+          </div>
+        ) : null}
+
+        <div className={styles.dialogActions}>
+          <Button onClick={onClose} variant="secondary">
+            取消
+          </Button>
+          <Button disabled={!canSubmit || isPending} onClick={onSubmit}>
+            创建发布单
+          </Button>
+        </div>
+      </div>
+    </Dialog>
+  );
+}
+
+/**
+ * @param {ReleaseServer[]} servers
+ */
+function usesOnlyLibertyScriptProfiles(servers) {
+  return servers.length > 0 && servers.every(
+    (server) => server.serverType === "LIBERTY" && server.managementMode === "LIBERTY_SCRIPT_PROFILE",
+  );
+}
+
+/**
+ * @param {ReleaseArtifact | null} selectedArtifact
+ * @param {boolean} artifactRequired
+ */
+function artifactSummary(selectedArtifact, artifactRequired) {
+  if (selectedArtifact) {
+    return `${selectedArtifact.artifactId} / ${selectedArtifact.checksum}`;
+  }
+  return artifactRequired ? "缺少可发布制品" : "无需制品，调用脚本 Profile";
+}
+
+/**
+ * @param {{ label: string, tone?: "default" | "warning", value: string }} props
+ */
+function CreatePlanField({ label, tone = "default", value }) {
+  return (
+    <div className={styles.createPlanField} data-tone={tone}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
   );
 }
 
@@ -163,10 +405,11 @@ export function ReleaseCenterPage() {
  *   activeTab: ReleaseTabId,
  *   applications: ReleaseApplication[],
  *   applicationsQuery: ReturnType<typeof useReleaseApplications>,
+ *   artifacts: ReleaseArtifact[],
+ *   artifactsQuery: ReturnType<typeof useReleaseArtifacts>,
  *   plans: ReleasePlan[],
  *   plansQuery: ReturnType<typeof useReleasePlans>,
  *   selectedApplication: ReleaseApplication | null,
- *   selectedPlan: ReleasePlan | null,
  *   servers: ReleaseServer[],
  *   serversQuery: ReturnType<typeof useReleaseServers>,
  *   targetEnvironment: string,
@@ -176,10 +419,11 @@ function ReleaseTabPanel({
   activeTab,
   applications,
   applicationsQuery,
+  artifacts,
+  artifactsQuery,
   plans,
   plansQuery,
   selectedApplication,
-  selectedPlan,
   servers,
   serversQuery,
   targetEnvironment,
@@ -195,7 +439,13 @@ function ReleaseTabPanel({
     );
   }
   if (activeTab === "artifacts") {
-    return <ArtifactsPanel selectedPlan={selectedPlan} targetEnvironment={targetEnvironment} />;
+    return (
+      <ArtifactsPanel
+        artifacts={artifacts}
+        query={artifactsQuery}
+        targetEnvironment={targetEnvironment}
+      />
+    );
   }
   if (activeTab === "applications") {
     return <ApplicationsPanel applications={applications} query={applicationsQuery} />;
@@ -218,6 +468,8 @@ function ReleaseTabPanel({
  * }} props
  */
 function PlansPanel({ applicationsQuery, plans, plansQuery, selectedApplication }) {
+  const confirmMutation = useConfirmReleasePlan();
+  const executeMutation = useExecuteReleasePlan();
   const queryState = queryFeedback([plansQuery, applicationsQuery], "发布单读取失败");
   if (queryState) {
     return queryState;
@@ -243,7 +495,7 @@ function PlansPanel({ applicationsQuery, plans, plansQuery, selectedApplication 
           </div>
           <div className={styles.planMeta}>
             <StatusPill tone={statusTone(plan.status)}>{plan.status}</StatusPill>
-            <span>{plan.artifactId}</span>
+            <span>{plan.artifactId ?? "SCRIPT_PROFILE"}</span>
           </div>
           <ol className={styles.nodeSteps} aria-label={`${plan.releaseId} 节点`}>
             {plan.nodes.map((node) => (
@@ -255,11 +507,28 @@ function PlansPanel({ applicationsQuery, plans, plansQuery, selectedApplication 
             ))}
           </ol>
           <div className={styles.rowActions}>
-            <Button className={styles.compactButton} disabled variant="secondary">
+            <Button
+              className={styles.compactButton}
+              disabled={plan.status !== "WAIT_CONFIRM" || confirmMutation.isPending}
+              onClick={() =>
+                confirmMutation.mutate({
+                  releaseId: plan.releaseId,
+                  input: {
+                    confirmationId: `confirm-${plan.releaseId}`,
+                    parametersHash: plan.parametersHash,
+                  },
+                })
+              }
+              variant="secondary"
+            >
               <CheckCircle2 aria-hidden="true" size={15} />
               确认
             </Button>
-            <Button className={styles.compactButton} disabled>
+            <Button
+              className={styles.compactButton}
+              disabled={!["DRAFT", "READY"].includes(plan.status) || executeMutation.isPending}
+              onClick={() => executeMutation.mutate(plan.releaseId)}
+            >
               <Play aria-hidden="true" size={15} />
               执行
             </Button>
@@ -271,9 +540,21 @@ function PlansPanel({ applicationsQuery, plans, plansQuery, selectedApplication 
 }
 
 /**
- * @param {{selectedPlan: ReleasePlan | null, targetEnvironment: string}} props
+ * @param {{
+ *   artifacts: ReleaseArtifact[],
+ *   query: ReturnType<typeof useReleaseArtifacts>,
+ *   targetEnvironment: string
+ * }} props
  */
-function ArtifactsPanel({ selectedPlan, targetEnvironment }) {
+function ArtifactsPanel({ artifacts, query, targetEnvironment }) {
+  const queryState = queryFeedback([query], "制品读取失败");
+  if (queryState) {
+    return queryState;
+  }
+  if (artifacts.length === 0) {
+    return <FeedbackState message={`${targetEnvironment} 暂无 WAR 制品。`} state="empty" title="暂无制品" />;
+  }
+
   return (
     <section className={styles.tablePanel} aria-label="制品记录">
       <div className={styles.tableHeader}>
@@ -282,12 +563,14 @@ function ArtifactsPanel({ selectedPlan, targetEnvironment }) {
         <span>类型</span>
         <span>校验</span>
       </div>
-      <div className={styles.tableRow}>
-        <strong>{selectedPlan?.artifactId ?? "未选择"}</strong>
-        <span>{targetEnvironment}</span>
-        <span>WAR</span>
-        <span>{selectedPlan?.parametersHash ?? "待记录"}</span>
-      </div>
+      {artifacts.map((artifact) => (
+        <div className={styles.tableRow} key={artifact.artifactId}>
+          <strong>{artifact.artifactId}</strong>
+          <span>{artifact.targetEnvironment}</span>
+          <span>{artifact.artifactType}</span>
+          <span>{artifact.checksum}</span>
+        </div>
+      ))}
     </section>
   );
 }
@@ -334,32 +617,381 @@ function ApplicationsPanel({ applications, query }) {
  * }} props
  */
 function ServersPanel({ query, servers, targetEnvironment }) {
+  const [serverDialogOpen, setServerDialogOpen] = useState(false);
+  const saveServerMutation = useSaveReleaseServer();
   const queryState = queryFeedback([query], "服务器读取失败");
   if (queryState) {
     return queryState;
   }
-  if (servers.length === 0) {
-    return <FeedbackState message={`${targetEnvironment} 暂无服务器。`} state="empty" title="暂无服务器" />;
+
+  return (
+    <>
+      <section className={styles.panelStack} aria-label="服务器配置">
+        <div className={styles.panelHeader}>
+          <div className={styles.panelTitle}>
+            <span className={styles.kicker}>Servers / {targetEnvironment}</span>
+            <strong>发布节点</strong>
+          </div>
+          <Button
+            aria-label="Add release server"
+            className={styles.compactActionButton}
+            disabled={saveServerMutation.isPending}
+            onClick={() => setServerDialogOpen(true)}
+            variant="secondary"
+          >
+            <PlusCircle aria-hidden="true" size={15} />
+            新增服务器
+          </Button>
+        </div>
+
+        {servers.length === 0 ? (
+          <FeedbackState
+            message={`${targetEnvironment} 暂无服务器。`}
+            state="empty"
+            title="暂无服务器"
+          />
+        ) : (
+          <section className={styles.tablePanel} aria-label="服务器配置列表">
+            <div className={styles.tableHeader}>
+              <span>节点</span>
+              <span>类型</span>
+              <span>策略</span>
+              <span>凭据</span>
+            </div>
+            {servers.map((server) => (
+              <div className={styles.tableRow} key={server.nodeId}>
+                <strong>{server.nodeId}</strong>
+                <span>{server.serverType}</span>
+                <span>{server.managementMode}</span>
+                <span>{server.credentialAlias ?? "未绑定"}</span>
+              </div>
+            ))}
+          </section>
+        )}
+      </section>
+
+      {serverDialogOpen ? (
+        <ServerDialog
+          error={saveServerMutation.error}
+          isPending={saveServerMutation.isPending}
+          key={targetEnvironment}
+          onClose={() => setServerDialogOpen(false)}
+          onSubmit={(server) =>
+            saveServerMutation.mutate(server, {
+              onSuccess: () => setServerDialogOpen(false),
+            })
+          }
+          open={serverDialogOpen}
+          targetEnvironment={targetEnvironment}
+        />
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * @param {{
+ *   error: unknown,
+ *   isPending: boolean,
+ *   onClose: () => void,
+ *   onSubmit: (server: unknown) => void,
+ *   open: boolean,
+ *   targetEnvironment: string,
+ * }} props
+ */
+function ServerDialog({ error, isPending, onClose, onSubmit, open, targetEnvironment }) {
+  const [form, setForm] = useState(() => createDefaultServerForm(targetEnvironment));
+  const isScriptProfileMode = form.managementMode === "LIBERTY_SCRIPT_PROFILE";
+  const credentialReady = isScriptProfileMode || Boolean(form.credentialAlias.trim());
+  const scriptProfileReady =
+    !isScriptProfileMode ||
+    Boolean(
+      form.scriptProfileId.trim() &&
+        form.scriptParameters.length > 0 &&
+        form.scriptParameters.every((parameter) => parameter.name.trim() && parameter.value.trim()),
+    );
+
+  const canSubmit =
+    Boolean(
+      form.nodeId.trim() &&
+        form.managementEndpoint.trim() &&
+        form.applicationPath.trim() &&
+        credentialReady &&
+        scriptProfileReady,
+    ) && !isPending;
+
+  /**
+   * @param {keyof ReleaseServerForm} field
+   * @param {string | boolean} value
+   */
+  function updateField(field, value) {
+    setForm((current) => {
+      if (field === "serverType" && typeof value === "string") {
+        const nextModes = managementModeOptions(value);
+        return {
+          ...current,
+          serverType: value,
+          managementMode: nextModes[0],
+        };
+      }
+      return { ...current, [field]: value };
+    });
+  }
+
+  /**
+   * @param {string} id
+   * @param {"name" | "value"} field
+   * @param {string} value
+   */
+  function updateScriptParameter(id, field, value) {
+    setForm((current) => ({
+      ...current,
+      scriptParameters: current.scriptParameters.map((parameter) =>
+        parameter.id === id ? { ...parameter, [field]: value } : parameter,
+      ),
+    }));
+  }
+
+  function addScriptParameter() {
+    setForm((current) => ({
+      ...current,
+      scriptParameters: [
+        ...current.scriptParameters,
+        { id: `param-${Date.now()}`, name: "", value: "" },
+      ],
+    }));
+  }
+
+  /**
+   * @param {string} id
+   */
+  function removeScriptParameter(id) {
+    setForm((current) => ({
+      ...current,
+      scriptParameters: current.scriptParameters.filter((parameter) => parameter.id !== id),
+    }));
+  }
+
+  /**
+   * @param {React.FormEvent<HTMLFormElement>} event
+   */
+  function handleSubmit(event) {
+    event.preventDefault();
+    if (!canSubmit) {
+      return;
+    }
+    const scriptParameters = form.scriptParameters.map((parameter) => ({
+      name: parameter.name.trim(),
+      value: parameter.value.trim(),
+    }));
+    onSubmit({
+      nodeId: form.nodeId.trim(),
+      targetEnvironment: form.targetEnvironment,
+      serverType: form.serverType,
+      managementMode: form.managementMode,
+      managementEndpoint: form.managementEndpoint.trim(),
+      applicationPath: form.applicationPath.trim(),
+      credentialAlias: form.credentialAlias.trim() || null,
+      scriptProfile: isScriptProfileMode
+        ? {
+            profileId: form.scriptProfileId.trim(),
+            parameters: scriptParameters,
+          }
+        : undefined,
+      enabled: form.enabled,
+    });
   }
 
   return (
-    <section className={styles.tablePanel} aria-label="服务器配置">
-      <div className={styles.tableHeader}>
-        <span>节点</span>
-        <span>类型</span>
-        <span>策略</span>
-        <span>凭据</span>
-      </div>
-      {servers.map((server) => (
-        <div className={styles.tableRow} key={server.nodeId}>
-          <strong>{server.nodeId}</strong>
-          <span>{server.serverType}</span>
-          <span>{server.managementMode}</span>
-          <span>{server.credentialAlias ?? "未绑定"}</span>
+    <Dialog
+      closeLabel="关闭新增服务器"
+      description="服务器配置只登记非生产发布目标，真正执行仍由服务端策略、工作流和 Worker 隔离控制。"
+      eyebrow={`Server / ${targetEnvironment}`}
+      icon={<Server size={18} />}
+      onClose={onClose}
+      open={open}
+      size="wide"
+      title="新增服务器"
+    >
+      <form className={styles.serverForm} onSubmit={handleSubmit}>
+        <div className={styles.formGrid}>
+          <label className={styles.formField}>
+            <span>节点 ID</span>
+            <input
+              aria-label="Node ID"
+              onChange={(event) => updateField("nodeId", event.currentTarget.value)}
+              placeholder="tomcat-dev-1"
+              value={form.nodeId}
+            />
+          </label>
+          <label className={styles.formField}>
+            <span>目标环境</span>
+            <input readOnly value={form.targetEnvironment} />
+          </label>
+          <label className={styles.formField}>
+            <span>服务器类型</span>
+            <select
+              aria-label="Server type"
+              onChange={(event) => updateField("serverType", event.currentTarget.value)}
+              value={form.serverType}
+            >
+              {SERVER_TYPE_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className={styles.formField}>
+            <span>管理模式</span>
+            <select
+              aria-label="Management mode"
+              onChange={(event) => updateField("managementMode", event.currentTarget.value)}
+              value={form.managementMode}
+            >
+              {managementModeOptions(form.serverType).map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className={styles.formField}>
+            <span>管理端点</span>
+            <input
+              aria-label="Management endpoint"
+              onChange={(event) => updateField("managementEndpoint", event.currentTarget.value)}
+              placeholder="http://127.0.0.1:18080/manager/text"
+              value={form.managementEndpoint}
+            />
+          </label>
+          <label className={styles.formField}>
+            <span>应用路径</span>
+            <input
+              aria-label="Application path"
+              onChange={(event) => updateField("applicationPath", event.currentTarget.value)}
+              placeholder="/orders"
+              value={form.applicationPath}
+            />
+          </label>
+          <label className={styles.formField}>
+            <span>凭据别名</span>
+            <input
+              aria-label="Credential alias"
+              onChange={(event) => updateField("credentialAlias", event.currentTarget.value)}
+              placeholder="tomcat-dev"
+              value={form.credentialAlias}
+            />
+          </label>
+          <label className={styles.toggleField}>
+            <input
+              checked={form.enabled}
+              onChange={(event) => updateField("enabled", event.currentTarget.checked)}
+              type="checkbox"
+            />
+            <span>启用服务器</span>
+          </label>
         </div>
-      ))}
-    </section>
+
+        {isScriptProfileMode ? (
+          <section className={styles.scriptProfilePanel} aria-label="Liberty script profile">
+            <label className={styles.formField}>
+              <span>Script Profile ID</span>
+              <input
+                onChange={(event) => updateField("scriptProfileId", event.currentTarget.value)}
+                placeholder="liberty-war-deploy"
+                value={form.scriptProfileId}
+              />
+            </label>
+
+            <div className={styles.scriptParameterHeader}>
+              <strong>Script parameters</strong>
+              <Button className={styles.compactButton} onClick={addScriptParameter} type="button" variant="secondary">
+                <PlusCircle aria-hidden="true" size={15} />
+                Add
+              </Button>
+            </div>
+
+            <div className={styles.scriptParameterList}>
+              {form.scriptParameters.map((parameter, index) => (
+                <div className={styles.scriptParameterRow} key={parameter.id}>
+                  <label className={styles.formField}>
+                    <span>{`Parameter ${index + 1} name`}</span>
+                    <input
+                      onChange={(event) => updateScriptParameter(parameter.id, "name", event.currentTarget.value)}
+                      placeholder="serverName"
+                      value={parameter.name}
+                    />
+                  </label>
+                  <label className={styles.formField}>
+                    <span>{`Parameter ${index + 1} value`}</span>
+                    <input
+                      onChange={(event) => updateScriptParameter(parameter.id, "value", event.currentTarget.value)}
+                      placeholder="defaultServer"
+                      value={parameter.value}
+                    />
+                  </label>
+                  <Button
+                    className={styles.removeParameterButton}
+                    disabled={form.scriptParameters.length <= 1}
+                    onClick={() => removeScriptParameter(parameter.id)}
+                    type="button"
+                    variant="secondary"
+                  >
+                    Remove
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
+        {error ? <p className={styles.formError}>{readErrorMessage(error)}</p> : null}
+
+        <div className={styles.dialogActions}>
+          <Button onClick={onClose} variant="secondary">
+            取消
+          </Button>
+          <Button aria-label="Save release server" disabled={!canSubmit} type="submit">
+            保存服务器
+          </Button>
+        </div>
+      </form>
+    </Dialog>
   );
+}
+
+/**
+ * @param {string} targetEnvironment
+ * @returns {ReleaseServerForm}
+ */
+function createDefaultServerForm(targetEnvironment) {
+  return {
+    nodeId: "",
+    targetEnvironment,
+    serverType: "TOMCAT",
+    managementMode: "TOMCAT_WAR_UPLOAD",
+    managementEndpoint: "http://127.0.0.1:18080/manager/text",
+    applicationPath: "/orders",
+    credentialAlias: "",
+    scriptProfileId: "liberty-war-deploy",
+    scriptParameters: [
+      { id: "serverName", name: "serverName", value: "defaultServer" },
+      { id: "applicationName", name: "applicationName", value: "orders" },
+    ],
+    enabled: true,
+  };
+}
+
+/**
+ * @param {string} serverType
+ * @returns {string[]}
+ */
+function managementModeOptions(serverType) {
+  if (serverType === "LIBERTY") {
+    return MANAGEMENT_MODE_OPTIONS_BY_SERVER_TYPE.LIBERTY;
+  }
+  return MANAGEMENT_MODE_OPTIONS_BY_SERVER_TYPE.TOMCAT;
 }
 
 function PoliciesPanel() {
@@ -418,13 +1050,23 @@ function CredentialsPanel({ servers, serversQuery }) {
  * @param {{
  *   applications: ReleaseApplication[],
  *   applicationsQuery: ReturnType<typeof useReleaseApplications>,
+ *   artifacts: ReleaseArtifact[],
+ *   artifactsQuery: ReturnType<typeof useReleaseArtifacts>,
  *   servers: ReleaseServer[],
  *   serversQuery: ReturnType<typeof useReleaseServers>,
  *   targetEnvironment: string,
  * }} props
  */
-function InventoryPanel({ applications, applicationsQuery, servers, serversQuery, targetEnvironment }) {
-  const queryState = queryFeedback([applicationsQuery, serversQuery], "发布库存读取失败");
+function InventoryPanel({
+  applications,
+  applicationsQuery,
+  artifacts,
+  artifactsQuery,
+  servers,
+  serversQuery,
+  targetEnvironment,
+}) {
+  const queryState = queryFeedback([applicationsQuery, artifactsQuery, serversQuery], "发布库存读取失败");
   return (
     <aside aria-label="发布中心库存" className={styles.inventoryPanel}>
       <div className={styles.inventoryHeader}>
@@ -457,6 +1099,19 @@ function InventoryPanel({ applications, applicationsQuery, servers, serversQuery
                   <span>
                     {server.serverType} / {server.managementMode}
                   </span>
+                </div>
+              ))
+            )}
+          </section>
+          <section aria-label="制品库存" className={styles.inventorySection}>
+            <span className={styles.sectionLabel}>制品 / {targetEnvironment}</span>
+            {artifacts.length === 0 ? (
+              <p>暂无制品</p>
+            ) : (
+              artifacts.slice(0, 3).map((artifact) => (
+                <div className={styles.inventoryRow} key={artifact.artifactId}>
+                  <strong>{artifact.artifactId}</strong>
+                  <span>{artifact.checksum}</span>
                 </div>
               ))
             )}

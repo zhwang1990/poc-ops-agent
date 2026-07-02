@@ -73,6 +73,32 @@ class R2dbcReleaseCatalogStoreTest {
   }
 
   @Test
+  void storesLibertyScriptProfileServerParameters() {
+    ReleaseCatalogStore store = store();
+    ReleaseServer server = ReleaseServer.create(
+        "dev-liberty-1",
+        "dev",
+        ServerType.LIBERTY,
+        ManagementMode.LIBERTY_SCRIPT_PROFILE,
+        "https://liberty-dev.example",
+        "/orders",
+        "liberty-dev",
+        new ReleaseScriptProfile(
+            "liberty-war-deploy",
+            List.of(
+                new ReleaseScriptParameter("serverName", "defaultServer"),
+                new ReleaseScriptParameter("applicationName", "orders"))),
+        true);
+
+    store.saveServer(server).block();
+
+    ReleaseServer loaded = store.findServer("dev-liberty-1").block();
+    assertEquals("liberty-war-deploy", loaded.scriptProfile().profileId());
+    assertEquals("defaultServer", loaded.scriptProfile().parameters().get(0).value());
+    assertEquals("orders", loaded.scriptProfile().parameters().get(1).value());
+  }
+
+  @Test
   void releaseCredentialTableHasNoPlaintextColumn() {
     DatabaseClient databaseClient = databaseClient();
 

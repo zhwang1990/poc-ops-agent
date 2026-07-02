@@ -67,6 +67,7 @@ Skill 区域包含 M08 的定义和测试。生产 Skill 必须经过版本化�
 
 ## 当前实现重点
 
+- P1 只读诊断 MVP 已于 2026-07-01 完成验收，当前阶段进入 P2 受控变更试点。
 - M03 当前已经实现：
   - Skill Manifest 契约
   - 发布侧签名文件契约
@@ -84,21 +85,22 @@ Skill 区域包含 M08 的定义和测试。生产 Skill 必须经过版本化�
   - 浏览器会话登录页与受保护路由；
   - Agent 工作台接入只读候选 Skill 路由接口，并通过 `/api/v1/agent/diagnostics` 提交主 Agent 只读诊断任务；
   - Skill 注册中心接入真实 Skill 目录，变更类操作保持禁用；
-  - SQL 工作台接入连接目录和校验接口，仅展示服务端验证报告；
+  - SQL 工作台接入连接目录、校验接口和开发/测试环境受控单条 `SELECT` 查询结果，DML 仍仅提供静态预检；
   - Playwright 已覆盖 `1280px`、`1440px`、`1920px` 三个桌面视口的浏览器验收。
-- SQL 工作台尚未启用真实 AS/400 查询执行、结果分页与短期结果存储；2026-06-27 已确认 P1 必须补齐开发/测试环境受控单条 `SELECT` 真实执行，未完成凭据和结果治理前必须明确失败。
+- SQL 工作台 P1 切片已按开发/测试环境受控单条 `SELECT` 执行、DML 仅预检、Worker 出口 allowlist、凭据别名与结果治理边界完成验收；生产 SQL 连接始终不可见、不可调用。
 - SQL 工作台目标态以主流数据库客户端交互为基线，并通过右侧 AI SQL 助手提供错误分析和性能优化。P2 在不新增部署服务或模块编号的前提下，复用 M02、M05、M07 和 M09 开放开发环境受控 CRUD；生产 SQL 连接始终不可见、不可调用。
-- 发布中心已规划为 P2 非生产受控变更切片，在不新增部署服务或模块编号的前提下复用 M02、M03、M05、M07、M08、M09、M10 和 M11，提供 `dev`、`sit`、`uat` 环境的 WAR 发布、启停、回滚和只读日志分析。P1 不交付该副作用能力；生产环境始终不可见、不可配置、不可调用。
+- 发布中心已进入 P2 非生产受控变更启动范围，在不新增部署服务或模块编号的前提下复用 M02、M03、M05、M07、M08、M09、M10 和 M11，提供 `dev`、`sit`、`uat` 环境的 WAR 制品发布、Liberty 脚本 Profile 发布、启停、回滚和只读日志分析。P1 不交付该副作用能力；生产环境始终不可见、不可配置、不可调用。
 - M09 的 Agent 工作区、RAG 问答和 SQL 工作台共享专注模式：展开时收起左侧主菜单和当前页面右侧辅助卡片，由中央工作区使用释放出的横向空间；恢复布局不改变会话或结果上下文。
+- 长期记忆当前不是独立模块，也不属于 P2 启动交付范围。后续如建设，必须由 M02、M04、M05、M06、M09、M10 和 M11 协同约束：M04 只能消费受控上下文，M05/M06 承载任务事实源和制品，M09 展示引用和状态，M10/M02 负责审计与授权，M11 负责评测和安全门禁；不得由 AgentScope memory、ChatMemory、Redis、session state、chat history 或浏览器缓存替代工作流事实源。
 - SQL 工作台的数据库对象浏览器可独立收起和恢复；进入专注模式时数据库对象浏览器也会收起。
 - AgentScope Java 已被决策为 P1 只读诊断目标主链路，当前已完成 ReAct 工具回调到平台执行器的最小闭环：
-  - AgentScope Java `1.0.12` 通过 `control-plane-agentruntime` 模块提供 ReAct 主运行循环；
+  - AgentScope Java `2.0.0-RC4` 通过 `control-plane-agentruntime` 模块提供 ReAct 主运行循环；
   - `/api/v1/agent/diagnostics` 是 Agent 只读诊断目标主入口，`/internal/agent/diagnostics` 仅作为内部兼容入口保留；
   - 当前实现已覆盖禁用/未配置失败关闭、受保护入口、Agent workflow 基础事实源、最终摘要 POC、AgentScope 真实 `AgentTool` 注册，以及 workflow-backed Agent Tool 执行器；
   - 平台守护执行器落在 M05，调用 M02 策略决策、记录执行器级授权审计、写入 M05 Tool Step、发布 Agent Tool 语义事件，并通过 M07 WorkerGateway 提交已授权只读命令；M04 只保留 `AgentToolExecutor` 端口，避免反向依赖 M05/M07；
   - ReAct 模型发出的 ToolUse 会先被 M04 转为强类型 `AgentToolCall`，再由 M05 执行器重新校验目录、重新授权、记录审计、持久化 Tool Step、发布 requested/completed/rejected 语义事件并提交 Worker；
   - Agent Tool 请求、完成和拒绝三类语义事件契约骨架、M05 发布接线、执行器级审计和多 Tool 幂等恢复演练已补齐；正式集中审计存储仍归 T010 后续条件；
-  - 确定性单 Skill 只读入口保留为联调、兼容和紧急回退路径；AgentScope 主链路仍需继续补齐评测集和路由解释 API；
+  - 确定性单 Skill 只读入口保留为联调、兼容和紧急回退路径；AgentScope 主链路的评测集和路由解释 API 在 P2/P3 继续增强；
   - Tool Catalog 必须由 M03 注册与发布校验结果生成，并受 P1 只读风险约束；
   - 每一次 Tool Call 都必须经过平台守护执行器、M05 工作流持久化和 M07 Worker 隔离执行；
   - AgentScope Java 不得替代身份、授权、审计、工作流事实源、Skill 发布治理或 Worker 隔离边界。

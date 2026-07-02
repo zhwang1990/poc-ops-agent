@@ -180,6 +180,9 @@ function eventDescription(event) {
   if ("outputSchemaId" in payload) {
     return payload.outputSchemaId;
   }
+  if ("progressKind" in payload) {
+    return `${payload.progressKind}: ${payload.message}`;
+  }
   return event.workflowId;
 }
 
@@ -193,6 +196,9 @@ function eventBadge(event) {
   }
   if ("targetEnvironment" in payload) {
     return payload.targetEnvironment;
+  }
+  if ("sensitiveContentSuppressed" in payload) {
+    return payload.sensitiveContentSuppressed ? "suppressed" : "sanitized";
   }
   return "persisted";
 }
