@@ -11,6 +11,7 @@ import {
   releasePlanCreateRequestSchema,
   releasePlanListSchema,
   releasePlanSchema,
+  releaseServerDeleteResponseSchema,
   releaseServerListSchema,
   releaseServerSchema,
 } from "../schemas/release-center-schemas.js";
@@ -55,6 +56,16 @@ export function saveReleaseServer(input) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(request),
     schema: releaseServerSchema,
+  });
+}
+
+/**
+ * @param {string} nodeId
+ */
+export function deleteReleaseServer(nodeId) {
+  return requestJson(`/internal/release-center/servers/${encodeURIComponent(nodeId)}`, {
+    method: "DELETE",
+    schema: releaseServerDeleteResponseSchema,
   });
 }
 

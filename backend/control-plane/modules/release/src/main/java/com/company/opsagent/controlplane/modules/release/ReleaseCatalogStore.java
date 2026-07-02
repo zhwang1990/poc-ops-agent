@@ -19,6 +19,8 @@ public interface ReleaseCatalogStore {
 
   Flux<ReleaseServer> listServers(String targetEnvironment);
 
+  Mono<Void> deleteServer(String nodeId);
+
   Mono<ReleaseArtifact> saveArtifact(ReleaseArtifact artifact);
 
   Flux<ReleaseArtifact> listArtifacts(String targetEnvironment);

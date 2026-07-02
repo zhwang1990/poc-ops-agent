@@ -459,6 +459,63 @@
   background: oklch(0.982 0.006 232);
 }
 
+.serverTableRow {
+  grid-template-columns: minmax(132px, 1.1fr) 86px minmax(128px, 0.9fr) minmax(180px, 1.45fr) 112px;
+}
+
+.serverIdentity {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.artifactPathCell {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+.artifactPathCell span,
+.artifactPathCell a {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--release-muted);
+  font-size: 12px;
+  font-weight: 760;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.artifactPathCell a {
+  color: var(--release-blue);
+  text-decoration: none;
+}
+
+.artifactPathCell span[data-tone="warning"] {
+  color: var(--release-danger);
+}
+
+.serverRowActions {
+  justify-content: flex-end;
+}
+
+.iconButton {
+  width: 32px;
+  min-height: 32px;
+  padding: 6px;
+  border-radius: 8px;
+}
+
+.compactDangerButton {
+  width: 84px;
+  min-height: 32px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 850;
+}
+
 .policyGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -654,7 +711,7 @@
 
 .scriptParameterRow {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 88px;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 4fr) 88px;
   gap: 8px 10px;
   align-items: end;
 }
@@ -747,6 +804,10 @@
   }
 
   .tableRow {
+    grid-template-columns: 1fr;
+  }
+
+  .serverTableRow {
     grid-template-columns: 1fr;
   }
 

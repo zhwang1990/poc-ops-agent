@@ -99,6 +99,25 @@ class R2dbcReleaseCatalogStoreTest {
   }
 
   @Test
+  void deletesReleaseServerByNodeId() {
+    ReleaseCatalogStore store = store();
+    store.saveServer(ReleaseServer.create(
+        "dev-tomcat-delete",
+        "dev",
+        ServerType.TOMCAT,
+        ManagementMode.TOMCAT_WAR_UPLOAD,
+        "https://tomcat-dev.example",
+        "/orders",
+        "tomcat-dev",
+        true)).block();
+
+    store.deleteServer("dev-tomcat-delete").block();
+
+    List<ReleaseServer> servers = store.listServers("dev").collectList().block();
+    assertTrue(servers.isEmpty());
+  }
+
+  @Test
   void releaseCredentialTableHasNoPlaintextColumn() {
     DatabaseClient databaseClient = databaseClient();
 

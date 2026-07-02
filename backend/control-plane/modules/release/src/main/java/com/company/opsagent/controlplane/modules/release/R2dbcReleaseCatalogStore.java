@@ -147,6 +147,15 @@ public class R2dbcReleaseCatalogStore implements ReleaseCatalogStore {
   }
 
   @Override
+  public Mono<Void> deleteServer(String nodeId) {
+    return databaseClient.sql("delete from release_server where node_id = :nodeId")
+        .bind("nodeId", ReleaseValues.requiredText(nodeId, "nodeId"))
+        .fetch()
+        .rowsUpdated()
+        .then();
+  }
+
+  @Override
   public Mono<ReleaseArtifact> saveArtifact(ReleaseArtifact artifact) {
     OffsetDateTime now = now();
     return databaseClient.sql("delete from release_artifact where artifact_id = :artifactId")

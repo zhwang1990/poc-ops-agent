@@ -17,7 +17,7 @@ describe("ReleaseCenterPage", () => {
     const removeButtonRule = cssRule("removeParameterButton");
     const actionsRule = cssRule("dialogActions");
 
-    expect(rowRule).toContain("grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 88px");
+    expect(rowRule).toContain("grid-template-columns: minmax(0, 2fr) minmax(0, 4fr) 88px");
     expect(rowRule).toContain("align-items: end");
     expect(removeButtonRule).toContain("height: 32px");
     expect(removeButtonRule).toContain("align-self: end");
@@ -161,6 +161,34 @@ describe("ReleaseCenterPage", () => {
     expect(within(dialog).getByRole("button", { name: "创建发布单" })).toBeDisabled();
   });
 
+  it("does not report missing artifacts before release nodes determine the mode", async () => {
+    server.use(
+      http.get("/auth/session", () =>
+        HttpResponse.json({
+          authenticated: true,
+          subject: "operator-1",
+          username: "ops.release",
+          roles: ["ROLE_ops-release"],
+          authenticationType: "built-in",
+        }),
+      ),
+      http.get("/internal/release-center/applications", () => HttpResponse.json([releaseApplication])),
+      http.get("/internal/release-center/artifacts", () => HttpResponse.json([])),
+      http.get("/internal/release-center/plans", () => HttpResponse.json([])),
+      http.get("/internal/release-center/servers", () => HttpResponse.json([])),
+    );
+
+    renderReleaseCenter();
+
+    await userEvent.click(await screen.findByRole("button", { name: "新建发布单" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "新建发布单" });
+    expect(within(dialog).queryByText("缺少可发布制品")).not.toBeInTheDocument();
+    expect(within(dialog).getByText("等待发布节点确定发布方式")).toBeInTheDocument();
+    expect(within(dialog).getAllByText("缺少可用发布节点").length).toBeGreaterThan(0);
+    expect(within(dialog).getByRole("button", { name: "创建发布单" })).toBeDisabled();
+  });
+
   it("creates a Liberty script release plan without artifacts", async () => {
     /** @type {unknown} */
     let savedRequest = null;
@@ -206,6 +234,7 @@ describe("ReleaseCenterPage", () => {
     await userEvent.click(createButton);
 
     const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("//jenkins/share/orders/latest/orders.war")).toBeInTheDocument();
     const dialogButtons = within(dialog).getAllByRole("button");
     await userEvent.click(dialogButtons[dialogButtons.length - 1]);
 
@@ -216,6 +245,45 @@ describe("ReleaseCenterPage", () => {
         nodeIds: ["liberty-script-1"],
       }),
     );
+  });
+
+  it("requires a shared artifact path for Liberty script releases", async () => {
+    const serverWithoutArtifactPath = {
+      ...releaseLibertyScriptServer,
+      scriptProfile: {
+        profileId: "liberty-war-deploy",
+        parameters: [
+          { name: "serverName", value: "defaultServer" },
+          { name: "applicationName", value: "orders" },
+        ],
+      },
+    };
+    server.use(
+      http.get("/auth/session", () =>
+        HttpResponse.json({
+          authenticated: true,
+          subject: "operator-1",
+          username: "ops.release",
+          roles: ["ROLE_ops-release"],
+          authenticationType: "built-in",
+        }),
+      ),
+      http.get("/internal/release-center/applications", () => HttpResponse.json([releaseApplication])),
+      http.get("/internal/release-center/artifacts", () => HttpResponse.json([])),
+      http.get("/internal/release-center/plans", () => HttpResponse.json([])),
+      http.get("/internal/release-center/servers", () => HttpResponse.json([serverWithoutArtifactPath])),
+    );
+
+    renderReleaseCenter();
+
+    const actionButtons = (await screen.findAllByRole("button"))
+      .filter((button) => String(button.className).includes("actionButton"));
+    const createButton = actionButtons[1];
+    await userEvent.click(createButton);
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getAllByText("缺少 Liberty 制品共享路径").length).toBeGreaterThan(0);
+    expect(within(dialog).getAllByRole("button").at(-1)).toBeDisabled();
   });
 
   it("executes a draft release plan from the plan list", async () => {
@@ -343,6 +411,8 @@ describe("ReleaseCenterPage", () => {
     expect(within(dialog).getByLabelText("Script Profile ID")).toHaveValue("liberty-war-deploy");
     expect(within(dialog).getByLabelText("Parameter 1 name")).toHaveValue("serverName");
     expect(within(dialog).getByLabelText("Parameter 1 value")).toHaveValue("defaultServer");
+    expect(within(dialog).getByLabelText("Parameter 3 name")).toHaveValue("artifactPath");
+    expect(within(dialog).getByLabelText("Parameter 3 value")).toHaveValue("//jenkins/share/orders/latest/orders.war");
     await userEvent.click(within(dialog).getByRole("button", { name: "Save release server" }));
 
     await waitFor(() =>
@@ -359,11 +429,92 @@ describe("ReleaseCenterPage", () => {
           parameters: [
             { name: "serverName", value: "defaultServer" },
             { name: "applicationName", value: "orders" },
+            { name: "artifactPath", value: "//jenkins/share/orders/latest/orders.war" },
           ],
         },
         enabled: true,
       }),
     );
+    expect(await screen.findByText("//jenkins/share/orders/latest/orders.war")).toBeInTheDocument();
+    expect(screen.getByText("//jenkins/share/orders/latest/orders.war").closest("a")).toBeNull();
+    expect(await screen.findByRole("button", { name: "Copy artifact path for liberty-dev-1" })).toBeInTheDocument();
+  });
+
+  it("edits a release server from the servers tab", async () => {
+    /** @type {unknown} */
+    let savedServer = null;
+    server.use(
+      http.get("/auth/session", () =>
+        HttpResponse.json({
+          authenticated: true,
+          subject: "operator-1",
+          username: "ops.release",
+          roles: ["ROLE_ops-release"],
+          authenticationType: "built-in",
+        }),
+      ),
+      http.get("/internal/release-center/applications", () => HttpResponse.json([releaseApplication])),
+      http.get("/internal/release-center/artifacts", () => HttpResponse.json([releaseArtifact])),
+      http.get("/internal/release-center/plans", () => HttpResponse.json([])),
+      http.get("/internal/release-center/servers", () => HttpResponse.json([releaseServer])),
+      http.post("/internal/release-center/servers", async ({ request }) => {
+        const requestBody = /** @type {Record<string, unknown>} */ (await request.json());
+        savedServer = requestBody;
+        return HttpResponse.json(requestBody);
+      }),
+    );
+
+    renderReleaseCenter();
+
+    await userEvent.click(await screen.findByRole("tab", { name: "服务器" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Edit node-1" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "编辑服务器" });
+    expect(within(dialog).getByLabelText("Node ID")).toHaveAttribute("readonly");
+    await userEvent.clear(within(dialog).getByLabelText("Application path"));
+    await userEvent.type(within(dialog).getByLabelText("Application path"), "/orders-edit");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save release server" }));
+
+    await waitFor(() =>
+      expect(savedServer).toEqual({
+        ...releaseServer,
+        applicationPath: "/orders-edit",
+      }),
+    );
+    expect(await screen.findByText("/orders-edit")).toBeInTheDocument();
+  });
+
+  it("deletes a release server from the servers tab", async () => {
+    /** @type {string | null} */
+    let deletedNodeId = null;
+    server.use(
+      http.get("/auth/session", () =>
+        HttpResponse.json({
+          authenticated: true,
+          subject: "operator-1",
+          username: "ops.release",
+          roles: ["ROLE_ops-release"],
+          authenticationType: "built-in",
+        }),
+      ),
+      http.get("/internal/release-center/applications", () => HttpResponse.json([releaseApplication])),
+      http.get("/internal/release-center/artifacts", () => HttpResponse.json([releaseArtifact])),
+      http.get("/internal/release-center/plans", () => HttpResponse.json([])),
+      http.get("/internal/release-center/servers", () => HttpResponse.json([releaseServer])),
+      http.delete("/internal/release-center/servers/:nodeId", ({ params }) => {
+        deletedNodeId = String(params.nodeId);
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+
+    renderReleaseCenter();
+
+    await userEvent.click(await screen.findByRole("tab", { name: "服务器" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Delete node-1" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Confirm delete node-1" }));
+
+    await waitFor(() => expect(deletedNodeId).toBe("node-1"));
+    await waitFor(() => expect(screen.queryByText("node-1")).not.toBeInTheDocument());
   });
 });
 
@@ -418,6 +569,7 @@ const releaseLibertyScriptServer = {
     parameters: [
       { name: "serverName", value: "defaultServer" },
       { name: "applicationName", value: "orders" },
+      { name: "artifactPath", value: "//jenkins/share/orders/latest/orders.war" },
     ],
   },
   enabled: true,

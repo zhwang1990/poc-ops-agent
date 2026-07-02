@@ -351,6 +351,9 @@ public class PolicyEnforcementWebFilter implements WebFilter {
       if (method == HttpMethod.POST && "/internal/release-center/servers".equals(path)) {
         return new ActionDescriptor("release.catalog.write", path);
       }
+      if (method == HttpMethod.DELETE && path.startsWith("/internal/release-center/servers/")) {
+        return new ActionDescriptor("release.catalog.write", path);
+      }
       if (method == HttpMethod.POST && "/internal/release-center/credentials".equals(path)) {
         return new ActionDescriptor("release.credential.rotate", path);
       }

@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   confirmReleasePlan,
   createReleasePlan,
+  deleteReleaseServer,
   executeReleasePlan,
   listReleaseApplications,
   listReleaseArtifacts,
@@ -88,6 +89,25 @@ export function useSaveReleaseServer() {
   });
 }
 
+export function useDeleteReleaseServer() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    /**
+     * @param {{nodeId: string, targetEnvironment: string}} variables
+     */
+    mutationFn: (variables) => deleteReleaseServer(variables.nodeId),
+    onSuccess: (_result, variables) => {
+      queryClient.setQueryData(
+        [...RELEASE_SERVERS_QUERY_KEY, variables.targetEnvironment],
+        /**
+         * @param {unknown} current
+         */
+        (current) => removeById(Array.isArray(current) ? current : [], variables.nodeId, "nodeId"),
+      );
+    },
+  });
+}
+
 export function useUploadTomcatWar() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -168,4 +188,15 @@ function upsertById(items, next, key) {
     return [next, ...items];
   }
   return items.map((item, currentIndex) => (currentIndex === index ? next : item));
+}
+
+/**
+ * @template T
+ * @param {T[]} items
+ * @param {unknown} id
+ * @param {keyof T} key
+ * @returns {T[]}
+ */
+function removeById(items, id, key) {
+  return items.filter((item) => item[key] !== id);
 }

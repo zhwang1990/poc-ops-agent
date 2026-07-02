@@ -137,7 +137,8 @@ class ReleaseCenterControllerTest {
                 "profileId": "liberty-war-deploy",
                 "parameters": [
                   {"name": "serverName", "value": "defaultServer"},
-                  {"name": "applicationName", "value": "orders"}
+                  {"name": "applicationName", "value": "orders"},
+                  {"name": "artifactPath", "value": "//jenkins/share/orders/latest/orders.war"}
                 ]
               },
               "enabled": true
@@ -150,7 +151,38 @@ class ReleaseCenterControllerTest {
         .jsonPath("$.managementMode").isEqualTo("LIBERTY_SCRIPT_PROFILE")
         .jsonPath("$.scriptProfile.profileId").isEqualTo("liberty-war-deploy")
         .jsonPath("$.scriptProfile.parameters[0].name").isEqualTo("serverName")
-        .jsonPath("$.scriptProfile.parameters[0].value").isEqualTo("defaultServer");
+        .jsonPath("$.scriptProfile.parameters[0].value").isEqualTo("defaultServer")
+        .jsonPath("$.scriptProfile.parameters[2].name").isEqualTo("artifactPath")
+        .jsonPath("$.scriptProfile.parameters[2].value").isEqualTo("//jenkins/share/orders/latest/orders.war");
+  }
+
+  @Test
+  void deletesReleaseServerThroughPolicyProtectedApi() {
+    releaseCatalogStore.saveServer(ReleaseServer.create(
+            "dev-tomcat-delete",
+            "dev",
+            ServerType.TOMCAT,
+            ManagementMode.TOMCAT_WAR_UPLOAD,
+            "https://dev-tomcat-delete.example.internal/manager",
+            "/orders",
+            "dev-tomcat",
+            true))
+        .block();
+
+    webTestClient.delete()
+        .uri("/internal/release-center/servers/dev-tomcat-delete")
+        .headers(headers -> headers.setBearerAuth(token("admin", List.of("ops-admin"))))
+        .exchange()
+        .expectStatus().isNoContent()
+        .expectBody().isEmpty();
+
+    webTestClient.get()
+        .uri("/internal/release-center/servers?targetEnvironment=dev")
+        .headers(headers -> headers.setBearerAuth(token("alice", List.of("ops-reader"))))
+        .exchange()
+        .expectStatus().isOk()
+        .expectBody()
+        .jsonPath("$[?(@.nodeId == 'dev-tomcat-delete')]").isEmpty();
   }
 
   @Test
@@ -211,8 +243,8 @@ class ReleaseCenterControllerTest {
   }
 
   @Test
-  void createsLibertyScriptReleasePlanWithoutArtifactThroughPolicyProtectedApi() {
-    seedLibertyScriptCatalogWithoutArtifact("sit");
+  void createsLibertyScriptReleasePlanWithoutUploadedArtifactThroughPolicyProtectedApi() {
+    seedLibertyScriptCatalogWithoutUploadedArtifact("sit");
 
     webTestClient.post()
         .uri("/internal/release-center/plans")
@@ -426,7 +458,7 @@ class ReleaseCenterControllerTest {
         .block();
   }
 
-  private void seedLibertyScriptCatalogWithoutArtifact(String targetEnvironment) {
+  private void seedLibertyScriptCatalogWithoutUploadedArtifact(String targetEnvironment) {
     TargetEnvironment environment = TargetEnvironment.from(targetEnvironment);
     releaseCatalogStore.saveApplication(com.company.opsagent.controlplane.modules.release.ReleaseApplication.create(
             "orders",
@@ -449,7 +481,10 @@ class ReleaseCenterControllerTest {
                 "liberty-war-deploy",
                 List.of(
                     new com.company.opsagent.controlplane.modules.release.ReleaseScriptParameter("serverName", "defaultServer"),
-                    new com.company.opsagent.controlplane.modules.release.ReleaseScriptParameter("applicationName", "orders"))),
+                    new com.company.opsagent.controlplane.modules.release.ReleaseScriptParameter("applicationName", "orders"),
+                    new com.company.opsagent.controlplane.modules.release.ReleaseScriptParameter(
+                        "artifactPath",
+                        "//jenkins/share/orders/latest/orders.war"))),
             true))
         .block();
   }
