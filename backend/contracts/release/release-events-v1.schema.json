@@ -29,6 +29,7 @@
         "RELEASE_CREATED",
         "RELEASE_CONFIRMED",
         "RELEASE_NODE_STARTED",
+        "RELEASE_NODE_LOG",
         "RELEASE_NODE_COMPLETED",
         "RELEASE_NODE_FAILED",
         "RELEASE_PARTIAL_FAILED",
@@ -42,6 +43,7 @@
         { "$ref": "#/$defs/releaseCreatedPayload" },
         { "$ref": "#/$defs/releaseConfirmedPayload" },
         { "$ref": "#/$defs/releaseNodeStartedPayload" },
+        { "$ref": "#/$defs/releaseNodeLogPayload" },
         { "$ref": "#/$defs/releaseNodeCompletedPayload" },
         { "$ref": "#/$defs/releaseNodeFailedPayload" },
         { "$ref": "#/$defs/releasePartialFailedPayload" },
@@ -120,6 +122,7 @@
           "type": "string",
           "enum": [
             "LIBERTY_HTTPS",
+            "LIBERTY_SCRIPT_PROFILE",
             "TOMCAT_WAR_UPLOAD",
             "TOMCAT_MANAGER_API",
             "NODE_AGENT_HTTPS",
@@ -127,6 +130,18 @@
           ]
         },
         "startedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "releaseNodeLogPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["payloadType", "nodeId", "stream", "message", "emittedAt"],
+      "properties": {
+        "payloadType": { "const": "RELEASE_NODE_LOG" },
+        "nodeId": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "stream": { "type": "string", "enum": ["STDOUT", "STDERR"] },
+        "message": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "emittedAt": { "type": "string", "format": "date-time" }
       }
     },
     "releaseNodeCompletedPayload": {

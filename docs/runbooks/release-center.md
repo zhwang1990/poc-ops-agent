@@ -24,28 +24,28 @@
 - 按环境执行开关，`dev`、`sit`、`uat` 分别控制，默认关闭。
 - Tomcat WAR 上传开关，默认关闭。
 - Liberty 脚本 Profile 发布开关，默认关闭；已审核 Profile 可以封装调用 HTTPS / JAR 发布能力的成熟脚本。
-- Liberty 脚本 Profile 配置，默认空配置；未配置已审核 Profile、Profile 未启用或缺少必需参数时控制面和 Worker 必须失败关闭。
+- Liberty 脚本 Profile 配置，默认空配置；未配置已审核 Profile、Profile 未启用或服务器脚本参数缺少模板引用值时控制面和 Worker 必须失败关闭。
 - 日志分析只读 Skill 开关，默认关闭。
 
 任何开关开启前必须确认对应策略、审计、指标和告警已经生效。
 
 ## Liberty 脚本 Profile
 
-Liberty 脚本发布只允许执行已经安全评审并在控制面脚本 Profile 页面登记、审核、启用的脚本 Profile。Profile 页面可以配置 `executablePath`、`workingDirectory`、参数模板、参数白名单、超时、成功退出码、审核状态和启用状态；新增或修改服务器时只能引用 `scriptProfile.profileId` 并填写脚本所需的 `name/value` 参数，发布单不能填写脚本路径、命令行、shell 片段或明文密钥。
+Liberty 脚本发布只允许执行已经安全评审并在控制面脚本 Profile 页面登记、审核、启用的脚本 Profile。Profile 是跨 `dev`、`sit`、`uat` 复用的通用脚本定义，页面可以配置 `executablePath`、`workingDirectory`、参数模板、超时、成功退出码、审核状态和启用状态；新增或修改服务器时只能引用 `scriptProfile.profileId` 并填写当前节点的 `name/value` 脚本参数，发布单不能填写脚本路径、命令行、shell 片段或明文密钥。
 
 Liberty 发布不要求操作台上传制品，但必须在脚本参数中提供 `artifactPath`。`artifactPath` 是以 `\\` 开头的共享目录路径，例如 `\\jenkins\share\orders\latest\orders.war`，通常作为脚本第三个参数传给经评审脚本，由脚本调用成熟 JAR / HTTPS 发布能力读取制品。控制面创建发布单时不绑定平台上传制品，但会要求所有启用的 Liberty 脚本节点都配置 `artifactPath`，并把该值纳入参数哈希。Worker 仍必须只执行控制面随已授权请求下发的已审核 Profile 定义，不得接受发布单临时传入的脚本路径或命令行。
 
 脚本 Profile 定义和 Worker 二次校验必须至少约束以下内容：
 
 - `executable-path`：审核过的脚本或包装程序绝对路径。
-- `arguments`：参数模板，只能引用 `{{artifactPath}}`、`{{applicationId}}`、`{{nodeId}}`、`{{managementEndpoint}}`、`{{applicationPath}}`、`{{credentialAlias}}` 和 `{{param.<name>}}` 等受控占位符。
-- `required-parameters` 和 `allowed-parameters`：脚本参数白名单；未列入白名单的参数必须被拒绝。
+- `arguments`：参数模板，只能引用 `{{artifactPath}}`、`{{applicationId}}`、`{{nodeId}}`、`{{managementEndpoint}}`、`{{applicationPath}}`、`{{credentialAlias}}` 和 `{{param.<name>}}` 等受控占位符；其中 `{{param.<name>}}` 的值必须来自服务器配置中的脚本参数。
+- 服务器脚本参数：不同节点可以传不同 `name/value`，例如 `serverName`、`applicationName`、`artifactPath`；参数名和值必须通过 Worker 二次校验，模板引用缺失时必须拒绝执行。
 - `timeout` 和 `success-exit-codes`：超时与成功退出码；超时或非成功退出码必须返回失败状态。
 - `artifact-storage-path` 和 `working-directory`：受限工作区；脚本不得从操作台输入中获得任意文件路径。
 
 脚本参数不得携带 `password`、`secret`、`token` 等敏感材料。需要凭据时只允许使用凭据别名或短期凭据边界，且不得把明文写入日志、审计、Prompt、制品或测试数据。
 
-脚本标准输出和标准错误由 Worker 合并写入 Profile 的 `workingDirectory` 下，文件名格式为 `release-script-<executionRequestId>.log`。当前控制面只在脚本失败时回传脱敏后的短摘要用于诊断；实时流式输出后续必须通过语义事件和审计边界单独补齐，不能让前端直接读取 Worker 文件系统。
+脚本标准输出和标准错误由 Worker 合并写入 Profile 的 `workingDirectory` 下，文件名格式为 `release-script-<executionRequestId>.log`。Worker 同时把输出转换为 `RELEASE_NODE_LOG` 语义事件，经控制面 SSE 接口转发到操作台发布单行内的“脚本输出”区域。该实时输出只包含脱敏后、最长 1000 字符的单条 stdout/stderr 文本，用于观察执行进度；前端不得直接读取 Worker 文件系统，最终成功或失败仍以确定性节点结果和工作流事件为准。
 
 ## 服务器配置维护
 

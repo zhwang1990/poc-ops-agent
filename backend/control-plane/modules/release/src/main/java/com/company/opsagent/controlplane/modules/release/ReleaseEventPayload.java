@@ -1,5 +1,6 @@
 package com.company.opsagent.controlplane.modules.release;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import java.time.Instant;
 import java.util.List;
 
@@ -7,11 +8,13 @@ public sealed interface ReleaseEventPayload permits
     ReleaseEventPayload.Created,
     ReleaseEventPayload.Confirmed,
     ReleaseEventPayload.NodeStarted,
+    ReleaseEventPayload.NodeLog,
     ReleaseEventPayload.NodeCompleted,
     ReleaseEventPayload.NodeFailed,
     ReleaseEventPayload.PartialFailed,
     ReleaseEventPayload.ManualInterventionRequired {
 
+  @JsonProperty("payloadType")
   ReleaseEventType payloadType();
 
   record Created(
@@ -80,6 +83,27 @@ public sealed interface ReleaseEventPayload permits
     @Override
     public ReleaseEventType payloadType() {
       return ReleaseEventType.RELEASE_NODE_STARTED;
+    }
+  }
+
+  record NodeLog(
+      String nodeId,
+      String stream,
+      String message,
+      Instant emittedAt) implements ReleaseEventPayload {
+
+    public NodeLog {
+      nodeId = ReleaseValues.requiredText(nodeId, "nodeId");
+      stream = ReleaseValues.requiredText(stream, "stream");
+      message = ReleaseValues.requiredText(message, "message");
+      if (emittedAt == null) {
+        throw new IllegalArgumentException("emittedAt is required");
+      }
+    }
+
+    @Override
+    public ReleaseEventType payloadType() {
+      return ReleaseEventType.RELEASE_NODE_LOG;
     }
   }
 

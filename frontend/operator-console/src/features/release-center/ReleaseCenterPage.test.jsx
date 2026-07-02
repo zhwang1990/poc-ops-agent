@@ -378,6 +378,12 @@ describe("ReleaseCenterPage", () => {
       http.get("/internal/release-center/artifacts", () => HttpResponse.json([releaseArtifact])),
       http.get("/internal/release-center/plans", () => HttpResponse.json([releasePlan])),
       http.get("/internal/release-center/servers", () => HttpResponse.json([releaseServer])),
+      http.get("/internal/release-center/plans/rel-1/events", () =>
+        new HttpResponse(`data: ${JSON.stringify(releaseNodeLogEvent)}\n\n`, {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        }),
+      ),
       http.post("/internal/release-center/plans/rel-1/execute", async () => {
         executeCalled = true;
         return HttpResponse.json({ ...releasePlan, status: "PARTIAL_FAILED" });
@@ -391,6 +397,7 @@ describe("ReleaseCenterPage", () => {
     await userEvent.click(executeButton);
 
     expect(executeCalled).toBe(true);
+    expect(await screen.findByText("deploy started")).toBeInTheDocument();
     expect(await screen.findByText("PARTIAL_FAILED")).toBeInTheDocument();
   });
 
@@ -560,27 +567,18 @@ describe("ReleaseCenterPage", () => {
       within(dialog).getByLabelText("Arguments"),
       "{{param.serverName}}\n{{param.applicationName}}\n{{param.artifactPath}}",
     );
-    await userEvent.type(
-      within(dialog).getByLabelText("Required parameters"),
-      "serverName\napplicationName\nartifactPath",
-    );
-    await userEvent.type(
-      within(dialog).getByLabelText("Allowed parameters"),
-      "serverName\napplicationName\nartifactPath",
-    );
+    expect(within(dialog).queryByLabelText("Required parameters")).not.toBeInTheDocument();
+    expect(within(dialog).queryByLabelText("Allowed parameters")).not.toBeInTheDocument();
     await userEvent.click(within(dialog).getByLabelText("Approved"));
     await userEvent.click(within(dialog).getByRole("button", { name: "Save script profile" }));
 
     await waitFor(() =>
       expect(savedProfile).toEqual({
         profileId: "liberty-war-deploy",
-        targetEnvironment: "dev",
         displayName: "Liberty WAR deploy",
         executablePath: "C:\\ops\\scripts\\liberty-war-deploy.cmd",
         workingDirectory: "C:\\ops-agent\\work\\release",
         arguments: ["{{param.serverName}}", "{{param.applicationName}}", "{{param.artifactPath}}"],
-        requiredParameters: ["serverName", "applicationName", "artifactPath"],
-        allowedParameters: ["serverName", "applicationName", "artifactPath"],
         successExitCodes: [0],
         timeoutSeconds: 600,
         approved: true,
@@ -755,4 +753,30 @@ const releasePlan = {
       status: "PENDING",
     },
   ],
+};
+
+const releaseNodeLogEvent = {
+  contractVersion: "1.0",
+  eventId: "88888888-8888-4888-8888-888888888888",
+  workflowId: "99999999-9999-4999-8999-999999999999",
+  releaseId: "rel-1",
+  sequence: 3,
+  timestamp: "2026-07-02T00:00:00Z",
+  type: "RELEASE_NODE_LOG",
+  payload: {
+    payloadType: "RELEASE_NODE_LOG",
+    nodeId: "node-1",
+    stream: "STDOUT",
+    message: "deploy started",
+    emittedAt: "2026-07-02T00:00:00Z",
+  },
+  audit: {
+    action: "RELEASE_NODE_LOG",
+    resource: "release:rel-1",
+    policyVersion: "release-center-policy-v1",
+    result: "LOG",
+    reason: "release node script output",
+    traceId: "trace:rel-1",
+    requestId: "request:rel-1",
+  },
 };

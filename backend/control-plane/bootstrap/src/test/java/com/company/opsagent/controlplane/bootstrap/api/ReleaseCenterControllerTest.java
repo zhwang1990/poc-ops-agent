@@ -7,9 +7,14 @@ import static org.springframework.http.MediaType.MULTIPART_FORM_DATA;
 import com.company.opsagent.controlplane.modules.release.ManagementMode;
 import com.company.opsagent.controlplane.modules.release.ArtifactType;
 import com.company.opsagent.controlplane.modules.release.ReleaseArtifact;
+import com.company.opsagent.controlplane.modules.release.ReleaseAuditContext;
 import com.company.opsagent.controlplane.modules.release.ReleaseCatalogStore;
 import com.company.opsagent.controlplane.modules.release.ReleaseEnvironmentPolicy;
+import com.company.opsagent.controlplane.modules.release.ReleaseEventPayload;
+import com.company.opsagent.controlplane.modules.release.ReleaseEventSink;
+import com.company.opsagent.controlplane.modules.release.ReleaseEventType;
 import com.company.opsagent.controlplane.modules.release.ReleaseServer;
+import com.company.opsagent.controlplane.modules.release.ReleaseWorkflowEvent;
 import com.company.opsagent.controlplane.modules.release.ServerType;
 import com.company.opsagent.controlplane.modules.release.TargetEnvironment;
 import com.nimbusds.jose.JOSEException;
@@ -19,9 +24,11 @@ import com.nimbusds.jose.crypto.MACSigner;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Date;
 import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -59,6 +66,9 @@ class ReleaseCenterControllerTest {
 
   @Autowired
   private ReleaseCatalogStore releaseCatalogStore;
+
+  @Autowired
+  private ReleaseEventSink releaseEventSink;
 
   @Value("${ops-agent.security.shared-secret}")
   private String sharedSecret;
@@ -120,7 +130,7 @@ class ReleaseCenterControllerTest {
 
   @Test
   void createsLibertyScriptProfileServerThroughPolicyProtectedApi() {
-    seedApprovedScriptProfile("dev");
+    seedApprovedScriptProfile();
 
     webTestClient.post()
         .uri("/internal/release-center/servers")
@@ -167,7 +177,6 @@ class ReleaseCenterControllerTest {
         .bodyValue("""
             {
               "profileId": "liberty-war-deploy",
-              "targetEnvironment": "dev",
               "displayName": "Liberty WAR deploy",
               "executablePath": "C:\\\\ops\\\\scripts\\\\liberty-war-deploy.cmd",
               "workingDirectory": "C:\\\\ops-agent\\\\work\\\\release",
@@ -176,8 +185,6 @@ class ReleaseCenterControllerTest {
                 "{{param.applicationName}}",
                 "{{param.artifactPath}}"
               ],
-              "requiredParameters": ["serverName", "applicationName", "artifactPath"],
-              "allowedParameters": ["serverName", "applicationName", "artifactPath"],
               "successExitCodes": [0],
               "timeoutSeconds": 600,
               "approved": true,
@@ -188,20 +195,77 @@ class ReleaseCenterControllerTest {
         .expectStatus().isOk()
         .expectBody()
         .jsonPath("$.profileId").isEqualTo("liberty-war-deploy")
-        .jsonPath("$.targetEnvironment").isEqualTo("DEV")
+        .jsonPath("$.targetEnvironment").doesNotExist()
         .jsonPath("$.executablePath").isEqualTo("C:\\ops\\scripts\\liberty-war-deploy.cmd")
         .jsonPath("$.arguments[2]").isEqualTo("{{param.artifactPath}}")
         .jsonPath("$.approved").isEqualTo(true)
         .jsonPath("$.enabled").isEqualTo(true);
 
     webTestClient.get()
-        .uri("/internal/release-center/script-profiles?targetEnvironment=dev")
+        .uri("/internal/release-center/script-profiles")
         .headers(headers -> headers.setBearerAuth(token("alice", List.of("ops-reader"))))
         .exchange()
         .expectStatus().isOk()
         .expectBody()
         .jsonPath("$[0].profileId").isEqualTo("liberty-war-deploy")
-        .jsonPath("$[0].requiredParameters[2]").isEqualTo("artifactPath");
+        .jsonPath("$[0].requiredParameters").doesNotExist()
+        .jsonPath("$[0].allowedParameters").doesNotExist();
+  }
+
+  @Test
+  void streamsReleasePlanEventsThroughPolicyProtectedSse() {
+    seedReleaseCatalog("dev");
+    webTestClient.post()
+        .uri("/internal/release-center/plans")
+        .headers(headers -> headers.setBearerAuth(token("admin", List.of("ops-admin"))))
+        .contentType(APPLICATION_JSON)
+        .bodyValue("""
+            {
+              "applicationId": "orders",
+              "targetEnvironment": "dev",
+              "artifactId": "artifact-dev-1",
+              "nodeIds": ["dev-tomcat-1"],
+              "parametersHash": "sha256:abc123"
+            }
+            """)
+        .exchange()
+        .expectStatus().isOk();
+    releaseEventSink.publish(new ReleaseWorkflowEvent(
+        "1.0",
+        UUID.randomUUID().toString(),
+        UUID.nameUUIDFromBytes("rel-orders-dev".getBytes(StandardCharsets.UTF_8)).toString(),
+        "rel-orders-dev",
+        999,
+        Instant.parse("2026-07-02T00:00:00Z"),
+        ReleaseEventType.RELEASE_NODE_LOG,
+        new ReleaseEventPayload.NodeLog("dev-tomcat-1", "STDOUT", "deploy started", Instant.parse("2026-07-02T00:00:00Z")),
+        new ReleaseAuditContext(
+            "RELEASE_NODE_LOG",
+            "release:rel-orders-dev",
+            "release-center-policy-v1",
+            "LOG",
+            "release node script output",
+            "trace:rel-orders-dev",
+            "request:rel-orders-dev")))
+        .block();
+
+    webTestClient.get()
+        .uri("/internal/release-center/plans/rel-orders-dev/events?afterSequence=998")
+        .headers(headers -> headers.setBearerAuth(token("alice", List.of("ops-reader"))))
+        .accept(org.springframework.http.MediaType.TEXT_EVENT_STREAM)
+        .exchange()
+        .expectStatus().isOk()
+        .expectHeader().contentTypeCompatibleWith(org.springframework.http.MediaType.TEXT_EVENT_STREAM)
+        .returnResult(String.class)
+        .getResponseBody()
+        .as(responseBody -> {
+          String body = responseBody.blockFirst(Duration.ofSeconds(5));
+          org.junit.jupiter.api.Assertions.assertNotNull(body);
+          org.junit.jupiter.api.Assertions.assertTrue(body.contains("RELEASE_NODE_LOG"), body);
+          org.junit.jupiter.api.Assertions.assertTrue(body.contains("\"payloadType\":\"RELEASE_NODE_LOG\""), body);
+          org.junit.jupiter.api.Assertions.assertTrue(body.contains("deploy started"), body);
+          return responseBody;
+        });
   }
 
   @Test
@@ -213,13 +277,10 @@ class ReleaseCenterControllerTest {
         .bodyValue("""
             {
               "profileId": "liberty-war-deploy",
-              "targetEnvironment": "dev",
               "displayName": "Liberty WAR deploy",
               "executablePath": "C:\\\\ops\\\\scripts\\\\liberty-war-deploy.cmd",
               "workingDirectory": "C:\\\\ops-agent\\\\work\\\\release",
               "arguments": ["{{param.serverName}}"],
-              "requiredParameters": ["serverName"],
-              "allowedParameters": ["serverName"],
               "successExitCodes": [0],
               "timeoutSeconds": 600,
               "approved": false,
@@ -557,7 +618,7 @@ class ReleaseCenterControllerTest {
   }
 
   private void seedLibertyScriptCatalogWithoutUploadedArtifact(String targetEnvironment) {
-    seedApprovedScriptProfile(targetEnvironment);
+    seedApprovedScriptProfile();
     TargetEnvironment environment = TargetEnvironment.from(targetEnvironment);
     releaseCatalogStore.saveApplication(com.company.opsagent.controlplane.modules.release.ReleaseApplication.create(
             "orders",
@@ -588,17 +649,14 @@ class ReleaseCenterControllerTest {
         .block();
   }
 
-  private void seedApprovedScriptProfile(String targetEnvironment) {
+  private void seedApprovedScriptProfile() {
     releaseCatalogStore.saveScriptProfileDefinition(
             com.company.opsagent.controlplane.modules.release.ReleaseScriptProfileDefinition.create(
                 "liberty-war-deploy",
-                targetEnvironment,
                 "Liberty WAR deploy",
                 "C:\\ops\\scripts\\liberty-war-deploy.cmd",
                 "C:\\ops-agent\\work\\release",
                 List.of("{{param.serverName}}", "{{param.applicationName}}", "{{param.artifactPath}}"),
-                List.of("serverName", "applicationName", "artifactPath"),
-                List.of("serverName", "applicationName", "artifactPath"),
                 List.of(0),
                 600,
                 true,

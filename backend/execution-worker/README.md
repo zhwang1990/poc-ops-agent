@@ -32,8 +32,9 @@
 - 操作台和发布单只能提交 `profileId` 与受约束的 `name/value` 参数，不能临时提交脚本路径、命令行或 shell 片段。
 - Worker 使用 `ProcessBuilder` 参数数组执行已审核定义中的 `executablePath` 与 `arguments` 模板，不通过 shell 拼接命令。
 - 未引用 `{{artifactPath}}`、`{{artifactId}}`、`{{artifactStorageKey}}` 或 `{{artifactChecksum}}` 的 Profile 可以无制品执行；引用任一制品占位符时必须提供受控 WAR 制品上下文。
-- Profile 必须配置必填参数、允许参数、超时、成功退出码和受限工作目录，并且处于已审核和已启用状态；未配置、未审核、未启用或参数不匹配时必须失败关闭。
+- Profile 是跨 `dev`、`sit`、`uat` 复用的通用脚本定义，必须配置参数模板、超时、成功退出码和受限工作目录，并且处于已审核和已启用状态；不同节点的 `serverName`、`applicationName`、`artifactPath` 等值由服务器配置中的脚本参数提供，模板引用的参数缺失时必须失败关闭。
 - 脚本参数不得携带密码、密钥或 token；敏感材料只能通过凭据别名、短期凭据或等价受控边界提供。
+- Worker 会把脚本 stdout/stderr 写入受限工作目录中的执行日志，并同步产出脱敏后的 `LOG` 事件；控制面只转发强类型 `RELEASE_NODE_LOG` 事件给操作台实时展示，不能让前端直接读取 Worker 文件系统。
 
 ## SQL 工作台只读边界
 

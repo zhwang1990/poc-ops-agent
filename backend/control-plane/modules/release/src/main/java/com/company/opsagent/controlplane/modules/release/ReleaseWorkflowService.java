@@ -13,6 +13,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.IntStream;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 public class ReleaseWorkflowService {
@@ -137,10 +138,31 @@ public class ReleaseWorkflowService {
             runningNode.startedAt()),
         "STARTED",
         "release node started")
-        .then(workerGateway.execute(runningPlan, runningNode))
-        .switchIfEmpty(Mono.just(ReleaseNodeExecutionResult.failed("RELEASE_WORKER_EMPTY_RESULT")))
+        .thenMany(workerGateway.executeWithEvents(runningPlan, runningNode)
+            .concatMap(event -> handleExecutionEvent(runningPlan, runningNode, event)))
+        .last(ReleaseNodeExecutionResult.failed("RELEASE_WORKER_EMPTY_RESULT"))
         .onErrorResume(error -> Mono.just(ReleaseNodeExecutionResult.failed("RELEASE_WORKER_ERROR")))
         .flatMap(result -> applyNodeResult(runningPlan, runningNode, result, index));
+  }
+
+  private Flux<ReleaseNodeExecutionResult> handleExecutionEvent(
+      ReleasePlan runningPlan,
+      ReleaseNodeStep runningNode,
+      ReleaseNodeExecutionEvent event) {
+    if (event.eventType() == ReleaseNodeExecutionEvent.EventType.RESULT) {
+      return Flux.just(event.result());
+    }
+    return publish(
+        runningPlan,
+        ReleaseEventType.RELEASE_NODE_LOG,
+        new ReleaseEventPayload.NodeLog(
+            event.nodeId(),
+            event.stream(),
+            event.message(),
+            event.emittedAt()),
+        "LOG",
+        "release node script output")
+        .thenMany(Flux.empty());
   }
 
   private Mono<ReleasePlan> applyNodeResult(
@@ -252,6 +274,10 @@ public class ReleaseWorkflowService {
 
   private long nextSequence(String releaseId) {
     return eventSequences.computeIfAbsent(releaseId, ignored -> new AtomicLong(1)).getAndIncrement();
+  }
+
+  public Flux<ReleaseWorkflowEvent> events(String releaseId, long afterSequence) {
+    return eventSink.events(releaseId, afterSequence);
   }
 
   private String workflowId(String releaseId) {

@@ -1,6 +1,7 @@
 package com.company.opsagent.executionworker.release;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.company.opsagent.contracts.workflow.OperatorContext;
@@ -83,12 +84,9 @@ class LibertyScriptProfileReleaseAdapterTest {
                     "{{param.serverName}}",
                     "{{param.applicationName}}",
                     "{{param.artifactPath}}"),
-                List.of("serverName", "applicationName", "artifactPath"),
-                List.of("serverName", "applicationName", "artifactPath"),
                 List.of(0),
                 10,
                 tempDir.toString(),
-                List.of("dev"),
                 true,
                 true))))
         .block();
@@ -111,12 +109,9 @@ class LibertyScriptProfileReleaseAdapterTest {
                 new ReleaseWorkerRequest.ReleaseScriptProfileDefinition(
                     javaExecutable().toString(),
                     List.of("{{param.serverName}}"),
-                    List.of("serverName"),
-                    List.of("serverName"),
                     List.of(0),
                     10,
                     tempDir.toString(),
-                    List.of("dev"),
                     false,
                     true))))
         .block();
@@ -126,7 +121,7 @@ class LibertyScriptProfileReleaseAdapterTest {
   }
 
   @Test
-  void deployRejectsRequestScriptProfileDefinitionForDifferentEnvironment() {
+  void deployRejectsMissingTemplateScriptProfileParameter() {
     ReleaseWorkerResult result = new LibertyScriptProfileReleaseAdapter(tempDir, Map.of(), clock)
         .deploy(request(
             (ReleaseWorkerRequest.ReleaseArtifactReference) null,
@@ -135,23 +130,20 @@ class LibertyScriptProfileReleaseAdapterTest {
                 List.of(new ReleaseWorkerRequest.ReleaseScriptParameter("serverName", "defaultServer")),
                 new ReleaseWorkerRequest.ReleaseScriptProfileDefinition(
                     javaExecutable().toString(),
-                    List.of("{{param.serverName}}"),
-                    List.of("serverName"),
-                    List.of("serverName"),
+                    List.of("{{param.serverName}}", "{{param.applicationName}}"),
                     List.of(0),
                     10,
                     tempDir.toString(),
-                    List.of("sit"),
                     true,
                     true))))
         .block();
 
     assertEquals(ReleaseWorkerStatus.REJECTED, result.status());
-    assertEquals("LIBERTY_SCRIPT_PROFILE_ENVIRONMENT_NOT_ALLOWED", result.errorCode());
+    assertEquals("LIBERTY_SCRIPT_PARAMETER_REQUIRED", result.errorCode());
   }
 
   @Test
-  void deployRejectsUnknownScriptProfileParameter() throws Exception {
+  void deployAllowsExtraNodeScriptProfileParameter() throws Exception {
     byte[] artifactBytes = "war-content".getBytes(StandardCharsets.UTF_8);
     Files.write(tempDir.resolve("artifact-1.war"), artifactBytes);
     ReleaseWorkerResult result = adapter(tempDir.resolve("script-output.txt"))
@@ -161,11 +153,11 @@ class LibertyScriptProfileReleaseAdapterTest {
                 "liberty-war-deploy",
                 List.of(
                     new ReleaseWorkerRequest.ReleaseScriptParameter("serverName", "defaultServer"),
+                    new ReleaseWorkerRequest.ReleaseScriptParameter("applicationName", "orders"),
                     new ReleaseWorkerRequest.ReleaseScriptParameter("unexpected", "value")))))
         .block();
 
-    assertEquals(ReleaseWorkerStatus.REJECTED, result.status());
-    assertEquals("LIBERTY_SCRIPT_PARAMETER_NOT_ALLOWED", result.errorCode());
+    assertEquals(ReleaseWorkerStatus.SUCCEEDED, result.status());
   }
 
   @Test
@@ -187,6 +179,31 @@ class LibertyScriptProfileReleaseAdapterTest {
     assertEquals("LIBERTY_SCRIPT_PROFILE_INVALID", result.errorCode());
   }
 
+  @Test
+  void deployWithEventsStreamsSanitizedScriptOutputBeforeResult() throws Exception {
+    Path output = tempDir.resolve("script-output.txt");
+    LibertyScriptProfileReleaseAdapter adapter = adapter(output);
+    byte[] artifactBytes = "war-content".getBytes(StandardCharsets.UTF_8);
+    Files.write(tempDir.resolve("artifact-1.war"), artifactBytes);
+
+    List<ReleaseWorkerExecutionEvent> events = adapter.deployWithEvents(request(checksum(artifactBytes)))
+        .collectList()
+        .block();
+
+    assertEquals(ReleaseWorkerExecutionEvent.EventType.LOG, events.get(0).eventType());
+    assertEquals("node-1", events.get(0).nodeId());
+    assertEquals("STDOUT", events.get(0).stream());
+    assertTrue(events.stream()
+        .filter(event -> event.eventType() == ReleaseWorkerExecutionEvent.EventType.LOG)
+        .anyMatch(event -> event.message().contains("deploy started")));
+    String eventText = events.toString();
+    assertFalse(eventText.contains("abc123"));
+    assertTrue(eventText.contains("[REDACTED]"));
+    ReleaseWorkerExecutionEvent last = events.get(events.size() - 1);
+    assertEquals(ReleaseWorkerExecutionEvent.EventType.RESULT, last.eventType());
+    assertEquals(ReleaseWorkerStatus.SUCCEEDED, last.result().status());
+  }
+
   private LibertyScriptProfileReleaseAdapter adapter(Path output) {
     ReleaseWorkerProperties.Liberty.ScriptProfile profile = new ReleaseWorkerProperties.Liberty.ScriptProfile();
     profile.setExecutablePath(javaExecutable());
@@ -195,11 +212,10 @@ class LibertyScriptProfileReleaseAdapterTest {
         System.getProperty("java.class.path"),
         LibertyScriptProbe.class.getName(),
         output.toString(),
+        "--stdout",
         "{{artifactPath}}",
         "{{param.serverName}}",
         "{{param.applicationName}}"));
-    profile.setRequiredParameters(List.of("serverName", "applicationName"));
-    profile.setAllowedParameters(List.of("serverName", "applicationName"));
     profile.setTimeout(Duration.ofSeconds(10));
     return new LibertyScriptProfileReleaseAdapter(
         tempDir,
@@ -217,8 +233,6 @@ class LibertyScriptProfileReleaseAdapterTest {
         output.toString(),
         "{{param.serverName}}",
         "{{param.applicationName}}"));
-    profile.setRequiredParameters(List.of("serverName", "applicationName"));
-    profile.setAllowedParameters(List.of("serverName", "applicationName"));
     profile.setTimeout(Duration.ofSeconds(10));
     return new LibertyScriptProfileReleaseAdapter(
         tempDir,

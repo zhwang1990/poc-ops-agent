@@ -1,23 +1,32 @@
 package com.company.opsagent.executionworker.release;
 
 import java.io.IOException;
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
 import java.time.Clock;
 import java.time.Duration;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
@@ -29,7 +38,11 @@ public class LibertyScriptProfileReleaseAdapter implements ReleaseAdapter {
   private static final Pattern PROFILE_ID_PATTERN = Pattern.compile("^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$");
   private static final Pattern PARAMETER_NAME_PATTERN = Pattern.compile("^[A-Za-z][A-Za-z0-9_.-]{0,63}$");
   private static final Pattern TEMPLATE_TOKEN_PATTERN = Pattern.compile("\\{\\{([A-Za-z0-9_.:-]+)}}");
+  private static final Pattern SECRET_ASSIGNMENT_PATTERN = Pattern.compile(
+      "(?i)\\b(?:password|passwd|pwd|secret|token|api[-_]?key)\\s*[:=]\\s*\\S+");
+  private static final Pattern CONTROL_CHARACTER_PATTERN = Pattern.compile("[\\p{Cntrl}&&[^\r\n\t]]");
   private static final int MAX_OUTPUT_CHARS = 600;
+  private static final int MAX_LOG_LINE_CHARS = 1000;
 
   private final Path artifactStoragePath;
   private final Map<String, ReleaseWorkerProperties.Liberty.ScriptProfile> scriptProfiles;
@@ -58,7 +71,26 @@ public class LibertyScriptProfileReleaseAdapter implements ReleaseAdapter {
 
   @Override
   public Mono<ReleaseWorkerResult> deploy(ReleaseWorkerRequest request) {
-    return Mono.fromCallable(() -> deployBlocking(request)).subscribeOn(Schedulers.boundedElastic());
+    return deployWithEvents(request)
+        .filter(event -> event.eventType() == ReleaseWorkerExecutionEvent.EventType.RESULT)
+        .map(ReleaseWorkerExecutionEvent::result)
+        .last()
+        .subscribeOn(Schedulers.boundedElastic());
+  }
+
+  @Override
+  public Flux<ReleaseWorkerExecutionEvent> deployWithEvents(ReleaseWorkerRequest request) {
+    return Flux.<ReleaseWorkerExecutionEvent>create(sink -> Schedulers.boundedElastic().schedule(() -> {
+      ReleaseWorkerResult result = deployBlocking(request, event -> {
+        if (!sink.isCancelled()) {
+          sink.next(event);
+        }
+      });
+      if (!sink.isCancelled()) {
+        sink.next(ReleaseWorkerExecutionEvent.result(result));
+        sink.complete();
+      }
+    }));
   }
 
   @Override
@@ -86,7 +118,9 @@ public class LibertyScriptProfileReleaseAdapter implements ReleaseAdapter {
     return Mono.just(notConfigured(request));
   }
 
-  private ReleaseWorkerResult deployBlocking(ReleaseWorkerRequest request) {
+  private ReleaseWorkerResult deployBlocking(
+      ReleaseWorkerRequest request,
+      Consumer<ReleaseWorkerExecutionEvent> eventConsumer) {
     ReleaseWorkerResult validationError = validateRequest(request);
     if (validationError != null) {
       return validationError;
@@ -117,19 +151,24 @@ public class LibertyScriptProfileReleaseAdapter implements ReleaseAdapter {
       List<String> commandLine = commandLine(request, artifactPath, configuredProfile);
       ProcessBuilder processBuilder = new ProcessBuilder(commandLine)
           .directory(workingDirectory.toFile())
-          .redirectErrorStream(true)
-          .redirectOutput(outputPath.toFile());
+          .redirectErrorStream(true);
       Process process = processBuilder.start();
+      ExecutorService outputExecutor = Executors.newSingleThreadExecutor();
+      Future<?> outputDrain = outputExecutor.submit(() -> drainOutput(request, process, outputPath, eventConsumer));
       Duration timeout = timeout(configuredProfile);
       boolean finished = process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS);
       if (!finished) {
         process.destroyForcibly();
+        waitForOutputDrain(outputDrain);
+        outputExecutor.shutdownNow();
         return ReleaseWorkerResult.failed(
             request,
             "LIBERTY_SCRIPT_TIMEOUT",
             "Liberty script profile timed out",
             clock);
       }
+      waitForOutputDrain(outputDrain);
+      outputExecutor.shutdown();
       int exitCode = process.exitValue();
       if (successExitCodes(configuredProfile).contains(exitCode)) {
         return ReleaseWorkerResult.succeeded(request, clock);
@@ -155,6 +194,64 @@ public class LibertyScriptProfileReleaseAdapter implements ReleaseAdapter {
     } catch (IllegalArgumentException exception) {
       return rejected(request, "LIBERTY_SCRIPT_PROFILE_INVALID", exception.getMessage());
     }
+  }
+
+  private void drainOutput(
+      ReleaseWorkerRequest request,
+      Process process,
+      Path outputPath,
+      Consumer<ReleaseWorkerExecutionEvent> eventConsumer) {
+    ReleaseWorkerRequest.ReleaseNodeTarget node = request.command().nodes().getFirst();
+    try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8));
+        BufferedWriter writer = Files.newBufferedWriter(
+            outputPath,
+            StandardCharsets.UTF_8,
+            StandardOpenOption.CREATE,
+            StandardOpenOption.TRUNCATE_EXISTING,
+            StandardOpenOption.WRITE)) {
+      String line;
+      while ((line = reader.readLine()) != null) {
+        writer.write(line);
+        writer.newLine();
+        emitLogEvent(request, node.nodeId(), sanitizeOutputLine(line), eventConsumer);
+      }
+    } catch (IOException ignored) {
+      emitLogEvent(request, node.nodeId(), "script output could not be captured", eventConsumer);
+    }
+  }
+
+  private void waitForOutputDrain(Future<?> outputDrain) {
+    try {
+      outputDrain.get(5, TimeUnit.SECONDS);
+    } catch (Exception ignored) {
+      outputDrain.cancel(true);
+    }
+  }
+
+  private void emitLogEvent(
+      ReleaseWorkerRequest request,
+      String nodeId,
+      String message,
+      Consumer<ReleaseWorkerExecutionEvent> eventConsumer) {
+    if (eventConsumer == null || message == null || message.isBlank()) {
+      return;
+    }
+    eventConsumer.accept(ReleaseWorkerExecutionEvent.log(
+        request,
+        nodeId,
+        "STDOUT",
+        message,
+        OffsetDateTime.ofInstant(clock.instant(), ZoneOffset.UTC)));
+  }
+
+  private String sanitizeOutputLine(String line) {
+    String sanitized = CONTROL_CHARACTER_PATTERN.matcher(line == null ? "" : line).replaceAll(" ");
+    sanitized = SECRET_ASSIGNMENT_PATTERN.matcher(sanitized).replaceAll("[REDACTED]");
+    sanitized = sanitized.trim();
+    if (sanitized.length() > MAX_LOG_LINE_CHARS) {
+      return sanitized.substring(0, MAX_LOG_LINE_CHARS) + "...";
+    }
+    return sanitized;
   }
 
   private ReleaseWorkerResult validateRequest(ReleaseWorkerRequest request) {
@@ -209,15 +306,6 @@ public class LibertyScriptProfileReleaseAdapter implements ReleaseAdapter {
     if (!definition.approved() || !definition.enabled()) {
       return rejected(request, "LIBERTY_SCRIPT_PROFILE_NOT_APPROVED", "Liberty script profile is not approved and enabled");
     }
-    List<String> targetEnvironments = definition.targetEnvironments() == null
-        ? List.of()
-        : definition.targetEnvironments();
-    if (!targetEnvironments.contains(request.command().targetEnvironment())) {
-      return rejected(
-          request,
-          "LIBERTY_SCRIPT_PROFILE_ENVIRONMENT_NOT_ALLOWED",
-          "Liberty script profile is not allowed for the target environment");
-    }
     return null;
   }
 
@@ -230,8 +318,6 @@ public class LibertyScriptProfileReleaseAdapter implements ReleaseAdapter {
     ReleaseWorkerProperties.Liberty.ScriptProfile configuredProfile = new ReleaseWorkerProperties.Liberty.ScriptProfile();
     configuredProfile.setExecutablePath(isBlank(definition.executablePath()) ? null : Path.of(definition.executablePath()));
     configuredProfile.setArguments(definition.arguments() == null ? List.of() : definition.arguments());
-    configuredProfile.setRequiredParameters(definition.requiredParameters() == null ? List.of() : definition.requiredParameters());
-    configuredProfile.setAllowedParameters(definition.allowedParameters() == null ? List.of() : definition.allowedParameters());
     configuredProfile.setSuccessExitCodes(definition.successExitCodes() == null ? List.of() : definition.successExitCodes());
     configuredProfile.setTimeout(Duration.ofSeconds(definition.timeoutSeconds()));
     configuredProfile.setWorkingDirectory(isBlank(definition.workingDirectory()) ? null : Path.of(definition.workingDirectory()));
@@ -292,16 +378,10 @@ public class LibertyScriptProfileReleaseAdapter implements ReleaseAdapter {
     } catch (IllegalArgumentException exception) {
       return rejected(request, "LIBERTY_SCRIPT_PROFILE_INVALID", exception.getMessage());
     }
-    Set<String> allowed = allowedParameters(configuredProfile);
-    for (String name : parameters.keySet()) {
-      if (!allowed.contains(name)) {
-        return rejected(request, "LIBERTY_SCRIPT_PARAMETER_NOT_ALLOWED", "Liberty script parameter is not allowed");
-      }
-    }
-    for (String requiredParameter : configuredProfile.getRequiredParameters()) {
-      if (!parameters.containsKey(requiredParameter)) {
-        return rejected(request, "LIBERTY_SCRIPT_PARAMETER_REQUIRED", "Liberty script required parameter is missing");
-      }
+    try {
+      validateTemplateParameters(configuredProfile.getArguments(), parameters);
+    } catch (IllegalArgumentException exception) {
+      return rejected(request, "LIBERTY_SCRIPT_PARAMETER_REQUIRED", exception.getMessage());
     }
     return null;
   }
@@ -384,14 +464,6 @@ public class LibertyScriptProfileReleaseAdapter implements ReleaseAdapter {
     return Map.copyOf(parameters);
   }
 
-  private Set<String> allowedParameters(ReleaseWorkerProperties.Liberty.ScriptProfile configuredProfile) {
-    Set<String> allowed = new HashSet<>(configuredProfile.getAllowedParameters());
-    if (allowed.isEmpty()) {
-      allowed.addAll(configuredProfile.getRequiredParameters());
-    }
-    return allowed;
-  }
-
   private boolean usesArtifactTemplate(ReleaseWorkerProperties.Liberty.ScriptProfile configuredProfile) {
     return configuredProfile.getArguments().stream()
         .anyMatch(argument -> argument != null && (
@@ -399,6 +471,21 @@ public class LibertyScriptProfileReleaseAdapter implements ReleaseAdapter {
                 || argument.contains("{{artifactId}}")
                 || argument.contains("{{artifactStorageKey}}")
                 || argument.contains("{{artifactChecksum}}")));
+  }
+
+  private void validateTemplateParameters(List<String> arguments, Map<String, String> scriptParameters) {
+    for (String argument : arguments) {
+      if (argument == null) {
+        continue;
+      }
+      Matcher matcher = TEMPLATE_TOKEN_PATTERN.matcher(argument);
+      while (matcher.find()) {
+        String token = matcher.group(1);
+        if (token.startsWith("param.") && !scriptParameters.containsKey(token.substring("param.".length()))) {
+          throw new IllegalArgumentException("Liberty script parameter is required: " + token.substring("param.".length()));
+        }
+      }
+    }
   }
 
   private Path artifactPath(String storageKey) {

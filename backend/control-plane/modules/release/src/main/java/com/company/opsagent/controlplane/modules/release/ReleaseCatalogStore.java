@@ -23,11 +23,11 @@ public interface ReleaseCatalogStore {
 
   Mono<ReleaseScriptProfileDefinition> saveScriptProfileDefinition(ReleaseScriptProfileDefinition profile);
 
-  Mono<ReleaseScriptProfileDefinition> findScriptProfileDefinition(String targetEnvironment, String profileId);
+  Mono<ReleaseScriptProfileDefinition> findScriptProfileDefinition(String profileId);
 
-  Flux<ReleaseScriptProfileDefinition> listScriptProfileDefinitions(String targetEnvironment);
+  Flux<ReleaseScriptProfileDefinition> listScriptProfileDefinitions();
 
-  Mono<Void> deleteScriptProfileDefinition(String targetEnvironment, String profileId);
+  Mono<Void> deleteScriptProfileDefinition(String profileId);
 
   Mono<ReleaseArtifact> saveArtifact(ReleaseArtifact artifact);
 

@@ -18,6 +18,7 @@ import {
   releaseArtifactSchema,
   releaseCredentialSummarySchema,
   releasePlanSchema,
+  releaseWorkflowEventSchema,
   releaseScriptProfileDefinitionSchema,
   releaseServerSchema,
 } from "./release-center-schemas.js";
@@ -295,16 +296,13 @@ describe("release center schemas", () => {
     expect(parsed.scriptProfile?.parameters[0].name).toBe("serverName");
   });
 
-  test("accepts approved Liberty script profile definitions without secrets", () => {
+  test("accepts shared Liberty script profile definitions without node parameter declarations", () => {
     const parsed = releaseScriptProfileDefinitionSchema.parse({
       profileId: "liberty-war-deploy",
-      targetEnvironment: "dev",
       displayName: "Liberty WAR deploy",
       executablePath: "C:\\ops\\scripts\\liberty-war-deploy.cmd",
       workingDirectory: "C:\\ops-agent\\work\\release",
       arguments: ["{{param.serverName}}", "{{param.applicationName}}", "{{param.artifactPath}}"],
-      requiredParameters: ["serverName", "applicationName", "artifactPath"],
-      allowedParameters: ["serverName", "applicationName", "artifactPath"],
       successExitCodes: [0],
       timeoutSeconds: 600,
       approved: true,
@@ -312,12 +310,28 @@ describe("release center schemas", () => {
     });
 
     expect(parsed.profileId).toBe("liberty-war-deploy");
-    expect(parsed.targetEnvironment).toBe("dev");
     expect(parsed.arguments[2]).toBe("{{param.artifactPath}}");
     expect(() =>
       releaseScriptProfileDefinitionSchema.parse({
         ...parsed,
-        requiredParameters: ["apiToken"],
+        targetEnvironment: "dev",
+      }),
+    ).toThrow();
+  });
+
+  test("accepts release node log events and rejects mismatched payload types", () => {
+    const parsed = releaseWorkflowEventSchema.parse(releaseNodeLogEvent);
+
+    expect(parsed.type).toBe("RELEASE_NODE_LOG");
+    expect(parsed.payload.payloadType).toBe("RELEASE_NODE_LOG");
+    if (parsed.payload.payloadType !== "RELEASE_NODE_LOG") {
+      throw new Error("expected release node log payload");
+    }
+    expect(parsed.payload.message).toBe("deploy started");
+    expect(() =>
+      releaseWorkflowEventSchema.parse({
+        ...releaseNodeLogEvent,
+        type: "RELEASE_NODE_STARTED",
       }),
     ).toThrow();
   });
@@ -652,6 +666,32 @@ const releasePlan = {
       status: "PENDING",
     },
   ],
+};
+
+const releaseNodeLogEvent = {
+  contractVersion: "1.0",
+  eventId: "88888888-8888-4888-8888-888888888888",
+  workflowId: "99999999-9999-4999-8999-999999999999",
+  releaseId: "rel-1",
+  sequence: 3,
+  timestamp: "2026-07-02T00:00:00Z",
+  type: "RELEASE_NODE_LOG",
+  payload: {
+    payloadType: "RELEASE_NODE_LOG",
+    nodeId: "node-1",
+    stream: "STDOUT",
+    message: "deploy started",
+    emittedAt: "2026-07-02T00:00:00Z",
+  },
+  audit: {
+    action: "RELEASE_NODE_LOG",
+    resource: "release:rel-1",
+    policyVersion: "release-center-policy-v1",
+    result: "LOG",
+    reason: "release node script output",
+    traceId: "trace:rel-1",
+    requestId: "request:rel-1",
+  },
 };
 
 const validationReport = {
