@@ -12,28 +12,29 @@
 
 - Java 21，并确保 `java` 在 `PATH` 中。
 - Maven 3.9 或兼容版本，并确保 `mvn` 在 `PATH` 中。
+- Windows 命令提示符 `cmd.exe`。
 
 先确认工具可用：
 
-```powershell
+```cmd
 java -version
 mvn -v
 ```
 
-如果 `mvn -v` 不能运行，需要先安装 Maven 或修复 `PATH`。本手册使用系统 `mvn`，不依赖 `mvnw.cmd`。
+如果 `mvn -v` 不能运行，需要先安装 Maven 或修复 `PATH`。本手册只使用 `cmd.exe` 和系统 `mvn`，不依赖 `mvnw.cmd`。
 
 ## 快速打包
 
-从仓库根目录进入后端目录：
+进入后端目录。请把 `C:\path\to\poc-ops-agent` 替换成实际仓库路径：
 
-```powershell
-cd <repo-root>\backend
+```cmd
+cd /d C:\path\to\poc-ops-agent\backend
 ```
 
 执行后端单独打包：
 
-```powershell
-mvn -f .\pom.xml -B -ntp -pl control-plane/bootstrap,execution-worker -am -DskipTests package
+```cmd
+mvn -f pom.xml -B -ntp -pl control-plane/bootstrap,execution-worker -am -DskipTests package
 ```
 
 看到 `BUILD SUCCESS` 后，后端 JAR 会生成在：
@@ -47,32 +48,32 @@ execution-worker\target\execution-worker-*.jar
 
 如果需要在打包时运行后端测试，去掉 `-DskipTests`：
 
-```powershell
-mvn -f .\pom.xml -B -ntp -pl control-plane/bootstrap,execution-worker -am package
+```cmd
+mvn -f pom.xml -B -ntp -pl control-plane/bootstrap,execution-worker -am package
 ```
 
 日常快速演示可以使用 `-DskipTests package`，正式提交或发布前仍应运行与变更范围匹配的测试和仓库检查。
 
 ## 启动 Worker
 
-另开一个 PowerShell 窗口，进入后端目录：
+另开一个命令提示符窗口，进入后端目录：
 
-```powershell
-cd <repo-root>\backend
-$worker = Get-ChildItem .\execution-worker\target\execution-worker-*.jar | Select-Object -First 1
-java -jar $worker.FullName
+```cmd
+cd /d C:\path\to\poc-ops-agent\backend
+for /f "delims=" %J in ('dir /b execution-worker\target\execution-worker-*.jar') do set WORKER_JAR=execution-worker\target\%J
+java -jar "%WORKER_JAR%"
 ```
 
 默认本地 Worker 监听 `127.0.0.1:8091`。
 
 ## 启动控制面并启用 demo 账号
 
-再开一个 PowerShell 窗口，进入后端目录：
+再开一个命令提示符窗口，进入后端目录：
 
-```powershell
-cd <repo-root>\backend
-$controlPlane = Get-ChildItem .\control-plane\bootstrap\target\control-plane-bootstrap-*.jar | Select-Object -First 1
-java -jar $controlPlane.FullName --spring.profiles.active=demo
+```cmd
+cd /d C:\path\to\poc-ops-agent\backend
+for /f "delims=" %J in ('dir /b control-plane\bootstrap\target\control-plane-bootstrap-*.jar') do set CONTROL_PLANE_JAR=control-plane\bootstrap\target\%J
+java -jar "%CONTROL_PLANE_JAR%" --spring.profiles.active=demo
 ```
 
 `demo` profile 会启用本地演示用内建账号：
@@ -88,14 +89,22 @@ java -jar $controlPlane.FullName --spring.profiles.active=demo
 
 `-Dspring-boot.run.profiles=demo` 只适用于 `mvn spring-boot:run`：
 
-```powershell
-mvn -f .\control-plane\bootstrap\pom.xml spring-boot:run -Dspring-boot.run.profiles=demo
+```cmd
+mvn -f control-plane\bootstrap\pom.xml spring-boot:run -Dspring-boot.run.profiles=demo
 ```
 
 已经打好的 JAR 必须使用：
 
-```powershell
+```cmd
 java -jar <control-plane-jar> --spring.profiles.active=demo
+```
+
+## 写入 cmd 文件时的差异
+
+本手册中的 `for /f` 命令用于直接粘贴到 `cmd.exe` 交互窗口。如果把命令写进 `.cmd` 文件，需要把循环变量从 `%J` 改成 `%%J`：
+
+```cmd
+for /f "delims=" %%J in ('dir /b execution-worker\target\execution-worker-*.jar') do set WORKER_JAR=execution-worker\target\%%J
 ```
 
 ## 安全提醒
