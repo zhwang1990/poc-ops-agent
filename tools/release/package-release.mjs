@@ -23,6 +23,7 @@ const publishDirectory = options.publishDirectory
   ? resolve(repositoryRoot, options.publishDirectory)
   : undefined;
 const frontendDist = join(frontendRoot, "dist");
+const skillPackagesDirectory = join(backendRoot, "contracts", "skills", "packages");
 
 if (!options.skipFrontendInstall) {
   await runPortableCommand("npm", ["ci"], { cwd: frontendRoot });
@@ -62,6 +63,7 @@ const result = await buildReleasePackage({
   frontendDist,
   gitCommit: readGitCommit(),
   publishDirectory,
+  skillPackagesDirectory,
   version,
 });
 

@@ -14,12 +14,15 @@ const root = await mkdtemp(join(tmpdir(), "ops-agent-release-test-"));
 
 try {
   const dist = join(root, "dist");
+  const skillPackages = join(root, "skills", "packages");
   const controlTarget = join(root, "target", "control");
   const workerTarget = join(root, "target", "worker");
   await mkdir(dist, { recursive: true });
+  await mkdir(join(skillPackages, "node-health"), { recursive: true });
   await mkdir(controlTarget, { recursive: true });
   await mkdir(workerTarget, { recursive: true });
   await writeFile(join(dist, "index.html"), "<div>operator console</div>");
+  await writeFile(join(skillPackages, "node-health", "manifest.json"), "{}");
   await writeFile(join(controlTarget, "control-plane-bootstrap.jar"), "control");
   await writeFile(join(workerTarget, "execution-worker.jar"), "worker");
 
@@ -40,6 +43,7 @@ try {
     frontendDist: dist,
     gitCommit: "test-commit",
     now: new Date("2026-07-03T00:00:00.000Z"),
+    skillPackagesDirectory: skillPackages,
     version: "0.1.0-test",
   });
 
@@ -51,8 +55,26 @@ try {
   assert.ok(manifest.files.some((file) => file.path === "frontend/operator-console-dist/index.html"));
   assert.ok(manifest.files.some((file) => file.path === "scripts/start-control-plane.cmd"));
   assert.ok(manifest.files.some((file) => file.path === "scripts/start-execution-worker.cmd"));
+  assert.ok(manifest.files.some((file) => file.path === "scripts/start-ops-agent.cmd"));
   assert.ok(manifest.files.some((file) => file.path === "scripts/start-control-plane.sh"));
   assert.ok(manifest.files.some((file) => file.path === "scripts/start-execution-worker.sh"));
+  assert.ok(manifest.files.some((file) => file.path === "config/start-ops-agent.cmd"));
+  assert.ok(manifest.files.some((file) => file.path === "contracts/skills/packages/node-health/manifest.json"));
+
+  const startAllCmd = await readFile(join(result.releaseDirectory, "scripts", "start-ops-agent.cmd"), "utf8");
+  assert.match(startAllCmd, /OPS_AGENT_JAVA_HOME/);
+  assert.match(startAllCmd, /OPS_AGENT_JAVA_EXE/);
+  assert.match(startAllCmd, /control-plane-bootstrap\.jar/);
+  assert.match(startAllCmd, /execution-worker\.jar/);
+  assert.match(startAllCmd, /OPS_AGENT_SKILL_REGISTRY_ROOT_PATH/);
+  assert.match(startAllCmd, /if exist "%OPS_AGENT_JAVA_HOME%\\bin\\java\.exe"/);
+  assert.doesNotMatch(
+    startAllCmd,
+    /set "OPS_AGENT_JAVA_EXE=%OPS_AGENT_JAVA_HOME%\\bin\\java\.exe"\r?\n\s+if exist "%OPS_AGENT_JAVA_EXE%"/,
+  );
+  const startConfig = await readFile(join(result.releaseDirectory, "config", "start-ops-agent.cmd"), "utf8");
+  assert.match(startConfig, /if not defined OPS_AGENT_CONTROL_PLANE_PORT/);
+  assert.match(startConfig, /OPS_AGENT_JAVA_HOME/);
 
   const checksums = await readFile(result.checksumPath, "utf8");
   assert.match(checksums, /apps\/control-plane-bootstrap\.jar/);

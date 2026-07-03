@@ -100,6 +100,7 @@ export async function buildReleasePackage(options) {
     gitCommit,
     now = new Date(),
     publishDirectory,
+    skillPackagesDirectory,
     version,
   } = options;
 
@@ -108,6 +109,9 @@ export async function buildReleasePackage(options) {
   await assertFileExists(executionWorkerJar, "execution worker jar");
   await assertDirectoryExists(frontendDist, "frontend dist");
   await assertFileExists(join(frontendDist, "index.html"), "frontend index.html");
+  if (skillPackagesDirectory) {
+    await assertDirectoryExists(skillPackagesDirectory, "skill packages directory");
+  }
 
   const releaseName = `ops-agent-${version}`;
   const resolvedArtifactRoot = resolve(artifactRoot);
@@ -121,6 +125,10 @@ export async function buildReleasePackage(options) {
   await copyFileInto(controlPlaneJar, join(releaseDirectory, "apps", "control-plane-bootstrap.jar"));
   await copyFileInto(executionWorkerJar, join(releaseDirectory, "apps", "execution-worker.jar"));
   await copyDirectory(frontendDist, join(releaseDirectory, "frontend", "operator-console-dist"));
+  if (skillPackagesDirectory) {
+    await copyDirectory(skillPackagesDirectory, join(releaseDirectory, "contracts", "skills", "packages"));
+  }
+  await writeStartupConfiguration(join(releaseDirectory, "config"));
   await writeStartupScripts(join(releaseDirectory, "scripts"));
   await assertNoForbiddenReleaseContent(releaseDirectory);
 
@@ -203,19 +211,53 @@ async function copyDirectory(source, destination) {
   }
 }
 
+async function writeStartupConfiguration(configDirectory) {
+  await mkdir(configDirectory, { recursive: true });
+  await writeFile(
+    join(configDirectory, "start-ops-agent.cmd"),
+    [
+      "@rem Optional startup configuration loaded by scripts\\start-ops-agent.cmd.",
+      "@rem Set one of these when java.exe is not available on PATH.",
+      "@rem set \"OPS_AGENT_JAVA_HOME=C:\\Program Files\\Java\\jdk-21\"",
+      "@rem set \"OPS_AGENT_JAVA_EXE=C:\\Program Files\\Java\\jdk-21\\bin\\java.exe\"",
+      "if not defined OPS_AGENT_CONTROL_PLANE_ADDRESS set \"OPS_AGENT_CONTROL_PLANE_ADDRESS=0.0.0.0\"",
+      "if not defined OPS_AGENT_CONTROL_PLANE_PORT set \"OPS_AGENT_CONTROL_PLANE_PORT=8080\"",
+      "if not defined OPS_AGENT_WORKER_ADDRESS set \"OPS_AGENT_WORKER_ADDRESS=127.0.0.1\"",
+      "if not defined OPS_AGENT_WORKER_PORT set \"OPS_AGENT_WORKER_PORT=8091\"",
+      "if not defined OPS_AGENT_SPRING_PROFILES set \"OPS_AGENT_SPRING_PROFILES=demo\"",
+      "@rem Leave empty to use contracts\\skills\\packages inside this release package.",
+      "@rem set \"OPS_AGENT_SKILL_REGISTRY_ROOT_PATH=\"",
+      "@rem set \"OPS_AGENT_CONTROL_PLANE_JAVA_OPTS=\"",
+      "@rem set \"OPS_AGENT_WORKER_JAVA_OPTS=\"",
+      "@rem set \"OPS_AGENT_CONTROL_PLANE_ARGS=\"",
+      "@rem set \"OPS_AGENT_WORKER_ARGS=\"",
+      "",
+    ].join("\r\n"),
+    "utf8",
+  );
+}
+
 async function writeStartupScripts(scriptDirectory) {
   await mkdir(scriptDirectory, { recursive: true });
   const controlPlaneCmdPath = join(scriptDirectory, "start-control-plane.cmd");
   const controlPlaneShPath = join(scriptDirectory, "start-control-plane.sh");
   const executionWorkerCmdPath = join(scriptDirectory, "start-execution-worker.cmd");
   const executionWorkerShPath = join(scriptDirectory, "start-execution-worker.sh");
+  const startAllCmdPath = join(scriptDirectory, "start-ops-agent.cmd");
   await writeFile(
     controlPlaneCmdPath,
     [
       "@echo off",
       "setlocal",
       "set APP_DIR=%~dp0\\..\\apps",
-      'java %OPS_AGENT_JAVA_OPTS% -jar "%APP_DIR%\\control-plane-bootstrap.jar" %*',
+      "if defined OPS_AGENT_JAVA_EXE (",
+      "  set \"JAVA_CMD=%OPS_AGENT_JAVA_EXE%\"",
+      ") else if defined OPS_AGENT_JAVA_HOME (",
+      "  set \"JAVA_CMD=%OPS_AGENT_JAVA_HOME%\\bin\\java.exe\"",
+      ") else (",
+      "  set \"JAVA_CMD=java\"",
+      ")",
+      '"%JAVA_CMD%" %OPS_AGENT_JAVA_OPTS% -jar "%APP_DIR%\\control-plane-bootstrap.jar" %*',
       "",
     ].join("\r\n"),
     "utf8",
@@ -238,7 +280,87 @@ async function writeStartupScripts(scriptDirectory) {
       "@echo off",
       "setlocal",
       "set APP_DIR=%~dp0\\..\\apps",
-      'java %OPS_AGENT_JAVA_OPTS% -jar "%APP_DIR%\\execution-worker.jar" %*',
+      "if defined OPS_AGENT_JAVA_EXE (",
+      "  set \"JAVA_CMD=%OPS_AGENT_JAVA_EXE%\"",
+      ") else if defined OPS_AGENT_JAVA_HOME (",
+      "  set \"JAVA_CMD=%OPS_AGENT_JAVA_HOME%\\bin\\java.exe\"",
+      ") else (",
+      "  set \"JAVA_CMD=java\"",
+      ")",
+      '"%JAVA_CMD%" %OPS_AGENT_JAVA_OPTS% -jar "%APP_DIR%\\execution-worker.jar" %*',
+      "",
+    ].join("\r\n"),
+    "utf8",
+  );
+  await writeFile(
+    startAllCmdPath,
+    [
+      "@echo off",
+      "setlocal EnableExtensions",
+      "set \"SCRIPT_DIR=%~dp0\"",
+      "for %%I in (\"%SCRIPT_DIR%..\") do set \"RELEASE_DIR=%%~fI\"",
+      "set \"APP_DIR=%RELEASE_DIR%\\apps\"",
+      "set \"LOG_DIR=%RELEASE_DIR%\\runtime-logs\"",
+      "set \"CONFIG_FILE=%RELEASE_DIR%\\config\\start-ops-agent.cmd\"",
+      "",
+      "if exist \"%CONFIG_FILE%\" call \"%CONFIG_FILE%\"",
+      "",
+      "if not defined OPS_AGENT_CONTROL_PLANE_ADDRESS set \"OPS_AGENT_CONTROL_PLANE_ADDRESS=0.0.0.0\"",
+      "if not defined OPS_AGENT_CONTROL_PLANE_PORT set \"OPS_AGENT_CONTROL_PLANE_PORT=8080\"",
+      "if not defined OPS_AGENT_WORKER_ADDRESS set \"OPS_AGENT_WORKER_ADDRESS=127.0.0.1\"",
+      "if not defined OPS_AGENT_WORKER_PORT set \"OPS_AGENT_WORKER_PORT=8091\"",
+      "if not defined OPS_AGENT_SPRING_PROFILES set \"OPS_AGENT_SPRING_PROFILES=demo\"",
+      "if not defined OPS_AGENT_SKILL_REGISTRY_ROOT_PATH set \"OPS_AGENT_SKILL_REGISTRY_ROOT_PATH=%RELEASE_DIR%\\contracts\\skills\\packages\"",
+      "",
+      "call :resolveJava || exit /b 1",
+      "if not exist \"%APP_DIR%\\control-plane-bootstrap.jar\" (",
+      "  echo Missing control plane jar: %APP_DIR%\\control-plane-bootstrap.jar",
+      "  exit /b 1",
+      ")",
+      "if not exist \"%APP_DIR%\\execution-worker.jar\" (",
+      "  echo Missing execution worker jar: %APP_DIR%\\execution-worker.jar",
+      "  exit /b 1",
+      ")",
+      "if not exist \"%OPS_AGENT_SKILL_REGISTRY_ROOT_PATH%\" (",
+      "  echo Missing Skill registry path: %OPS_AGENT_SKILL_REGISTRY_ROOT_PATH%",
+      "  exit /b 1",
+      ")",
+      "if not exist \"%LOG_DIR%\" mkdir \"%LOG_DIR%\"",
+      "",
+      "echo Starting Ops Agent execution worker on %OPS_AGENT_WORKER_ADDRESS%:%OPS_AGENT_WORKER_PORT%",
+      "start \"Ops Agent Execution Worker\" /D \"%RELEASE_DIR%\" cmd /c \"\"%OPS_AGENT_JAVA_EXE%\" %OPS_AGENT_WORKER_JAVA_OPTS% -jar \"%APP_DIR%\\execution-worker.jar\" --server.address=%OPS_AGENT_WORKER_ADDRESS% --server.port=%OPS_AGENT_WORKER_PORT% %OPS_AGENT_WORKER_ARGS% 1>>\"%LOG_DIR%\\worker.out.log\" 2>>\"%LOG_DIR%\\worker.err.log\"\"",
+      "",
+      "echo Starting Ops Agent control plane on %OPS_AGENT_CONTROL_PLANE_ADDRESS%:%OPS_AGENT_CONTROL_PLANE_PORT%",
+      "start \"Ops Agent Control Plane\" /D \"%RELEASE_DIR%\" cmd /c \"\"%OPS_AGENT_JAVA_EXE%\" %OPS_AGENT_CONTROL_PLANE_JAVA_OPTS% -jar \"%APP_DIR%\\control-plane-bootstrap.jar\" --server.address=%OPS_AGENT_CONTROL_PLANE_ADDRESS% --server.port=%OPS_AGENT_CONTROL_PLANE_PORT% --spring.profiles.active=%OPS_AGENT_SPRING_PROFILES% --ops-agent.worker.base-url=http://127.0.0.1:%OPS_AGENT_WORKER_PORT% \"--ops-agent.skill-registry.root-path=%OPS_AGENT_SKILL_REGISTRY_ROOT_PATH%\" %OPS_AGENT_CONTROL_PLANE_ARGS% 1>>\"%LOG_DIR%\\control-plane.out.log\" 2>>\"%LOG_DIR%\\control-plane.err.log\"\"",
+      "",
+      "echo Logs: %LOG_DIR%",
+      "echo Control plane: http://%COMPUTERNAME%:%OPS_AGENT_CONTROL_PLANE_PORT%",
+      "exit /b 0",
+      "",
+      ":resolveJava",
+      "if defined OPS_AGENT_JAVA_EXE (",
+      "  if exist \"%OPS_AGENT_JAVA_EXE%\" exit /b 0",
+      "  if /i \"%OPS_AGENT_JAVA_EXE%\"==\"java\" (",
+      "    where java >nul 2>nul && exit /b 0",
+      "  )",
+      "  echo OPS_AGENT_JAVA_EXE does not exist: %OPS_AGENT_JAVA_EXE%",
+      "  exit /b 1",
+      ")",
+      "if defined OPS_AGENT_JAVA_HOME (",
+      "  if exist \"%OPS_AGENT_JAVA_HOME%\\bin\\java.exe\" (",
+      "    set \"OPS_AGENT_JAVA_EXE=%OPS_AGENT_JAVA_HOME%\\bin\\java.exe\"",
+      "    exit /b 0",
+      "  )",
+      "  echo OPS_AGENT_JAVA_HOME does not contain bin\\java.exe: %OPS_AGENT_JAVA_HOME%",
+      "  exit /b 1",
+      ")",
+      "set \"OPS_AGENT_JAVA_EXE=java\"",
+      "where java >nul 2>nul",
+      "if errorlevel 1 (",
+      "  echo Java was not found. Set OPS_AGENT_JAVA_HOME or OPS_AGENT_JAVA_EXE in %CONFIG_FILE%.",
+      "  exit /b 1",
+      ")",
+      "exit /b 0",
       "",
     ].join("\r\n"),
     "utf8",
