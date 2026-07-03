@@ -143,6 +143,18 @@ class ControlPlaneApplicationTest {
   }
 
   @Test
+  void servesOperatorConsoleForBrowserRoutes() {
+    List.of("/login", "/overview", "/meeting-notes/note-001/edit")
+        .forEach(route -> webTestClient.get()
+            .uri(route)
+            .exchange()
+            .expectStatus().isOk()
+            .expectHeader().contentTypeCompatibleWith("text/html")
+            .expectBody(String.class)
+            .value(body -> Assertions.assertTrue(body.contains("operator-console-test-shell"))));
+  }
+
+  @Test
   void exposesOpenApiDocument() {
     webTestClient.get()
         .uri("/v3/api-docs")
