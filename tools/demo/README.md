@@ -44,6 +44,25 @@ tools\demo\start-demo.cmd "C:\path\to\jdk-21\bin"
 http://127.0.0.1:5173
 ```
 
+如果前端已经内嵌进控制面 JAR，且后端 JAR 已经打好，可以只启动后端两个 JAR：
+
+```text
+tools\demo\start-backend-jars.cmd
+```
+
+该脚本不会运行 Maven、npm 或前端开发服务器，只会从以下位置查找已生成的 JAR 并启动：
+
+```text
+backend\control-plane\bootstrap\target\control-plane-bootstrap-*.jar
+backend\execution-worker\target\execution-worker-*.jar
+```
+
+控制面会使用 `demo` profile 启动，页面地址为：
+
+```text
+http://127.0.0.1:8080
+```
+
 登录信息：
 
 ```text

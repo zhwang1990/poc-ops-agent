@@ -4,6 +4,7 @@ setlocal EnableExtensions
 set "SCRIPT_DIR=%~dp0"
 set "START_SCRIPT=%SCRIPT_DIR%start-demo.cmd"
 set "STOP_SCRIPT=%SCRIPT_DIR%stop-demo.cmd"
+set "START_BACKEND_JARS_SCRIPT=%SCRIPT_DIR%start-backend-jars.cmd"
 
 if not exist "%START_SCRIPT%" (
   echo Missing start-demo.cmd
@@ -15,6 +16,11 @@ if not exist "%STOP_SCRIPT%" (
   exit /b 1
 )
 
+if not exist "%START_BACKEND_JARS_SCRIPT%" (
+  echo Missing start-backend-jars.cmd
+  exit /b 1
+)
+
 findstr /I /C:"powershell" "%START_SCRIPT%" >nul && (
   echo start-demo.cmd must not call PowerShell
   exit /b 1
@@ -22,6 +28,11 @@ findstr /I /C:"powershell" "%START_SCRIPT%" >nul && (
 
 findstr /I /C:"powershell" "%STOP_SCRIPT%" >nul && (
   echo stop-demo.cmd must not call PowerShell
+  exit /b 1
+)
+
+findstr /I /C:"powershell" "%START_BACKEND_JARS_SCRIPT%" >nul && (
+  echo start-backend-jars.cmd must not call PowerShell
   exit /b 1
 )
 
@@ -87,6 +98,41 @@ findstr /I /C:"8092" "%START_SCRIPT%" >nul && (
 
 findstr /I /C:"taskkill /PID" "%STOP_SCRIPT%" >nul || (
   echo stop-demo.cmd must stop recorded PIDs
+  exit /b 1
+)
+
+findstr /I /C:"control-plane\bootstrap\target\control-plane-bootstrap-*.jar" "%START_BACKEND_JARS_SCRIPT%" >nul || (
+  echo start-backend-jars.cmd must locate the built control plane jar
+  exit /b 1
+)
+
+findstr /I /C:"execution-worker\target\execution-worker-*.jar" "%START_BACKEND_JARS_SCRIPT%" >nul || (
+  echo start-backend-jars.cmd must locate the built execution worker jar
+  exit /b 1
+)
+
+findstr /I /C:"java %%OPS_AGENT_JAVA_OPTS%% -jar" "%START_BACKEND_JARS_SCRIPT%" >nul || (
+  echo start-backend-jars.cmd must launch jars with java -jar
+  exit /b 1
+)
+
+findstr /I /C:"--spring.profiles.active=demo" "%START_BACKEND_JARS_SCRIPT%" >nul || (
+  echo start-backend-jars.cmd must enable the demo profile for control plane
+  exit /b 1
+)
+
+findstr /I /C:"mvnw.cmd" "%START_BACKEND_JARS_SCRIPT%" >nul && (
+  echo start-backend-jars.cmd must not build with Maven Wrapper
+  exit /b 1
+)
+
+findstr /I /C:"mvn -f" "%START_BACKEND_JARS_SCRIPT%" >nul && (
+  echo start-backend-jars.cmd must not build with Maven
+  exit /b 1
+)
+
+findstr /I /C:"npm" "%START_BACKEND_JARS_SCRIPT%" >nul && (
+  echo start-backend-jars.cmd must not start or build frontend dev tooling
   exit /b 1
 )
 
