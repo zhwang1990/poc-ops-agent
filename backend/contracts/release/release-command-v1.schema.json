@@ -110,7 +110,6 @@
                   "executablePath": { "type": "string", "minLength": 1, "maxLength": 500 },
                   "arguments": {
                     "type": "array",
-                    "minItems": 1,
                     "maxItems": 40,
                     "items": { "type": "string", "minLength": 1, "maxLength": 500 }
                   },

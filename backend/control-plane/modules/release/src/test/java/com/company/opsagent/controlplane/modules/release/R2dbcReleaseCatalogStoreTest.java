@@ -106,7 +106,7 @@ class R2dbcReleaseCatalogStoreTest {
         "Liberty WAR deploy",
         "C:\\ops\\scripts\\liberty-war-deploy.cmd",
         "C:\\ops-agent\\work\\release",
-        List.of("{{param.serverName}}", "{{param.applicationName}}", "{{param.artifactPath}}"),
+        List.of(),
         List.of(0),
         600,
         true,
@@ -124,7 +124,7 @@ class R2dbcReleaseCatalogStoreTest {
 
     assertEquals("liberty-war-deploy", loaded.profileId());
     assertEquals("C:\\ops\\scripts\\liberty-war-deploy.cmd", loaded.executablePath());
-    assertEquals("{{param.artifactPath}}", loaded.arguments().get(2));
+    assertTrue(loaded.arguments().isEmpty());
     assertEquals(List.of(0), loaded.successExitCodes());
     assertEquals(600, loaded.timeoutSeconds());
     assertTrue(loaded.approved());

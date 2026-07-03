@@ -172,7 +172,7 @@ class ReleaseCenterControllerTest {
   void managesScriptProfilesThroughPolicyProtectedApi() {
     webTestClient.post()
         .uri("/internal/release-center/script-profiles")
-        .headers(headers -> headers.setBearerAuth(token("admin", List.of("ops-admin"))))
+        .headers(headers -> headers.setBearerAuth(token("release-operator", List.of("ops-release"))))
         .contentType(APPLICATION_JSON)
         .bodyValue("""
             {
@@ -180,11 +180,7 @@ class ReleaseCenterControllerTest {
               "displayName": "Liberty WAR deploy",
               "executablePath": "C:\\\\ops\\\\scripts\\\\liberty-war-deploy.cmd",
               "workingDirectory": "C:\\\\ops-agent\\\\work\\\\release",
-              "arguments": [
-                "{{param.serverName}}",
-                "{{param.applicationName}}",
-                "{{param.artifactPath}}"
-              ],
+              "arguments": [],
               "successExitCodes": [0],
               "timeoutSeconds": 600,
               "approved": true,
@@ -197,13 +193,13 @@ class ReleaseCenterControllerTest {
         .jsonPath("$.profileId").isEqualTo("liberty-war-deploy")
         .jsonPath("$.targetEnvironment").doesNotExist()
         .jsonPath("$.executablePath").isEqualTo("C:\\ops\\scripts\\liberty-war-deploy.cmd")
-        .jsonPath("$.arguments[2]").isEqualTo("{{param.artifactPath}}")
+        .jsonPath("$.arguments.length()").isEqualTo(0)
         .jsonPath("$.approved").isEqualTo(true)
         .jsonPath("$.enabled").isEqualTo(true);
 
     webTestClient.get()
         .uri("/internal/release-center/script-profiles")
-        .headers(headers -> headers.setBearerAuth(token("alice", List.of("ops-reader"))))
+        .headers(headers -> headers.setBearerAuth(token("release-operator", List.of("ops-release"))))
         .exchange()
         .expectStatus().isOk()
         .expectBody()

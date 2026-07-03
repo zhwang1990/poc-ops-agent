@@ -1,7 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   BadgeCheck,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronUp,
   CheckCircle2,
+  CircleStop,
   Code2,
   Copy,
   FileArchive,
@@ -15,9 +20,11 @@ import {
   RefreshCw,
   Rocket,
   Server,
+  Settings2,
   ShieldCheck,
   Trash2,
   UploadCloud,
+  X,
 } from "lucide-react";
 
 import { StatusPill } from "../../components/data-display/StatusPill.jsx";
@@ -50,18 +57,19 @@ import styles from "./ReleaseCenterPage.module.css";
 /** @typedef {import("../../schemas/release-center-schemas.js").ReleaseWorkflowEvent} ReleaseWorkflowEvent */
 /** @typedef {import("../../schemas/release-center-schemas.js").ReleaseScriptProfileDefinition} ReleaseScriptProfileDefinition */
 /** @typedef {import("../../schemas/release-center-schemas.js").ReleaseServer} ReleaseServer */
-/** @typedef {"plans" | "artifacts" | "applications" | "servers" | "scriptProfiles" | "policies" | "credentials"} ReleaseTabId */
+/** @typedef {"plans" | "artifacts" | "servers" | "policies"} ReleaseTabId */
+/** @typedef {"applications" | "scriptProfiles" | "startScript" | "stopScript" | "credentials"} GlobalConfigId */
 /** @typedef {"PENDING_TARGETS" | "SCRIPT_PROFILE" | "ARTIFACT"} ReleaseArtifactMode */
 /** @typedef {ReleaseApplication & { source?: "CATALOG" | "SCRIPT_PROFILE" }} ReleaseApplicationTarget */
+/** @typedef {"all" | "recent-50" | "recent-20"} ReleaseLogDisplayMode */
+/** @typedef {"identity" | "executable" | "arguments"} ScriptProfileCopyField */
+/** @typedef {{releaseId: string, requestId: number} | null} ReleaseLogRequest */
 
 const TABS = [
   { id: "plans", label: "发布单", icon: ListChecks },
   { id: "artifacts", label: "制品", icon: FileArchive },
-  { id: "applications", label: "应用", icon: Package },
   { id: "servers", label: "服务器", icon: Server },
-  { id: "scriptProfiles", label: "Script profiles", icon: Code2 },
   { id: "policies", label: "策略", icon: ShieldCheck },
-  { id: "credentials", label: "凭据", icon: KeyRound },
 ];
 
 const TARGET_ENVIRONMENTS = [
@@ -74,6 +82,12 @@ const MANAGEMENT_MODE_OPTIONS_BY_SERVER_TYPE = {
   TOMCAT: ["TOMCAT_WAR_UPLOAD", "TOMCAT_MANAGER_API"],
   LIBERTY: ["LIBERTY_SCRIPT_PROFILE"],
 };
+const RELEASE_LOG_DISPLAY_OPTIONS = [
+  { id: "all", label: "全部日志", limit: null },
+  { id: "recent-50", label: "最近 50 条", limit: 50 },
+  { id: "recent-20", label: "最近 20 条", limit: 20 },
+];
+const RELEASE_HISTORY_PAGE_SIZE = 5;
 
 /**
  * @typedef {{
@@ -108,6 +122,7 @@ export function ReleaseCenterPage() {
   const [activeTab, setActiveTab] = useState(/** @type {ReleaseTabId} */ ("plans"));
   const [targetEnvironment, setTargetEnvironment] = useState("dev");
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [releaseLogRequest, setReleaseLogRequest] = useState(/** @type {ReleaseLogRequest} */ (null));
   const applicationsQuery = useReleaseApplications();
   const artifactsQuery = useReleaseArtifacts(targetEnvironment);
   const plansQuery = useReleasePlans();
@@ -121,7 +136,11 @@ export function ReleaseCenterPage() {
   const plans = useMemo(() => plansQuery.data ?? [], [plansQuery.data]);
   const servers = useMemo(() => serversQuery.data ?? [], [serversQuery.data]);
   const scriptProfiles = useMemo(() => scriptProfilesQuery.data ?? [], [scriptProfilesQuery.data]);
-  const selectedPlan = plans[0] ?? null;
+  const environmentPlans = useMemo(
+    () => plans.filter((plan) => plan.targetEnvironment === targetEnvironment),
+    [plans, targetEnvironment],
+  );
+  const selectedPlan = environmentPlans[0] ?? null;
   const selectedApplication =
     applications.find((application) => application.applicationId === selectedPlan?.applicationId) ??
     applications[0] ??
@@ -196,6 +215,17 @@ export function ReleaseCenterPage() {
       });
   }
 
+  /**
+   * @param {string} releaseId
+   */
+  function handleReleaseHistoryLogSelect(releaseId) {
+    setActiveTab("plans");
+    setReleaseLogRequest((current) => ({
+      releaseId,
+      requestId: (current?.requestId ?? 0) + 1,
+    }));
+  }
+
   return (
     <WorkspacePageFrame className={styles.releaseCanvas}>
       <WorkspaceStatusBar title="发布中心" />
@@ -261,8 +291,8 @@ export function ReleaseCenterPage() {
         </section>
 
         <section className={styles.workspaceGrid}>
-          <section aria-label="发布中心配置" className={styles.primaryPanel}>
-            <div aria-label="发布中心配置" className={styles.tabs} role="tablist">
+          <section aria-label={`${targetEnvironmentLabel(targetEnvironment)} 环境资源`} className={styles.primaryPanel}>
+            <div aria-label="发布中心环境资源" className={styles.tabs} role="tablist">
               {TABS.map((tab) => {
                 const Icon = tab.icon;
                 const selected = activeTab === tab.id;
@@ -292,17 +322,15 @@ export function ReleaseCenterPage() {
             >
               <ReleaseTabPanel
                 activeTab={activeTab}
-                applications={applications}
                 applicationsQuery={applicationsQuery}
                 artifacts={artifacts}
                 artifactsQuery={artifactsQuery}
-                plans={plans}
+                logRequest={releaseLogRequest}
+                plans={environmentPlans}
                 plansQuery={plansQuery}
                 selectedApplication={selectedApplication}
                 servers={servers}
                 serversQuery={serversQuery}
-                scriptProfiles={scriptProfiles}
-                scriptProfilesQuery={scriptProfilesQuery}
                 targetEnvironment={targetEnvironment}
               />
             </div>
@@ -311,10 +339,12 @@ export function ReleaseCenterPage() {
           <InventoryPanel
             applications={applications}
             applicationsQuery={applicationsQuery}
-            artifacts={artifacts}
-            artifactsQuery={artifactsQuery}
+            onReleaseHistoryLogSelect={handleReleaseHistoryLogSelect}
+            releaseHistoryPlans={environmentPlans}
             servers={servers}
             serversQuery={serversQuery}
+            scriptProfiles={scriptProfiles}
+            scriptProfilesQuery={scriptProfilesQuery}
             targetEnvironment={targetEnvironment}
           />
         </section>
@@ -508,41 +538,45 @@ function CreatePlanField({ label, tone = "default", value }) {
 }
 
 /**
+ * @param {string} environmentId
+ */
+function targetEnvironmentLabel(environmentId) {
+  return TARGET_ENVIRONMENTS.find((environment) => environment.id === environmentId)?.label ?? environmentId;
+}
+
+/**
  * @param {{
  *   activeTab: ReleaseTabId,
- *   applications: ReleaseApplication[],
  *   applicationsQuery: ReturnType<typeof useReleaseApplications>,
  *   artifacts: ReleaseArtifact[],
  *   artifactsQuery: ReturnType<typeof useReleaseArtifacts>,
+ *   logRequest: ReleaseLogRequest,
  *   plans: ReleasePlan[],
  *   plansQuery: ReturnType<typeof useReleasePlans>,
  *   selectedApplication: ReleaseApplication | null,
  *   servers: ReleaseServer[],
  *   serversQuery: ReturnType<typeof useReleaseServers>,
- *   scriptProfiles: ReleaseScriptProfileDefinition[],
- *   scriptProfilesQuery: ReturnType<typeof useReleaseScriptProfiles>,
  *   targetEnvironment: string,
  * }} props
  */
 function ReleaseTabPanel({
   activeTab,
-  applications,
   applicationsQuery,
   artifacts,
   artifactsQuery,
+  logRequest,
   plans,
   plansQuery,
   selectedApplication,
   servers,
   serversQuery,
-  scriptProfiles,
-  scriptProfilesQuery,
   targetEnvironment,
 }) {
   if (activeTab === "plans") {
     return (
       <PlansPanel
         applicationsQuery={applicationsQuery}
+        logRequest={logRequest}
         plans={plans}
         plansQuery={plansQuery}
         selectedApplication={selectedApplication}
@@ -558,35 +592,25 @@ function ReleaseTabPanel({
       />
     );
   }
-  if (activeTab === "applications") {
-    return <ApplicationsPanel applications={applications} query={applicationsQuery} />;
-  }
   if (activeTab === "servers") {
     return <ServersPanel query={serversQuery} servers={servers} targetEnvironment={targetEnvironment} />;
-  }
-  if (activeTab === "scriptProfiles") {
-    return (
-      <ScriptProfilesPanel
-        profiles={scriptProfiles}
-        query={scriptProfilesQuery}
-      />
-    );
   }
   if (activeTab === "policies") {
     return <PoliciesPanel />;
   }
-  return <CredentialsPanel servers={servers} serversQuery={serversQuery} />;
+  return null;
 }
 
 /**
  * @param {{
  *   applicationsQuery: ReturnType<typeof useReleaseApplications>,
+ *   logRequest: ReleaseLogRequest,
  *   plans: ReleasePlan[],
  *   plansQuery: ReturnType<typeof useReleasePlans>,
  *   selectedApplication: ReleaseApplication | null,
  * }} props
  */
-function PlansPanel({ applicationsQuery, plans, plansQuery, selectedApplication }) {
+function PlansPanel({ applicationsQuery, logRequest, plans, plansQuery, selectedApplication }) {
   const confirmMutation = useConfirmReleasePlan();
   const executeMutation = useExecuteReleasePlan();
   const streamAbortRef = useRef(/** @type {AbortController | null} */ (null));
@@ -595,23 +619,33 @@ function PlansPanel({ applicationsQuery, plans, plansQuery, selectedApplication 
   const [releaseLogsById, setReleaseLogsById] = useState(
     /** @type {Record<string, ReleaseWorkflowEvent[]>} */ ({}),
   );
+  const [logDisplayModesById, setLogDisplayModesById] = useState(
+    /** @type {Record<string, ReleaseLogDisplayMode>} */ ({}),
+  );
+  const [expandedLogPanelsById, setExpandedLogPanelsById] = useState(
+    /** @type {Record<string, boolean>} */ ({}),
+  );
   const [logStreamErrorsById, setLogStreamErrorsById] = useState(
     /** @type {Record<string, string>} */ ({}),
   );
   const queryState = queryFeedback([plansQuery, applicationsQuery], "发布单读取失败");
   useEffect(() => () => streamAbortRef.current?.abort(), []);
 
-  /**
-   * @param {ReleasePlan} plan
-   * @returns {AbortController}
-   */
-  function startReleaseLogStream(plan) {
+  const startReleaseLogStream = useCallback(
+    /**
+     * @param {ReleasePlan} plan
+     * @param {{expanded?: boolean}} [options]
+     * @returns {AbortController}
+     */
+    (plan, options = {}) => {
     streamAbortRef.current?.abort();
     const controller = new AbortController();
     streamAbortRef.current = controller;
     setActiveLogReleaseId(plan.releaseId);
     setStreamingReleaseId(plan.releaseId);
     setReleaseLogsById((current) => ({ ...current, [plan.releaseId]: [] }));
+    setLogDisplayModesById((current) => ({ ...current, [plan.releaseId]: "all" }));
+    setExpandedLogPanelsById((current) => ({ ...current, [plan.releaseId]: Boolean(options.expanded) }));
     setLogStreamErrorsById((current) => {
       const next = { ...current };
       delete next[plan.releaseId];
@@ -626,7 +660,7 @@ function PlansPanel({ applicationsQuery, plans, plansQuery, selectedApplication 
         }
         setReleaseLogsById((current) => ({
           ...current,
-          [event.releaseId]: [...(current[event.releaseId] ?? []), event].slice(-200),
+          [event.releaseId]: [...(current[event.releaseId] ?? []), event],
         }));
       },
     })
@@ -646,7 +680,21 @@ function PlansPanel({ applicationsQuery, plans, plansQuery, selectedApplication 
         }
       });
     return controller;
-  }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (!logRequest) {
+      return undefined;
+    }
+    const plan = plans.find((candidate) => candidate.releaseId === logRequest.releaseId);
+    if (!plan) {
+      return undefined;
+    }
+    const timer = window.setTimeout(() => startReleaseLogStream(plan, { expanded: true }), 0);
+    return () => window.clearTimeout(timer);
+  }, [logRequest, plans, startReleaseLogStream]);
 
   /**
    * @param {ReleasePlan} plan
@@ -664,6 +712,38 @@ function PlansPanel({ applicationsQuery, plans, plansQuery, selectedApplication 
     });
   }
 
+  /**
+   * @param {string} releaseId
+   */
+  function closeReleaseLogPanel(releaseId) {
+    if (streamingReleaseId === releaseId) {
+      streamAbortRef.current?.abort();
+      streamAbortRef.current = null;
+    }
+    setActiveLogReleaseId((current) => (current === releaseId ? null : current));
+    setStreamingReleaseId((current) => (current === releaseId ? null : current));
+    setReleaseLogsById((current) => {
+      const next = { ...current };
+      delete next[releaseId];
+      return next;
+    });
+    setLogDisplayModesById((current) => {
+      const next = { ...current };
+      delete next[releaseId];
+      return next;
+    });
+    setExpandedLogPanelsById((current) => {
+      const next = { ...current };
+      delete next[releaseId];
+      return next;
+    });
+    setLogStreamErrorsById((current) => {
+      const next = { ...current };
+      delete next[releaseId];
+      return next;
+    });
+  }
+
   if (queryState) {
     return queryState;
   }
@@ -677,6 +757,8 @@ function PlansPanel({ applicationsQuery, plans, plansQuery, selectedApplication 
         const releaseLogs = releaseLogsById[plan.releaseId] ?? [];
         const logStreamError = logStreamErrorsById[plan.releaseId] ?? null;
         const showLogPanel = activeLogReleaseId === plan.releaseId || releaseLogs.length > 0 || Boolean(logStreamError);
+        const logDisplayMode = logDisplayModesById[plan.releaseId] ?? "all";
+        const isLogExpanded = expandedLogPanelsById[plan.releaseId] ?? false;
         return (
           <article className={styles.planRow} key={plan.releaseId}>
             <div className={styles.planMain}>
@@ -694,15 +776,6 @@ function PlansPanel({ applicationsQuery, plans, plansQuery, selectedApplication 
               <StatusPill tone={statusTone(plan.status)}>{plan.status}</StatusPill>
               <span>{plan.artifactId ?? "SCRIPT_PROFILE"}</span>
             </div>
-            <ol className={styles.nodeSteps} aria-label={`${plan.releaseId} 节点`}>
-              {plan.nodes.map((node) => (
-                <li key={`${plan.releaseId}-${node.nodeId}`}>
-                  <span>#{node.sequence}</span>
-                  <strong>节点 {node.nodeId}</strong>
-                  <StatusPill tone={statusTone(node.status)}>{node.status}</StatusPill>
-                </li>
-              ))}
-            </ol>
             <div className={styles.rowActions}>
               <Button
                 className={styles.compactButton}
@@ -723,18 +796,54 @@ function PlansPanel({ applicationsQuery, plans, plansQuery, selectedApplication 
               </Button>
               <Button
                 className={styles.compactButton}
+                disabled
+                title="打包工作流待接入"
+                variant="secondary"
+              >
+                <Package aria-hidden="true" size={15} />
+                打包
+              </Button>
+              <Button
+                className={styles.compactButton}
+                disabled
+                title="重启工作流待接入"
+                variant="secondary"
+              >
+                <RefreshCw aria-hidden="true" size={15} />
+                重启
+              </Button>
+              <Button
+                className={styles.compactButton}
+                disabled
+                title="停止工作流待接入"
+                variant="secondary"
+              >
+                <CircleStop aria-hidden="true" size={15} />
+                停止
+              </Button>
+              <Button
+                className={styles.compactButton}
                 disabled={!["DRAFT", "READY"].includes(plan.status) || executeMutation.isPending}
                 onClick={() => handleExecutePlan(plan)}
               >
                 <Play aria-hidden="true" size={15} />
-                执行
+                发布
               </Button>
             </div>
             {showLogPanel ? (
               <ReleaseLogPanel
+                displayMode={logDisplayMode}
                 errorMessage={logStreamError}
                 events={releaseLogs}
+                isExpanded={isLogExpanded}
                 isStreaming={streamingReleaseId === plan.releaseId}
+                onDisplayModeChange={(nextMode) =>
+                  setLogDisplayModesById((current) => ({ ...current, [plan.releaseId]: nextMode }))
+                }
+                onExpandedChange={(nextExpanded) =>
+                  setExpandedLogPanelsById((current) => ({ ...current, [plan.releaseId]: nextExpanded }))
+                }
+                onClose={() => closeReleaseLogPanel(plan.releaseId)}
                 releaseId={plan.releaseId}
               />
             ) : null}
@@ -747,30 +856,86 @@ function PlansPanel({ applicationsQuery, plans, plansQuery, selectedApplication 
 
 /**
  * @param {{
+ *   displayMode: ReleaseLogDisplayMode,
  *   errorMessage: string | null,
  *   events: ReleaseWorkflowEvent[],
+ *   isExpanded: boolean,
  *   isStreaming: boolean,
+ *   onClose: () => void,
+ *   onDisplayModeChange: (displayMode: ReleaseLogDisplayMode) => void,
+ *   onExpandedChange: (isExpanded: boolean) => void,
  *   releaseId: string,
  * }} props
  */
-function ReleaseLogPanel({ errorMessage, events, isStreaming, releaseId }) {
+function ReleaseLogPanel({
+  displayMode,
+  errorMessage,
+  events,
+  isExpanded,
+  isStreaming,
+  onClose,
+  onDisplayModeChange,
+  onExpandedChange,
+  releaseId,
+}) {
+  const logEvents = events.filter((event) => event.payload.payloadType === "RELEASE_NODE_LOG");
+  const displayLimit = resolveReleaseLogDisplayLimit(displayMode);
+  const visibleEvents = displayLimit === null ? logEvents : logEvents.slice(-displayLimit);
+  const listId = `release-log-list-${releaseId.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
   return (
     <section className={styles.releaseLogPanel} aria-label={`${releaseId} 脚本输出`}>
       <div className={styles.releaseLogHeader}>
-        <strong>脚本输出</strong>
-        <StatusPill tone={isStreaming ? "warning" : "info"}>
-          {isStreaming ? "STREAMING" : "LATEST"}
-        </StatusPill>
+        <div className={styles.releaseLogTitle}>
+          <strong>脚本输出</strong>
+          <span>{logEvents.length} 条日志</span>
+          <StatusPill tone={isStreaming ? "warning" : "info"}>
+            {isStreaming ? "STREAMING" : "LATEST"}
+          </StatusPill>
+        </div>
+        <div className={styles.releaseLogControls}>
+          <label className={styles.releaseLogControl}>
+            <span>显示</span>
+            <select
+              aria-label="日志显示范围"
+              onChange={(event) =>
+                onDisplayModeChange(/** @type {ReleaseLogDisplayMode} */ (event.target.value))
+              }
+              value={displayMode}
+            >
+              {RELEASE_LOG_DISPLAY_OPTIONS.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.limit === null ? `${option.label} (${logEvents.length})` : option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <Button
+            aria-controls={listId}
+            aria-expanded={isExpanded}
+            className={styles.releaseLogToggle}
+            onClick={() => onExpandedChange(!isExpanded)}
+            variant="secondary"
+          >
+            {isExpanded ? <ChevronUp aria-hidden="true" size={14} /> : <ChevronDown aria-hidden="true" size={14} />}
+            {isExpanded ? "收起日志" : "展开日志"}
+          </Button>
+          <Button
+            aria-label="关闭日志"
+            className={styles.releaseLogCloseButton}
+            onClick={onClose}
+            title="关闭日志"
+            variant="secondary"
+          >
+            <X aria-hidden="true" size={14} />
+          </Button>
+        </div>
       </div>
-      {events.length === 0 ? (
+      {logEvents.length === 0 ? (
         <p className={styles.releaseLogEmpty}>等待脚本输出</p>
       ) : (
-        <ol className={styles.releaseLogList}>
-          {events.map((event) => {
-            const payload = event.payload;
-            if (payload.payloadType !== "RELEASE_NODE_LOG") {
-              return null;
-            }
+        <ol className={styles.releaseLogList} data-expanded={isExpanded ? "true" : "false"} id={listId}>
+          {visibleEvents.map((event) => {
+            const payload = /** @type {{emittedAt: string, message: string, stream: string}} */ (event.payload);
             return (
               <li key={`${event.releaseId}-${event.sequence}`}>
                 <time dateTime={payload.emittedAt}>{formatLogTime(payload.emittedAt)}</time>
@@ -784,6 +949,14 @@ function ReleaseLogPanel({ errorMessage, events, isStreaming, releaseId }) {
       {errorMessage ? <p className={styles.releaseLogError}>{errorMessage}</p> : null}
     </section>
   );
+}
+
+/**
+ * @param {ReleaseLogDisplayMode} displayMode
+ * @returns {number | null}
+ */
+function resolveReleaseLogDisplayLimit(displayMode) {
+  return RELEASE_LOG_DISPLAY_OPTIONS.find((option) => option.id === displayMode)?.limit ?? null;
 }
 
 /**
@@ -860,18 +1033,17 @@ function ApplicationsPanel({ applications, query }) {
  * @param {{
  *   profiles: ReleaseScriptProfileDefinition[],
  *   query: ReturnType<typeof useReleaseScriptProfiles>,
+ *   purposeDescription?: string,
  * }} props
  */
-function ScriptProfilesPanel({ profiles, query }) {
+function ScriptProfilesPanel({ profiles, query, purposeDescription = "" }) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingProfile, setEditingProfile] = useState(/** @type {ReleaseScriptProfileDefinition | null} */ (null));
   const [pendingDeleteProfileId, setPendingDeleteProfileId] = useState("");
+  const [copiedProfileFieldKey, setCopiedProfileFieldKey] = useState("");
   const saveProfileMutation = useSaveReleaseScriptProfile();
   const deleteProfileMutation = useDeleteReleaseScriptProfile();
   const queryState = queryFeedback([query], "Script profiles read failed");
-  if (queryState) {
-    return queryState;
-  }
 
   /**
    * @param {ReleaseScriptProfileDefinition} profile
@@ -884,6 +1056,18 @@ function ScriptProfilesPanel({ profiles, query }) {
   function openCreateProfile() {
     setEditingProfile(null);
     setDialogOpen(true);
+  }
+
+  /**
+   * @param {ReleaseScriptProfileDefinition} profile
+   * @param {ScriptProfileCopyField} field
+   * @param {string} value
+   */
+  function copyScriptProfileField(profile, field, value) {
+    if (navigator.clipboard) {
+      void navigator.clipboard.writeText(value);
+    }
+    setCopiedProfileFieldKey(scriptProfileCopyKey(profile, field));
   }
 
   /**
@@ -915,8 +1099,11 @@ function ScriptProfilesPanel({ profiles, query }) {
             New profile
           </Button>
         </div>
+        {purposeDescription ? <p className={styles.panelHint}>{purposeDescription}</p> : null}
 
-        {profiles.length === 0 ? (
+        {queryState ? (
+          queryState
+        ) : profiles.length === 0 ? (
           <FeedbackState
             message="No shared Liberty script profile definitions have been configured yet."
             state="empty"
@@ -931,53 +1118,78 @@ function ScriptProfilesPanel({ profiles, query }) {
               <span>Status</span>
               <span>Actions</span>
             </div>
-            {profiles.map((profile) => (
-              <div className={`${styles.tableRow} ${styles.profileTableRow}`} key={profile.profileId}>
-                <div className={styles.serverIdentity}>
-                  <strong>{profile.profileId}</strong>
-                  <span>{profile.displayName}</span>
-                </div>
-                <span title={profile.executablePath}>{profile.executablePath}</span>
-                <span title={profile.arguments.join(" ")}>{profile.arguments.join(" ")}</span>
-                <StatusPill tone={profile.approved && profile.enabled ? "success" : "warning"}>
-                  {profile.approved && profile.enabled ? "Approved" : "Inactive"}
-                </StatusPill>
-                <div className={`${styles.rowActions} ${styles.serverRowActions}`}>
-                  <Button
-                    aria-label={`Edit script profile ${profile.profileId}`}
-                    className={styles.iconButton}
-                    disabled={saveProfileMutation.isPending}
-                    onClick={() => openEditProfile(profile)}
-                    title="Edit script profile"
-                    variant="secondary"
+            {profiles.map((profile) => {
+              const identityLabel = scriptProfileIdentityLabel(profile);
+              const argumentsLabel = scriptProfileArgumentsLabel(profile);
+              return (
+                <div className={`${styles.tableRow} ${styles.profileTableRow}`} key={profile.profileId}>
+                  <CopyableScriptProfileCell
+                    copied={copiedProfileFieldKey === scriptProfileCopyKey(profile, "identity")}
+                    copyLabel={`Copy script profile identity for ${profile.profileId}`}
+                    onCopy={() => copyScriptProfileField(profile, "identity", identityLabel)}
+                    title={identityLabel}
                   >
-                    <Pencil aria-hidden="true" size={15} />
-                  </Button>
-                  {pendingDeleteProfileId === profile.profileId ? (
+                    <div className={styles.serverIdentity}>
+                      <strong>{profile.profileId}</strong>
+                      <span>{profile.displayName}</span>
+                    </div>
+                  </CopyableScriptProfileCell>
+                  <CopyableScriptProfileCell
+                    copied={copiedProfileFieldKey === scriptProfileCopyKey(profile, "executable")}
+                    copyLabel={`Copy script profile executable for ${profile.profileId}`}
+                    onCopy={() => copyScriptProfileField(profile, "executable", profile.executablePath)}
+                    title={profile.executablePath}
+                  >
+                    <span>{profile.executablePath}</span>
+                  </CopyableScriptProfileCell>
+                  <CopyableScriptProfileCell
+                    copied={copiedProfileFieldKey === scriptProfileCopyKey(profile, "arguments")}
+                    copyLabel={`Copy script profile arguments for ${profile.profileId}`}
+                    onCopy={() => copyScriptProfileField(profile, "arguments", argumentsLabel)}
+                    title={argumentsLabel}
+                  >
+                    <span>{argumentsLabel}</span>
+                  </CopyableScriptProfileCell>
+                  <StatusPill tone={profile.approved && profile.enabled ? "success" : "warning"}>
+                    {profile.approved && profile.enabled ? "Approved" : "Inactive"}
+                  </StatusPill>
+                  <div className={`${styles.rowActions} ${styles.serverRowActions}`}>
                     <Button
-                      aria-label={`Confirm delete script profile ${profile.profileId}`}
-                      className={styles.compactDangerButton}
-                      disabled={deleteProfileMutation.isPending}
-                      onClick={() => deleteProfile(profile)}
-                      variant="danger"
-                    >
-                      Confirm
-                    </Button>
-                  ) : (
-                    <Button
-                      aria-label={`Delete script profile ${profile.profileId}`}
+                      aria-label={`Edit script profile ${profile.profileId}`}
                       className={styles.iconButton}
-                      disabled={deleteProfileMutation.isPending}
-                      onClick={() => setPendingDeleteProfileId(profile.profileId)}
-                      title="Delete script profile"
+                      disabled={saveProfileMutation.isPending}
+                      onClick={() => openEditProfile(profile)}
+                      title="Edit script profile"
                       variant="secondary"
                     >
-                      <Trash2 aria-hidden="true" size={15} />
+                      <Pencil aria-hidden="true" size={15} />
                     </Button>
-                  )}
+                    {pendingDeleteProfileId === profile.profileId ? (
+                      <Button
+                        aria-label={`Confirm delete script profile ${profile.profileId}`}
+                        className={styles.compactDangerButton}
+                        disabled={deleteProfileMutation.isPending}
+                        onClick={() => deleteProfile(profile)}
+                        variant="danger"
+                      >
+                        Confirm
+                      </Button>
+                    ) : (
+                      <Button
+                        aria-label={`Delete script profile ${profile.profileId}`}
+                        className={styles.iconButton}
+                        disabled={deleteProfileMutation.isPending}
+                        onClick={() => setPendingDeleteProfileId(profile.profileId)}
+                        title="Delete script profile"
+                        variant="secondary"
+                      >
+                        <Trash2 aria-hidden="true" size={15} />
+                      </Button>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </section>
         )}
       </section>
@@ -1003,6 +1215,32 @@ function ScriptProfilesPanel({ profiles, query }) {
         />
       ) : null}
     </>
+  );
+}
+
+/**
+ * @param {{
+ *   children: import("react").ReactNode,
+ *   copied: boolean,
+ *   copyLabel: string,
+ *   onCopy: () => void,
+ *   title: string,
+ * }} props
+ */
+function CopyableScriptProfileCell({ children, copied, copyLabel, onCopy, title }) {
+  return (
+    <div className={styles.copyableProfileCell} title={title}>
+      <div className={styles.copyableProfileValue}>{children}</div>
+      <Button
+        aria-label={copyLabel}
+        className={styles.copyValueButton}
+        onClick={onCopy}
+        title={copied ? "已复制" : "复制完整内容"}
+        variant="secondary"
+      >
+        <Copy aria-hidden="true" size={14} />
+      </Button>
+    </div>
   );
 }
 
@@ -1239,7 +1477,6 @@ function ScriptProfileDialog({ error, initialProfile, isPending, onClose, onSubm
         form.displayName.trim() &&
         form.executablePath.trim() &&
         form.workingDirectory.trim() &&
-        argumentLines.length > 0 &&
         successExitCodes.length > 0 &&
         Number.parseInt(form.timeoutSeconds, 10) > 0,
     ) && !isPending;
@@ -1336,11 +1573,11 @@ function ScriptProfileDialog({ error, initialProfile, isPending, onClose, onSubm
 
         <div className={styles.profileTextGrid}>
           <label className={styles.formField}>
-            <span>Arguments</span>
+            <span>Argument templates (optional)</span>
             <textarea
               aria-label="Arguments"
               onChange={(event) => updateField("argumentsText", event.currentTarget.value)}
-              placeholder="{{param.serverName}}"
+              placeholder="Leave empty to pass server script parameters in row order"
               value={form.argumentsText}
             />
           </label>
@@ -1703,6 +1940,28 @@ function createScriptProfileFormFromDefinition(profile) {
 }
 
 /**
+ * @param {ReleaseScriptProfileDefinition} profile
+ */
+function scriptProfileArgumentsLabel(profile) {
+  return profile.arguments.length > 0 ? profile.arguments.join(" ") : "Use server script parameters in row order";
+}
+
+/**
+ * @param {ReleaseScriptProfileDefinition} profile
+ */
+function scriptProfileIdentityLabel(profile) {
+  return `${profile.profileId}\n${profile.displayName}`;
+}
+
+/**
+ * @param {ReleaseScriptProfileDefinition} profile
+ * @param {ScriptProfileCopyField} field
+ */
+function scriptProfileCopyKey(profile, field) {
+  return `${profile.profileId}:${field}`;
+}
+
+/**
  * @param {string} value
  */
 function textLines(value) {
@@ -1885,76 +2144,310 @@ function CredentialsPanel({ servers, serversQuery }) {
  * @param {{
  *   applications: ReleaseApplication[],
  *   applicationsQuery: ReturnType<typeof useReleaseApplications>,
- *   artifacts: ReleaseArtifact[],
- *   artifactsQuery: ReturnType<typeof useReleaseArtifacts>,
+ *   onReleaseHistoryLogSelect: (releaseId: string) => void,
+ *   releaseHistoryPlans: ReleasePlan[],
  *   servers: ReleaseServer[],
  *   serversQuery: ReturnType<typeof useReleaseServers>,
+ *   scriptProfiles: ReleaseScriptProfileDefinition[],
+ *   scriptProfilesQuery: ReturnType<typeof useReleaseScriptProfiles>,
  *   targetEnvironment: string,
  * }} props
  */
 function InventoryPanel({
   applications,
   applicationsQuery,
-  artifacts,
-  artifactsQuery,
+  onReleaseHistoryLogSelect,
+  releaseHistoryPlans,
   servers,
   serversQuery,
+  scriptProfiles,
+  scriptProfilesQuery,
   targetEnvironment,
 }) {
-  const queryState = queryFeedback([applicationsQuery, artifactsQuery, serversQuery], "发布库存读取失败");
+  const [activeConfig, setActiveConfig] = useState(/** @type {GlobalConfigId | null} */ (null));
+  const credentialAliases = useMemo(
+    () => [...new Set(servers.map((server) => server.credentialAlias).filter(Boolean))],
+    [servers],
+  );
+  const globalConfigItems = [
+    {
+      id: "applications",
+      label: "应用目录",
+      icon: Package,
+      status: resourceStatusLabel(
+        applicationsQuery,
+        applications.length,
+        `${applications.filter((application) => application.enabled).length} 个启用`,
+      ),
+      description: "发布应用定义，DEV、SIT、UAT 共用。",
+    },
+    {
+      id: "scriptProfiles",
+      label: "Script profiles",
+      icon: Code2,
+      status: resourceStatusLabel(
+        scriptProfilesQuery,
+        scriptProfiles.length,
+        `${scriptProfiles.filter((profile) => profile.approved && profile.enabled).length} 个已审核启用`,
+      ),
+      description: "Liberty 通用脚本 Profile，不按环境重复定义。",
+    },
+    {
+      id: "startScript",
+      label: "启动脚本",
+      icon: Play,
+      status: resourceStatusLabel(
+        scriptProfilesQuery,
+        scriptProfiles.length,
+        `${scriptProfiles.filter((profile) => profile.approved && profile.enabled).length} 个可引用`,
+      ),
+      description: "启动动作引用的全局脚本 Profile。",
+    },
+    {
+      id: "stopScript",
+      label: "停止脚本",
+      icon: CircleStop,
+      status: resourceStatusLabel(
+        scriptProfilesQuery,
+        scriptProfiles.length,
+        `${scriptProfiles.filter((profile) => profile.approved && profile.enabled).length} 个可引用`,
+      ),
+      description: "停止动作引用的全局脚本 Profile。",
+    },
+    {
+      id: "credentials",
+      label: "凭据别名",
+      icon: KeyRound,
+      status: resourceStatusLabel(
+        serversQuery,
+        credentialAliases.length,
+        `${targetEnvironmentLabel(targetEnvironment)} 节点引用`,
+      ),
+      description: "服务器节点引用的受控凭据别名。",
+    },
+  ];
+  const activeConfigItem = globalConfigItems.find((item) => item.id === activeConfig) ?? null;
   return (
-    <aside aria-label="发布中心库存" className={styles.inventoryPanel}>
-      <div className={styles.inventoryHeader}>
-        <span className={styles.kicker}>Catalog</span>
-        <h2>配置快照</h2>
-      </div>
-      {queryState ?? (
-        <div className={styles.inventorySections}>
-          <section aria-label="应用库存" className={styles.inventorySection}>
-            <span className={styles.sectionLabel}>应用</span>
-            {applications.length === 0 ? (
-              <p>暂无应用</p>
-            ) : (
-              applications.slice(0, 3).map((application) => (
-                <div className={styles.inventoryRow} key={application.applicationId}>
-                  <strong>{application.applicationId}</strong>
-                  <span>{application.displayName}</span>
-                </div>
-              ))
-            )}
-          </section>
-          <section aria-label="服务器库存" className={styles.inventorySection}>
-            <span className={styles.sectionLabel}>服务器 / {targetEnvironment}</span>
-            {servers.length === 0 ? (
-              <p>暂无服务器</p>
-            ) : (
-              servers.slice(0, 4).map((server) => (
-                <div className={styles.inventoryRow} key={server.nodeId}>
-                  <strong>{server.nodeId}</strong>
-                  <span>
-                    {server.serverType} / {server.managementMode}
-                  </span>
-                </div>
-              ))
-            )}
-          </section>
-          <section aria-label="制品库存" className={styles.inventorySection}>
-            <span className={styles.sectionLabel}>制品 / {targetEnvironment}</span>
-            {artifacts.length === 0 ? (
-              <p>暂无制品</p>
-            ) : (
-              artifacts.slice(0, 3).map((artifact) => (
-                <div className={styles.inventoryRow} key={artifact.artifactId}>
-                  <strong>{artifact.artifactId}</strong>
-                  <span>{artifact.checksum}</span>
-                </div>
-              ))
-            )}
-          </section>
+    <aside aria-label="发布中心全局配置" className={styles.inventoryPanel}>
+      <ReleaseHistoryPanel
+        applications={applications}
+        key={targetEnvironment}
+        onSelectReleaseLog={onReleaseHistoryLogSelect}
+        plans={releaseHistoryPlans}
+        targetEnvironment={targetEnvironment}
+      />
+      <section aria-label="全局配置" className={styles.globalConfigSection}>
+        <div className={styles.inventoryHeader}>
+          <h2>全局配置</h2>
         </div>
-      )}
+        <div className={styles.globalConfigList}>
+          {globalConfigItems.map((item) => {
+            const Icon = item.icon;
+            return (
+              <article className={styles.globalConfigItem} key={item.id}>
+                <span className={styles.globalConfigIcon} aria-hidden="true">
+                  <Icon size={16} />
+                </span>
+                <div className={styles.globalConfigMeta}>
+                  <strong>{item.label}</strong>
+                  <span>{item.description}</span>
+                  <small>{item.status}</small>
+                </div>
+                <Button
+                  aria-label={`配置 ${item.label}`}
+                  className={styles.globalConfigButton}
+                  onClick={() => setActiveConfig(/** @type {GlobalConfigId} */ (item.id))}
+                  title={`配置 ${item.label}`}
+                  variant="secondary"
+                >
+                  <Settings2 aria-hidden="true" size={15} />
+                </Button>
+              </article>
+            );
+          })}
+        </div>
+      </section>
+      {activeConfigItem ? (
+        <Dialog
+          closeLabel={`关闭配置 ${activeConfigItem.label}`}
+          description="这些配置是跨 DEV、SIT、UAT 复用的全局资源；环境节点只引用它们。"
+          eyebrow="Global resource"
+          icon={<activeConfigItem.icon aria-hidden="true" size={18} />}
+          onClose={() => setActiveConfig(null)}
+          open={Boolean(activeConfig)}
+          size="wide"
+          title={`配置 ${activeConfigItem.label}`}
+        >
+          {activeConfig === "applications" ? (
+            <ApplicationsPanel applications={applications} query={applicationsQuery} />
+          ) : null}
+          {activeConfig === "scriptProfiles" ? (
+            <ScriptProfilesPanel profiles={scriptProfiles} query={scriptProfilesQuery} />
+          ) : null}
+          {activeConfig === "startScript" ? (
+            <ScriptProfilesPanel
+              profiles={scriptProfiles}
+              purposeDescription="启动脚本使用全局 Script profile 定义，节点仅引用 profileId 和自身参数。"
+              query={scriptProfilesQuery}
+            />
+          ) : null}
+          {activeConfig === "stopScript" ? (
+            <ScriptProfilesPanel
+              profiles={scriptProfiles}
+              purposeDescription="停止脚本使用全局 Script profile 定义，节点仅引用 profileId 和自身参数。"
+              query={scriptProfilesQuery}
+            />
+          ) : null}
+          {activeConfig === "credentials" ? (
+            <CredentialsPanel servers={servers} serversQuery={serversQuery} />
+          ) : null}
+        </Dialog>
+      ) : null}
     </aside>
   );
+}
+
+/**
+ * @param {{
+ *   applications: ReleaseApplication[],
+ *   onSelectReleaseLog: (releaseId: string) => void,
+ *   plans: ReleasePlan[],
+ *   targetEnvironment: string,
+ * }} props
+ */
+function ReleaseHistoryPanel({ applications, onSelectReleaseLog, plans, targetEnvironment }) {
+  const historyPlans = releaseHistoryPlans(plans);
+  const [historyPage, setHistoryPage] = useState(1);
+  const pageCount = Math.max(1, Math.ceil(historyPlans.length / RELEASE_HISTORY_PAGE_SIZE));
+  const currentPage = Math.min(historyPage, pageCount);
+  const pageStartIndex = (currentPage - 1) * RELEASE_HISTORY_PAGE_SIZE;
+  const visiblePlans = historyPlans.slice(pageStartIndex, pageStartIndex + RELEASE_HISTORY_PAGE_SIZE);
+
+  return (
+    <section aria-label="发布历史" className={styles.releaseHistoryCard}>
+      <div className={styles.releaseHistoryHeader}>
+        <div>
+          <h2>发布历史</h2>
+        </div>
+        <StatusPill tone="info">
+          {historyPlans.length > 0 ? `${historyPlans.length} 条` : targetEnvironmentLabel(targetEnvironment)}
+        </StatusPill>
+      </div>
+      <p className={styles.releaseHistoryContext}>
+        {historyPlans.length > 0
+          ? `${targetEnvironmentLabel(targetEnvironment)} 发布记录`
+          : `${targetEnvironmentLabel(targetEnvironment)} 暂无发布记录`}
+      </p>
+      {historyPlans.length === 0 ? (
+        <p className={styles.releaseHistoryEmpty}>暂无发布历史</p>
+      ) : (
+        <>
+          <ol className={styles.releaseHistoryList}>
+            {visiblePlans.map((plan, index) => (
+              <li key={plan.releaseId}>
+                <button
+                  aria-label={`查看 ${plan.releaseId} 发布日志`}
+                  className={styles.releaseHistoryButton}
+                  onClick={() => onSelectReleaseLog(plan.releaseId)}
+                  type="button"
+                >
+                  <span>#{pageStartIndex + index + 1}</span>
+                  <strong
+                    title={`${releaseApplicationDisplayName(applications, plan.applicationId)} / ${plan.releaseId}`}
+                  >
+                    {plan.releaseId}
+                  </strong>
+                  <ReleaseHistoryStatusIcon status={plan.status} />
+                </button>
+              </li>
+            ))}
+          </ol>
+          <div className={styles.releaseHistoryPagination}>
+            <Button
+              aria-label="上一页发布历史"
+              className={styles.releaseHistoryPageButton}
+              disabled={currentPage <= 1}
+              onClick={() => setHistoryPage((page) => Math.max(1, page - 1))}
+              title="上一页发布历史"
+              variant="secondary"
+            >
+              <ChevronLeft aria-hidden="true" size={14} />
+            </Button>
+            <span>第 {currentPage} / {pageCount} 页</span>
+            <Button
+              aria-label="下一页发布历史"
+              className={styles.releaseHistoryPageButton}
+              disabled={currentPage >= pageCount}
+              onClick={() => setHistoryPage((page) => Math.min(pageCount, page + 1))}
+              title="下一页发布历史"
+              variant="secondary"
+            >
+              <ChevronRight aria-hidden="true" size={14} />
+            </Button>
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+/**
+ * @param {{ status: string }} props
+ */
+function ReleaseHistoryStatusIcon({ status }) {
+  let icon = <Play aria-hidden="true" size={15} />;
+  if (["SUCCEEDED", "READY"].includes(status)) {
+    icon = <CheckCircle2 aria-hidden="true" size={15} />;
+  } else if (["FAILED", "PARTIAL_FAILED", "ROLLBACK_FAILED", "MANUAL_INTERVENTION"].includes(status)) {
+    icon = <CircleStop aria-hidden="true" size={15} />;
+  } else if (["RUNNING", "ROLLING_BACK"].includes(status)) {
+    icon = <RefreshCw aria-hidden="true" size={15} />;
+  } else if (status === "WAIT_CONFIRM") {
+    icon = <ShieldCheck aria-hidden="true" size={15} />;
+  }
+  return (
+    <span
+      aria-label={`状态 ${status}`}
+      className={styles.releaseHistoryStatusIcon}
+      data-tone={statusTone(status)}
+      role="img"
+      title={status}
+    >
+      {icon}
+    </span>
+  );
+}
+
+/**
+ * @param {ReleasePlan[]} plans
+ */
+function releaseHistoryPlans(plans) {
+  return plans
+    .map((plan, index) => ({ index, plan }))
+    .sort((left, right) => {
+      const leftTime = releasePlanCreatedTime(left.plan);
+      const rightTime = releasePlanCreatedTime(right.plan);
+      if (leftTime !== rightTime) {
+        return leftTime - rightTime;
+      }
+      return left.index - right.index;
+    })
+    .map((entry) => entry.plan);
+}
+
+/**
+ * @param {ReleasePlan} plan
+ */
+function releasePlanCreatedTime(plan) {
+  return plan.createdAt ? Date.parse(plan.createdAt) : Number.MAX_SAFE_INTEGER;
+}
+
+/**
+ * @param {ReleaseApplication[]} applications
+ * @param {string} applicationId
+ */
+function releaseApplicationDisplayName(applications, applicationId) {
+  return applications.find((application) => application.applicationId === applicationId)?.displayName ?? applicationId;
 }
 
 /**
@@ -1991,6 +2484,22 @@ function queryFeedback(queries, errorTitle) {
 }
 
 /**
+ * @param {{isLoading: boolean, isError: boolean}} query
+ * @param {number} count
+ * @param {string} readyStatus
+ * @returns {string}
+ */
+function resourceStatusLabel(query, count, readyStatus) {
+  if (query.isLoading) {
+    return "读取中";
+  }
+  if (query.isError) {
+    return "读取失败";
+  }
+  return `${count} 项 · ${readyStatus}`;
+}
+
+/**
  * @param {string} status
  * @returns {"info" | "success" | "warning" | "danger"}
  */
@@ -2007,6 +2516,10 @@ function statusTone(status) {
   return "info";
 }
 
+/**
+ * @param {string} status
+ * @returns {import("lucide-react").LucideIcon}
+ */
 /**
  * @param {string} value
  */

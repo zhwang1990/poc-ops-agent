@@ -121,20 +121,27 @@ ops-agent:
       release.catalog.read:
         - ROLE_ops-reader
         - ROLE_ops-admin
+        - ROLE_ops-release
       release.catalog.write:
         - ROLE_ops-admin
+        - ROLE_ops-release
       release.credential.rotate:
         - ROLE_ops-admin
       release.connection.test:
         - ROLE_ops-admin
+        - ROLE_ops-release
       release.plan.create:
         - ROLE_ops-admin
+        - ROLE_ops-release
       release.plan.confirm:
         - ROLE_ops-admin
+        - ROLE_ops-release
       release.plan.execute:
         - ROLE_ops-admin
+        - ROLE_ops-release
       release.rollback.execute:
         - ROLE_ops-admin
+        - ROLE_ops-release
   worker:
     base-url: http://127.0.0.1:8091
     transport-auth:

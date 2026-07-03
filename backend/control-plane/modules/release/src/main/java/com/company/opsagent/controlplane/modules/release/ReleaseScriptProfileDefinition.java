@@ -69,7 +69,7 @@ public record ReleaseScriptProfileDefinition(
 
   private static List<String> validArguments(List<String> values) {
     List<String> arguments = values == null ? List.of() : List.copyOf(values);
-    if (arguments.isEmpty() || arguments.size() > MAX_ARGUMENTS) {
+    if (arguments.size() > MAX_ARGUMENTS) {
       throw new IllegalArgumentException("arguments are invalid");
     }
     for (String argument : arguments) {

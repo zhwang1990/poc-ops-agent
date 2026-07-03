@@ -55,14 +55,14 @@ public class PolicyProperties {
 
   private static Map<String, List<String>> defaultRequiredRolesByAction() {
     LinkedHashMap<String, List<String>> defaults = new LinkedHashMap<>();
-    defaults.put("release.catalog.read", List.of("ROLE_ops-reader", "ROLE_ops-admin"));
-    defaults.put("release.catalog.write", List.of("ROLE_ops-admin"));
+    defaults.put("release.catalog.read", List.of("ROLE_ops-reader", "ROLE_ops-admin", "ROLE_ops-release"));
+    defaults.put("release.catalog.write", List.of("ROLE_ops-admin", "ROLE_ops-release"));
     defaults.put("release.credential.rotate", List.of("ROLE_ops-admin"));
-    defaults.put("release.connection.test", List.of("ROLE_ops-admin"));
-    defaults.put("release.plan.create", List.of("ROLE_ops-admin"));
-    defaults.put("release.plan.confirm", List.of("ROLE_ops-admin"));
-    defaults.put("release.plan.execute", List.of("ROLE_ops-admin"));
-    defaults.put("release.rollback.execute", List.of("ROLE_ops-admin"));
+    defaults.put("release.connection.test", List.of("ROLE_ops-admin", "ROLE_ops-release"));
+    defaults.put("release.plan.create", List.of("ROLE_ops-admin", "ROLE_ops-release"));
+    defaults.put("release.plan.confirm", List.of("ROLE_ops-admin", "ROLE_ops-release"));
+    defaults.put("release.plan.execute", List.of("ROLE_ops-admin", "ROLE_ops-release"));
+    defaults.put("release.rollback.execute", List.of("ROLE_ops-admin", "ROLE_ops-release"));
     return defaults;
   }
 }

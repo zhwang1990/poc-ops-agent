@@ -64,7 +64,8 @@
 }
 
 .summaryLead h2,
-.inventoryHeader h2 {
+.inventoryHeader h2,
+.releaseHistoryHeader h2 {
   margin: 2px 0 0;
   color: var(--release-ink);
   font-size: 16px;
@@ -83,8 +84,9 @@
 
 .environmentSwitch {
   display: grid;
-  width: 186px;
+  width: 206px;
   grid-template-columns: repeat(3, 1fr);
+  gap: 3px;
   padding: 3px;
   border: 1px solid var(--release-line);
   border-radius: 8px;
@@ -178,6 +180,7 @@
 .inventoryPanel {
   min-width: 0;
   overflow: hidden;
+  grid-template-rows: minmax(0, 1fr) auto;
   border: 1px solid var(--release-line);
   border-radius: 8px;
   background: var(--release-surface);
@@ -191,29 +194,41 @@
 }
 
 .tabs {
-  display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 6px;
-  padding: 10px;
-  border-bottom: 1px solid var(--release-line);
-  background: var(--release-soft);
+  display: inline-flex;
+  width: max-content;
+  max-width: calc(100% - 24px);
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-start;
+  justify-self: start;
+  gap: 5px;
+  margin: 10px 12px 0;
+  padding: 4px;
+  overflow-x: auto;
+  border: 1px solid var(--release-line);
+  border-radius: 10px;
+  background: oklch(0.96 0.008 232);
+  box-shadow: inset 0 1px 0 oklch(0.995 0.004 232 / 0.85);
 }
 
 .tabButton {
   appearance: none;
   display: inline-flex;
-  min-width: 0;
-  height: 38px;
+  width: auto;
+  min-width: 86px;
+  height: 32px;
   align-items: center;
   justify-content: center;
-  gap: 7px;
+  gap: 6px;
+  padding: 0 10px;
   border: 1px solid transparent;
   border-radius: 8px;
   background: transparent;
   color: var(--release-muted);
   cursor: pointer;
+  flex: 0 0 auto;
   font: inherit;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 850;
   letter-spacing: 0;
 }
@@ -236,11 +251,11 @@
 
 .tabButtonActive {
   border-color: oklch(0.74 0.06 236);
-  background: var(--release-surface);
+  background: oklch(0.995 0.004 232);
   color: var(--release-blue);
   box-shadow:
-    0 8px 16px oklch(0.34 0.024 238 / 0.075),
-    inset 0 1px 0 oklch(0.995 0.004 232 / 0.9);
+    0 4px 10px oklch(0.34 0.024 238 / 0.08),
+    inset 0 1px 0 oklch(0.995 0.004 232 / 0.95);
 }
 
 .tabPanel {
@@ -266,8 +281,8 @@
 
 .planRow {
   display: grid;
-  min-height: 116px;
-  grid-template-columns: minmax(260px, 1fr) minmax(180px, 0.58fr) 132px;
+  min-height: 76px;
+  grid-template-columns: minmax(240px, 1fr) minmax(150px, 0.45fr) minmax(382px, max-content);
   gap: 12px;
   align-items: center;
   padding: 12px;
@@ -289,9 +304,10 @@
 
 .planCopy,
 .inventoryHeader,
-.inventorySections,
-.inventorySection,
-.inventoryRow {
+.globalConfigSection,
+.globalConfigList,
+.globalConfigItem,
+.globalConfigMeta {
   display: grid;
   min-width: 0;
 }
@@ -305,8 +321,9 @@
 .planMeta span,
 .tableRow strong,
 .tableRow span,
-.inventoryRow strong,
-.inventoryRow span {
+.globalConfigMeta strong,
+.globalConfigMeta span,
+.globalConfigMeta small {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -315,7 +332,7 @@
 
 .planCopy strong,
 .tableRow strong,
-.inventoryRow strong {
+.globalConfigMeta strong {
   color: var(--release-ink);
   font-size: 13px;
   font-weight: 880;
@@ -324,8 +341,8 @@
 .planCopy span,
 .planMeta span,
 .tableRow span,
-.inventoryRow span,
-.inventorySection p {
+.globalConfigMeta span,
+.globalConfigMeta small {
   color: var(--release-muted);
   font-size: 12px;
   font-weight: 760;
@@ -389,22 +406,88 @@
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  flex-wrap: wrap;
 }
 
-.releaseLogHeader strong {
+.releaseLogTitle {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.releaseLogTitle strong {
   color: var(--release-ink);
   font-size: 12px;
   font-weight: 880;
 }
 
+.releaseLogTitle span {
+  color: var(--release-muted);
+  font-size: 11px;
+  font-weight: 820;
+}
+
+.releaseLogControls {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.releaseLogControl {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  color: var(--release-muted);
+  font-size: 11px;
+  font-weight: 820;
+}
+
+.releaseLogControl select {
+  height: 32px;
+  min-width: 132px;
+  border: 1px solid var(--release-line);
+  border-radius: 8px;
+  background: var(--release-surface);
+  color: var(--release-ink);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 820;
+}
+
+.releaseLogToggle {
+  width: auto;
+  min-height: 32px;
+  padding: 6px 9px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.releaseLogCloseButton {
+  width: 32px;
+  min-height: 32px;
+  padding: 0;
+  border-radius: 8px;
+}
+
 .releaseLogList {
   display: grid;
-  max-height: 164px;
+  max-height: 220px;
   gap: 6px;
   margin: 0;
   padding: 0;
   overflow: auto;
   list-style: none;
+}
+
+.releaseLogList[data-expanded="true"] {
+  max-height: min(58vh, 620px);
 }
 
 .releaseLogList li {
@@ -452,10 +535,11 @@
 .rowActions {
   justify-content: end;
   gap: 7px;
+  flex-wrap: wrap;
 }
 
 .compactButton {
-  width: 72px;
+  width: 70px;
   min-height: 32px;
   padding: 6px 8px;
   border-radius: 8px;
@@ -474,6 +558,14 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.panelHint {
+  margin: -2px 0 0;
+  color: var(--release-muted);
+  font-size: 12px;
+  font-weight: 740;
+  line-height: 1.45;
 }
 
 .panelTitle {
@@ -540,13 +632,53 @@
 }
 
 .profileTableRow {
-  grid-template-columns: minmax(132px, 1fr) minmax(180px, 1.25fr) minmax(170px, 1.1fr) 104px 112px;
+  grid-template-columns: minmax(170px, 1.08fr) minmax(220px, 1.3fr) minmax(260px, 1.55fr) 96px 96px;
 }
 
 .serverIdentity {
   display: grid;
   min-width: 0;
   gap: 2px;
+}
+
+.serverIdentity strong,
+.serverIdentity span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.copyableProfileCell {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+.copyableProfileValue {
+  display: grid;
+  min-width: 0;
+  flex: 1 1 auto;
+  gap: 2px;
+}
+
+.copyableProfileValue > span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--release-ink);
+  font-size: 12px;
+  font-weight: 760;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.copyValueButton {
+  width: 30px;
+  min-height: 30px;
+  flex: 0 0 auto;
+  padding: 6px;
+  border-radius: 8px;
 }
 
 .artifactPathCell {
@@ -845,7 +977,8 @@
 
 .inventoryPanel {
   display: grid;
-  align-content: start;
+  min-height: 0;
+  align-content: stretch;
   gap: 12px;
   padding: 12px;
 }
@@ -854,27 +987,220 @@
   gap: 3px;
 }
 
-.inventorySections {
-  gap: 12px;
+.releaseHistoryCard {
+  display: flex;
+  height: auto;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--release-line);
 }
 
-.inventorySection {
-  gap: 7px;
-  padding-top: 10px;
-  border-top: 1px solid var(--release-line);
+.releaseHistoryHeader {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
-.inventorySection p {
+.releaseHistoryHeader > div {
+  min-width: 0;
+}
+
+.releaseHistoryContext,
+.releaseHistoryEmpty {
+  min-width: 0;
   margin: 0;
+  overflow: hidden;
+  color: var(--release-muted);
+  font-size: 12px;
+  font-weight: 760;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.inventoryRow {
-  gap: 4px;
-  min-height: 45px;
-  padding: 8px 9px;
+.releaseHistoryEmpty {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 42px;
+  align-content: center;
+  padding: 10px;
+  border: 1px solid var(--release-line);
+  border-radius: 8px;
+  background: var(--release-soft);
+  text-align: center;
+}
+
+.releaseHistoryList {
+  display: grid;
+  flex: 1 1 auto;
+  min-height: 0;
+  align-content: start;
+  grid-auto-rows: max-content;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.releaseHistoryList li {
+  min-width: 0;
+}
+
+.releaseHistoryButton {
+  display: grid;
+  width: 100%;
+  min-height: 32px;
+  grid-template-columns: 34px minmax(0, 1fr) max-content;
+  gap: 8px;
+  align-items: center;
+  padding: 5px 8px;
   border: 1px solid oklch(0.86 0.018 232);
   border-radius: 8px;
   background: var(--release-soft);
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.releaseHistoryButton:hover {
+  border-color: oklch(0.7 0.065 236);
+  background: oklch(0.975 0.012 236);
+}
+
+.releaseHistoryButton:focus-visible {
+  border-color: oklch(0.58 0.095 236);
+  outline: 2px solid oklch(0.63 0.098 236 / 0.24);
+  outline-offset: 2px;
+}
+
+.releaseHistoryButton span {
+  color: var(--release-muted);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.releaseHistoryButton strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--release-ink);
+  font-size: 12px;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.releaseHistoryStatusIcon {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  justify-self: end;
+  border: 1px solid oklch(0.82 0.02 232);
+  border-radius: 999px;
+  background: oklch(0.985 0.006 232);
+  color: var(--release-muted);
+}
+
+.releaseHistoryStatusIcon[data-tone="success"] {
+  border-color: oklch(0.76 0.058 148);
+  background: oklch(0.95 0.03 148);
+  color: var(--release-green);
+}
+
+.releaseHistoryStatusIcon[data-tone="warning"] {
+  border-color: oklch(0.79 0.08 76);
+  background: oklch(0.96 0.032 76);
+  color: var(--release-amber);
+}
+
+.releaseHistoryStatusIcon[data-tone="danger"] {
+  border-color: oklch(0.76 0.072 18);
+  background: oklch(0.96 0.032 18);
+  color: var(--release-red);
+}
+
+.releaseHistoryPagination {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 32px minmax(0, 1fr) 32px;
+  gap: 8px;
+  align-items: center;
+  margin-top: auto;
+}
+
+.releaseHistoryPagination span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--release-muted);
+  font-size: 11px;
+  font-weight: 850;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.releaseHistoryPageButton {
+  width: 32px;
+  height: 30px;
+  min-height: 0;
+  padding: 0;
+  border-radius: 8px;
+}
+
+.globalConfigSection {
+  align-self: end;
+  max-height: 100%;
+  gap: 12px;
+  overflow: auto;
+}
+
+.globalConfigList {
+  gap: 10px;
+}
+
+.globalConfigItem {
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  gap: 9px;
+  align-items: center;
+  min-height: 74px;
+  padding: 10px;
+  border: 1px solid oklch(0.86 0.018 232);
+  border-radius: 8px;
+  background: var(--release-soft);
+}
+
+.globalConfigIcon {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 1px solid oklch(0.76 0.052 235 / 0.7);
+  border-radius: 8px;
+  background: oklch(0.985 0.006 235 / 0.86);
+  color: var(--release-blue);
+}
+
+.globalConfigMeta {
+  gap: 4px;
+}
+
+.globalConfigMeta small {
+  color: oklch(0.47 0.067 235);
+}
+
+.globalConfigButton {
+  display: inline-flex;
+  width: 32px;
+  height: 31px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
 }
 
 @media (max-width: 1180px) {
@@ -893,11 +1219,38 @@
   .rowActions {
     grid-column: auto;
   }
+
+  .inventoryPanel {
+    grid-template-rows: auto auto;
+  }
+
+  .releaseHistoryCard {
+    height: auto;
+  }
+
+  .releaseHistoryList,
+  .releaseHistoryEmpty {
+    height: auto;
+  }
+
+  .releaseHistoryList {
+    max-height: 236px;
+  }
+
+  .globalConfigSection {
+    align-self: stretch;
+    overflow: visible;
+  }
 }
 
 @media (max-width: 760px) {
   .tabs {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: auto;
+    max-width: calc(100% - 24px);
+  }
+
+  .tabButton {
+    min-width: 78px;
   }
 
   .summaryActions {

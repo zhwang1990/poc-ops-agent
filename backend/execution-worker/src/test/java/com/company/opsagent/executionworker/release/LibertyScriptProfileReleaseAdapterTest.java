@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.company.opsagent.contracts.workflow.OperatorContext;
 import com.company.opsagent.contracts.workflow.PolicyDecisionReference;
 import com.company.opsagent.contracts.workflow.TraceContext;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -92,10 +93,73 @@ class LibertyScriptProfileReleaseAdapterTest {
         .block();
 
     assertEquals(ReleaseWorkerStatus.SUCCEEDED, result.status());
-    String captured = Files.readString(output, StandardCharsets.UTF_8);
+    String captured = Files.readString(output, Charset.defaultCharset());
     assertTrue(captured.contains("defaultServer"));
     assertTrue(captured.contains("orders"));
     assertTrue(captured.contains("\\\\jenkins\\share\\orders\\latest\\orders.war"));
+  }
+
+  @Test
+  void deployPassesNodeScriptParametersWhenDefinitionArgumentsAreEmpty() throws Exception {
+    Path output = tempDir.resolve("node-parameters-output.txt");
+    Path executable = parameterCaptureScript(output);
+    LibertyScriptProfileReleaseAdapter adapter = new LibertyScriptProfileReleaseAdapter(
+        tempDir,
+        Map.of(),
+        clock);
+
+    ReleaseWorkerResult result = adapter.deploy(request(
+        (ReleaseWorkerRequest.ReleaseArtifactReference) null,
+        new ReleaseWorkerRequest.ReleaseScriptProfile(
+            "liberty-war-deploy",
+            List.of(
+                new ReleaseWorkerRequest.ReleaseScriptParameter("serverName", "defaultServer"),
+                new ReleaseWorkerRequest.ReleaseScriptParameter("applicationName", "orders"),
+                new ReleaseWorkerRequest.ReleaseScriptParameter("artifactPath", "\\\\jenkins\\share\\orders\\latest\\orders.war")),
+            new ReleaseWorkerRequest.ReleaseScriptProfileDefinition(
+                executable.toString(),
+                List.of(),
+                List.of(0),
+                10,
+                tempDir.toString(),
+                true,
+                true))))
+        .block();
+
+    assertEquals(ReleaseWorkerStatus.SUCCEEDED, result.status());
+    String captured = Files.readString(output, Charset.defaultCharset());
+    assertTrue(captured.contains("defaultServer"));
+    assertTrue(captured.contains("orders"));
+    assertTrue(captured.contains("\\\\jenkins\\share\\orders\\latest\\orders.war"));
+  }
+
+  @Test
+  void deployRejectsEmptyDefinitionArgumentsWithoutNodeScriptParameters() throws Exception {
+    Path output = tempDir.resolve("node-parameters-output.txt");
+    Path executable = parameterCaptureScript(output);
+    LibertyScriptProfileReleaseAdapter adapter = new LibertyScriptProfileReleaseAdapter(
+        tempDir,
+        Map.of(),
+        clock);
+
+    ReleaseWorkerResult result = adapter.deploy(request(
+        (ReleaseWorkerRequest.ReleaseArtifactReference) null,
+        new ReleaseWorkerRequest.ReleaseScriptProfile(
+            "liberty-war-deploy",
+            List.of(),
+            new ReleaseWorkerRequest.ReleaseScriptProfileDefinition(
+                executable.toString(),
+                List.of(),
+                List.of(0),
+                10,
+                tempDir.toString(),
+                true,
+                true))))
+        .block();
+
+    assertEquals(ReleaseWorkerStatus.REJECTED, result.status());
+    assertEquals("LIBERTY_SCRIPT_PARAMETER_REQUIRED", result.errorCode());
+    assertFalse(Files.exists(output));
   }
 
   @Test
@@ -298,5 +362,16 @@ class LibertyScriptProfileReleaseAdapterTest {
   private Path javaExecutable() {
     String executable = System.getProperty("os.name").toLowerCase().contains("win") ? "java.exe" : "java";
     return Path.of(System.getProperty("java.home"), "bin", executable);
+  }
+
+  private Path parameterCaptureScript(Path output) throws Exception {
+    boolean windows = System.getProperty("os.name").toLowerCase().contains("win");
+    Path script = tempDir.resolve(windows ? "capture-parameters.cmd" : "capture-parameters.sh");
+    String content = windows
+        ? "@echo off\r\necho %* > \"" + output + "\"\r\n"
+        : "#!/bin/sh\nprintf '%s ' \"$@\" > '" + output + "'\n";
+    Files.writeString(script, content, StandardCharsets.UTF_8);
+    script.toFile().setExecutable(true);
+    return script;
   }
 }
