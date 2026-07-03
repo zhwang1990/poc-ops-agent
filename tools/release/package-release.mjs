@@ -5,6 +5,10 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  createFrontendBuildSteps,
+  parseReleasePackageArgs,
+} from "./package-release-options.mjs";
+import {
   assertDirectoryExists,
   buildReleasePackage,
   findSingleJar,
@@ -16,7 +20,11 @@ const repositoryRoot = resolve(scriptDirectory, "../..");
 const backendRoot = join(repositoryRoot, "backend");
 const frontendRoot = join(repositoryRoot, "frontend", "operator-console");
 
-const options = await parseArgs(process.argv.slice(2));
+const options = parseReleasePackageArgs(process.argv.slice(2));
+if (options.help) {
+  printHelp();
+  process.exit(0);
+}
 const version = options.version ?? await readMavenProjectVersion(join(backendRoot, "pom.xml"));
 const artifactRoot = resolve(repositoryRoot, options.artifactRoot ?? join("artifacts", "release"));
 const publishDirectory = options.publishDirectory
@@ -29,7 +37,9 @@ if (!options.skipFrontendInstall) {
   await runPortableCommand("npm", ["ci"], { cwd: frontendRoot });
 }
 
-await runPortableCommand("npm", ["run", "build"], { cwd: frontendRoot });
+for (const step of createFrontendBuildSteps(options)) {
+  await runPortableCommand(step.command, step.args, { cwd: frontendRoot });
+}
 await assertDirectoryExists(frontendDist, "frontend dist");
 
 const mavenGoal = options.skipTests ? "package" : "verify";
@@ -72,58 +82,6 @@ console.log(`Release zip: ${result.zipPath}`);
 console.log(`Release manifest: ${result.manifestPath}`);
 console.log(`Release checksums: ${result.checksumPath}`);
 
-async function parseArgs(args) {
-  const parsed = {
-    artifactRoot: undefined,
-    publishDirectory: undefined,
-    skipFrontendInstall: false,
-    skipTests: false,
-    version: undefined,
-  };
-
-  for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index];
-    if (arg === "--help" || arg === "-h") {
-      printHelp();
-      process.exit(0);
-    }
-    if (arg === "--skip-frontend-install") {
-      parsed.skipFrontendInstall = true;
-      continue;
-    }
-    if (arg === "--skip-tests") {
-      parsed.skipTests = true;
-      continue;
-    }
-    if (arg === "--version") {
-      parsed.version = readValue(args, index, arg);
-      index += 1;
-      continue;
-    }
-    if (arg === "--artifact-root") {
-      parsed.artifactRoot = readValue(args, index, arg);
-      index += 1;
-      continue;
-    }
-    if (arg === "--publish-dir") {
-      parsed.publishDirectory = readValue(args, index, arg);
-      index += 1;
-      continue;
-    }
-    throw new Error(`Unknown argument: ${arg}`);
-  }
-
-  return parsed;
-}
-
-function readValue(args, index, name) {
-  const value = args[index + 1];
-  if (!value || value.startsWith("--")) {
-    throw new Error(`${name} requires a value.`);
-  }
-  return value;
-}
-
 function printHelp() {
   console.log(`Usage: node tools/release/package-release.mjs [options]
 
@@ -133,6 +91,7 @@ Options:
   --publish-dir <path>          Copy zip, manifest, and checksum files to an external directory.
   --skip-tests                  Use Maven package with -DskipTests for local packaging verification.
   --skip-frontend-install       Skip npm ci when node_modules is already prepared.
+  --skip-frontend-tests         Run frontend check, lint, and Vite build without Vitest.
   -h, --help                    Show this help.
 `);
 }
