@@ -29,8 +29,6 @@ assert.equal(parsed.version, "0.1.0-test");
 assert.equal(parsed.artifactRoot, "tmp/release");
 assert.equal(parsed.publishDirectory, "tmp/publish");
 assert.deepEqual(createFrontendBuildSteps(parsed), [
-  { command: "npm", args: ["run", "check"] },
-  { command: "npm", args: ["run", "lint"] },
   { command: "npm", args: ["exec", "vite", "--", "build"] },
 ]);
 

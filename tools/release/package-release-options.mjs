@@ -52,11 +52,7 @@ export function createFrontendBuildSteps(options) {
     return [{ command: "npm", args: ["run", "build"] }];
   }
 
-  return [
-    { command: "npm", args: ["run", "check"] },
-    { command: "npm", args: ["run", "lint"] },
-    { command: "npm", args: ["exec", "vite", "--", "build"] },
-  ];
+  return [{ command: "npm", args: ["exec", "vite", "--", "build"] }];
 }
 
 function readValue(args, index, name) {

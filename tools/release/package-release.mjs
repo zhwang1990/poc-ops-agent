@@ -91,7 +91,7 @@ Options:
   --publish-dir <path>          Copy zip, manifest, and checksum files to an external directory.
   --skip-tests                  Use Maven package with -DskipTests for local packaging verification.
   --skip-frontend-install       Skip npm ci when node_modules is already prepared.
-  --skip-frontend-tests         Run frontend check, lint, and Vite build without Vitest.
+  --skip-frontend-tests         Run only Vite build for the frontend.
   -h, --help                    Show this help.
 `);
 }
