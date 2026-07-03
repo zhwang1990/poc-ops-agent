@@ -378,6 +378,12 @@ public class LibertyScriptProfileReleaseAdapter implements ReleaseAdapter {
     } catch (IllegalArgumentException exception) {
       return rejected(request, "LIBERTY_SCRIPT_PROFILE_INVALID", exception.getMessage());
     }
+    if (configuredProfile.getArguments().isEmpty() && parameters.isEmpty()) {
+      return rejected(
+          request,
+          "LIBERTY_SCRIPT_PARAMETER_REQUIRED",
+          "script parameters are required when profile arguments are empty");
+    }
     try {
       validateTemplateParameters(configuredProfile.getArguments(), parameters);
     } catch (IllegalArgumentException exception) {
@@ -411,6 +417,10 @@ public class LibertyScriptProfileReleaseAdapter implements ReleaseAdapter {
     Map<String, String> scriptParameters = parameters(node.scriptProfile());
     List<String> commandLine = new ArrayList<>();
     commandLine.add(configuredProfile.getExecutablePath().toString());
+    if (configuredProfile.getArguments().isEmpty()) {
+      commandLine.addAll(parameterValues(node.scriptProfile()));
+      return commandLine;
+    }
     for (String argumentTemplate : configuredProfile.getArguments()) {
       commandLine.add(resolveTemplate(argumentTemplate, context, scriptParameters));
     }
@@ -462,6 +472,15 @@ public class LibertyScriptProfileReleaseAdapter implements ReleaseAdapter {
       }
     }
     return Map.copyOf(parameters);
+  }
+
+  private List<String> parameterValues(ReleaseWorkerRequest.ReleaseScriptProfile scriptProfile) {
+    if (scriptProfile == null || scriptProfile.parameters() == null) {
+      return List.of();
+    }
+    return scriptProfile.parameters().stream()
+        .map(ReleaseWorkerRequest.ReleaseScriptParameter::value)
+        .toList();
   }
 
   private boolean usesArtifactTemplate(ReleaseWorkerProperties.Liberty.ScriptProfile configuredProfile) {

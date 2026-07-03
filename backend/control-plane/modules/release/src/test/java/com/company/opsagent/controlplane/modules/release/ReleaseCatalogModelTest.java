@@ -61,6 +61,22 @@ class ReleaseCatalogModelTest {
   }
 
   @Test
+  void scriptProfileDefinitionAllowsEmptyArgumentTemplates() {
+    ReleaseScriptProfileDefinition profile = ReleaseScriptProfileDefinition.create(
+        "liberty-war-deploy",
+        "Liberty WAR deploy",
+        "C:\\ops\\scripts\\liberty-war-deploy.cmd",
+        "C:\\ops-agent\\work\\release",
+        java.util.List.of(),
+        java.util.List.of(0),
+        600,
+        true,
+        true);
+
+    assertTrue(profile.arguments().isEmpty());
+  }
+
+  @Test
   void environmentPolicyRequiresConfirmationForSitAndUatByDefault() {
     assertTrue(ReleaseEnvironmentPolicy.defaultFor(TargetEnvironment.SIT).confirmationRequired());
     assertTrue(ReleaseEnvironmentPolicy.defaultFor(TargetEnvironment.UAT).confirmationRequired());

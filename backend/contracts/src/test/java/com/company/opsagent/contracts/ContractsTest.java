@@ -384,6 +384,7 @@ class ContractsTest {
     assertFalse(definition.path("properties").has("requiredParameters"));
     assertFalse(definition.path("properties").has("allowedParameters"));
     assertFalse(definition.path("properties").has("targetEnvironments"));
+    assertFalse(definition.path("properties").path("arguments").has("minItems"));
   }
 
   @Test

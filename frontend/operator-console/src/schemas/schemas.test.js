@@ -319,6 +319,22 @@ describe("release center schemas", () => {
     ).toThrow();
   });
 
+  test("accepts script profile definitions without argument templates", () => {
+    const parsed = releaseScriptProfileDefinitionSchema.parse({
+      profileId: "liberty-war-deploy",
+      displayName: "Liberty WAR deploy",
+      executablePath: "C:\\ops\\scripts\\liberty-war-deploy.cmd",
+      workingDirectory: "C:\\ops-agent\\work\\release",
+      arguments: [],
+      successExitCodes: [0],
+      timeoutSeconds: 600,
+      approved: true,
+      enabled: true,
+    });
+
+    expect(parsed.arguments).toEqual([]);
+  });
+
   test("accepts release node log events and rejects mismatched payload types", () => {
     const parsed = releaseWorkflowEventSchema.parse(releaseNodeLogEvent);
 
