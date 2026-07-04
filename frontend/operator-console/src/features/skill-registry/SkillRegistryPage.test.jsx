@@ -45,9 +45,37 @@ describe("SkillRegistryPage", () => {
   test("aligns registry body cards with the workspace status bar edges", () => {
     const workspaceBodyRule =
       skillRegistryStyles.match(/[.]workspaceBody\s*[{][^}]+[}]/u)?.[0] ?? "";
+    const mobileRule =
+      skillRegistryStyles.match(/@media \(max-width: 720px\)\s*\{[\s\S]*?\.workspaceBody\s*\{[^}]+\}/u)?.[0] ??
+      "";
 
-    expect(workspaceBodyRule).toContain("padding: 20px 0 24px");
+    expect(workspaceBodyRule).toContain("padding: 0 0 24px");
+    expect(workspaceBodyRule).toContain("gap: var(--workspace-layout-gap)");
+    expect(workspaceBodyRule).not.toContain("gap: 18px");
+    expect(workspaceBodyRule).not.toContain("padding: 20px 0 24px");
     expect(workspaceBodyRule).not.toContain("padding: 20px 24px 24px");
+    expect(mobileRule).toContain("gap: var(--workspace-layout-gap)");
+    expect(mobileRule).not.toContain("gap: 14px");
+    expect(mobileRule).toContain("padding: 0 0 16px");
+  });
+
+  test("stretches the registry result table to the remaining workspace height", () => {
+    const registryTableRule =
+      Array.from(skillRegistryStyles.matchAll(/[.]registryTable\s*[{][^}]+[}]/gu))
+        .map((match) => match[0])
+        .find((rule) => rule.includes("grid-template-rows")) ?? "";
+    const tableHeaderRule =
+      skillRegistryStyles.match(/[.]tableHeader\s*[{][^}]+[}]/u)?.[0] ?? "";
+    const registryDataTableRule =
+      skillRegistryStyles.match(/[.]registryDataTable\s*[{][^}]+[}]/u)?.[0] ?? "";
+
+    expect(registryTableRule).toContain("display: grid");
+    expect(registryTableRule).toContain("grid-template-rows: auto minmax(0, 1fr)");
+    expect(registryTableRule).toContain("gap: 14px");
+    expect(tableHeaderRule).not.toContain("margin-bottom");
+    expect(registryDataTableRule).toContain("height: 100%");
+    expect(registryDataTableRule).toContain("min-height: 0");
+    expect(skillRegistrySource).toContain("className={styles.registryDataTable}");
   });
 
   test("uses red only for search and renders view as an icon hyperlink action", () => {

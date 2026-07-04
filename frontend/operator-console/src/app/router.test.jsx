@@ -18,6 +18,10 @@ const appShellCss = readFileSync(
   "src/components/layout/AppShell.module.css",
   "utf8",
 );
+const pageToolbarCss = readFileSync(
+  "src/components/layout/PageToolbar.module.css",
+  "utf8",
+);
 const overviewCss = readFileSync(
   "src/features/overview/OverviewPage.module.css",
   "utf8",
@@ -34,8 +38,28 @@ const skillRegistryCss = readFileSync(
   "src/features/skill-registry/SkillRegistryPage.module.css",
   "utf8",
 );
+const ragQuestionCss = readFileSync(
+  "src/features/rag-question/RagQuestionPage.module.css",
+  "utf8",
+);
+const meetingNotesCss = readFileSync(
+  "src/features/meeting-notes/MeetingNotesPage.module.css",
+  "utf8",
+);
+const auditRecordsCss = readFileSync(
+  "src/features/audit-records/AuditRecordsPage.module.css",
+  "utf8",
+);
+const helpCss = readFileSync(
+  "src/features/help/HelpPage.module.css",
+  "utf8",
+);
 const workspaceStatusBarCss = readFileSync(
   "src/components/layout/WorkspaceStatusBar.module.css",
+  "utf8",
+);
+const workspaceFrameCss = readFileSync(
+  "src/components/layout/WorkspacePageFrame.module.css",
   "utf8",
 );
 
@@ -88,6 +112,7 @@ describe("operator console routes", () => {
     expect(
       screen.getByRole("link", { name: "SQL 工作区" }),
     ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "工具中心" })).toHaveAttribute("href", "/tools");
     expect(
       screen.getByRole("link", { name: "模型设置" }),
     ).toHaveAttribute("href", "/model-settings");
@@ -107,11 +132,84 @@ describe("operator console routes", () => {
       "/audit",
     );
     expect(screen.getByRole("link", { name: "帮助" })).toHaveAttribute("href", "/help");
+    expect(screen.getByRole("link", { name: "法律信息" })).toHaveAttribute(
+      "href",
+      "/third-party-licenses",
+    );
     expect(
       screen.getByRole("link", { name: "审计记录" }),
     ).toBeInTheDocument();
     expect(await screen.findByText("会话 1")).toBeInTheDocument();
     expect(screen.getByText("执行链")).toBeInTheDocument();
+  });
+
+  it("toggles sidebar menu labels while keeping icon-only navigation accessible", async () => {
+    const user = userEvent.setup();
+
+    renderAt("/agent");
+
+    const navigation = screen.getByRole("navigation", { name: "主导航" });
+    const agentLink = within(navigation).getByRole("link", { name: "Agent 工作区" });
+    const agentLabel = within(agentLink).getByText("Agent 工作区");
+    expect(agentLabel).toBeVisible();
+
+    const statusBar = await screen.findByLabelText("当前工作台");
+    const toolbar = within(statusBar).getByRole("toolbar", { name: "工作区工具栏" });
+    const labelSwitch = within(toolbar).getByRole("button", { name: "关闭菜单名称" });
+    expect(labelSwitch).toHaveAttribute("aria-pressed", "true");
+
+    await user.click(labelSwitch);
+    expect(within(toolbar).getByRole("button", { name: "展示菜单名称" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    expect(within(navigation).getByRole("link", { name: "Agent 工作区" })).toHaveAttribute(
+      "href",
+      "/agent",
+    );
+    expect(agentLabel).not.toBeVisible();
+
+    await user.click(within(toolbar).getByRole("button", { name: "展示菜单名称" }));
+    expect(within(toolbar).getByRole("button", { name: "关闭菜单名称" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(agentLabel).toBeVisible();
+  });
+
+  it("expands the shared workspace from the top toolbar across menu pages", async () => {
+    const user = userEvent.setup();
+    const { container } = renderAt("/help");
+
+    expect(await screen.findByRole("heading", { name: "帮助" })).toBeInTheDocument();
+    const statusBar = screen.getByLabelText("当前工作台");
+    const toolbar = within(statusBar).getByRole("toolbar", { name: "工作区工具栏" });
+    const expandSwitch = within(toolbar).getByRole("button", { name: "展开工作区" });
+    const workspaceFrame = container.querySelector("[data-workspace-frame='true']");
+
+    expect(expandSwitch).toHaveAttribute("aria-pressed", "false");
+    expect(workspaceFrame).toHaveAttribute("data-workspace-expanded", "false");
+
+    await user.click(expandSwitch);
+
+    expect(within(toolbar).getByRole("button", { name: "退出展开" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(workspaceFrame).toHaveAttribute("data-workspace-expanded", "true");
+
+    await user.click(screen.getByRole("link", { name: "审计记录" }));
+
+    expect(await screen.findByRole("heading", { name: "审计记录" })).toBeInTheDocument();
+    expect(screen.getByLabelText("当前工作台")).toBeInTheDocument();
+    expect(container.querySelector("[data-workspace-frame='true']")).toHaveAttribute(
+      "data-workspace-expanded",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "退出展开" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
   });
 
   it("navigates between implemented protected pages", async () => {
@@ -141,9 +239,11 @@ describe("operator console routes", () => {
     ["/as400-ddl", "AS400对象管理"],
     ["/quick-links", "快捷连接"],
     ["/sql", "SQL 工作台"],
+    ["/tools", "工具中心"],
     ["/model-settings", "模型设置"],
     ["/release", "发布中心"],
     ["/help", "帮助"],
+    ["/third-party-licenses", "第三方组件声明"],
   ])("renders shared navigation and status bar for %s", async (path, title) => {
     renderAt(path);
 
@@ -161,6 +261,57 @@ describe("operator console routes", () => {
     expect(screen.getByRole("searchbox", { name: "搜索场景、页面、错误或权限问题" })).toBeInTheDocument();
     expect(screen.getByText("用 Agent 排查服务错误")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "提交 RAG 问题" })).not.toBeInTheDocument();
+  });
+
+  it("renders third party license declarations from the legal information entry", async () => {
+    renderAt("/agent");
+
+    const navigation = screen.getByRole("navigation", { name: "主导航" });
+    expect(within(navigation).queryByRole("link", { name: "法律信息" })).not.toBeInTheDocument();
+
+    const legalLink = screen.getByRole("link", { name: "法律信息" });
+    expect(legalLink).toHaveAttribute("href", "/third-party-licenses");
+
+    await userEvent.click(legalLink);
+
+    expect(await screen.findByRole("heading", { name: "第三方组件声明" })).toBeInTheDocument();
+    expect(screen.getByText("前端操作台 14 项")).toBeInTheDocument();
+    expect(screen.getByText("后端服务 16 项")).toBeInTheDocument();
+    expect(screen.getByText("第 1 / 3 页")).toBeInTheDocument();
+    const componentList = screen.getByRole("region", { name: "第三方组件清单" });
+    const reactRow = within(componentList).getByRole("row", { name: "React 19.2.7" });
+    expect(within(reactRow).getByRole("link", { name: "React 许可证" })).toHaveAttribute(
+      "href",
+      "/third-party-licenses/react",
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "下一页" }));
+    await userEvent.click(screen.getByRole("button", { name: "下一页" }));
+    expect(within(componentList).getAllByText("后端服务")).toHaveLength(10);
+    expect(within(componentList).getByRole("row", { name: "AgentScope Java 2.0.0-RC4" })).toHaveTextContent(
+      "Apache License 2.0",
+    );
+  });
+
+  it("renders a third party license detail route with a workspace return button", async () => {
+    const user = userEvent.setup();
+
+    renderAt("/third-party-licenses/react");
+
+    const licenseDetail = await screen.findByRole("region", { name: "React 许可证全文" });
+    expect(licenseDetail).toHaveTextContent("React");
+    expect(licenseDetail).toHaveTextContent(
+      "Permission is hereby granted, free of charge",
+    );
+    expect(licenseDetail).toHaveTextContent(
+      "THE SOFTWARE IS PROVIDED \"AS IS\"",
+    );
+    expect(screen.queryByRole("heading", { name: "React 许可证" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "返回工作区" }));
+
+    expect(await screen.findByRole("heading", { name: "第三方组件声明" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "第三方组件清单" })).toBeInTheDocument();
   });
 
   it("renders the Skill registry inside the shared shell while replacing only the workspace body", async () => {
@@ -188,6 +339,7 @@ describe("operator console routes", () => {
         "这里是总览页：先选择 Agent 或 SQL 工作区做只读排查；生产写入、脚本执行和绕过审批不会在这里开放。",
       ),
     ).not.toBeInTheDocument();
+    expect(screen.queryByText("M09 / P1 MVP")).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "怎么使用这个总览" })).not.toBeInTheDocument();
     expect(
       availableEntries,
@@ -214,6 +366,7 @@ describe("operator console routes", () => {
     expect(screen.queryByText("生产写入")).not.toBeInTheDocument();
     expect(within(availableEntries).getByRole("link", { name: /Agent 工作区/u })).toHaveAttribute("href", "/agent");
     expect(within(availableEntries).getByRole("link", { name: /SQL 工作区/u })).toHaveAttribute("href", "/sql");
+    expect(within(availableEntries).getByRole("link", { name: /工具中心/u })).toHaveAttribute("href", "/tools");
     expect(within(capabilityMap).getByRole("link", { name: /RAG 问答/u })).toHaveAttribute("href", "/rag");
     expect(within(capabilityMap).getByRole("link", { name: /Skill 注册中心/u })).toHaveAttribute("href", "/skills");
     expect(within(capabilityMap).getByRole("link", { name: /会议录制纪要/u })).toHaveAttribute("href", "/meeting-notes");
@@ -417,13 +570,14 @@ describe("operator console routes", () => {
     expect(within(statusBar).queryByText("M07")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "启动诊断" })).not.toBeInTheDocument();
     expect(appCapsuleRule).toContain("min-height: 84px");
-    expect(appCapsuleRule).toContain("grid-template-columns: minmax(260px, 360px) minmax(360px, 1fr) max-content");
+    expect(appCapsuleRule).toContain("grid-template-columns: minmax(260px, 360px) max-content minmax(0, 1fr) max-content max-content");
     expect(appCapsuleRule).toContain("border-radius: 18px");
     expect(appCapsuleRule).toContain("background: oklch");
     expect(brandPlateRule).toContain("grid-template-columns: 58px minmax(0, 1fr)");
-    expect(workspaceContextRule).toContain("grid-template-columns: 38px minmax(112px, 0.7fr) max-content minmax(118px, 1fr)");
-    expect(signalRailRule).toContain("min-width: 118px");
-    expect(operatorDockRule).toContain("grid-template-columns: minmax(150px, 190px) 132px 92px");
+    expect(workspaceContextRule).toContain("width: max-content");
+    expect(workspaceContextRule).toContain("grid-template-columns: 38px max-content max-content 68px");
+    expect(signalRailRule).toContain("min-width: 68px");
+    expect(operatorDockRule).toContain("grid-template-columns: 132px minmax(150px, 190px) 92px");
     expect(operatorProfileRule).toContain("min-width: 0");
     expect(workspaceStatusBarCss).not.toContain(".brandLockup");
     expect(workspaceStatusBarCss).not.toContain(".workspaceTrail");
@@ -453,38 +607,91 @@ describe("operator console routes", () => {
   });
 
   it("uses the Agent workspace shell rhythm for every menu page", () => {
-    const workspaceFrameCss = readFileSync(
-      "src/components/layout/WorkspacePageFrame.module.css",
-      "utf8",
-    );
     const appContentRule = appShellCss.match(/[.]content\s*[{][^}]+[}]/u)?.[0] ?? "";
     const activeNavRule = appShellCss.match(/[.]active\s*[{][^}]+[}]/u)?.[0] ?? "";
     const frameRule = workspaceFrameCss.match(/[.]workspaceFrame\s*[{][^}]+[}]/u)?.[0] ?? "";
+    const frameMetricRule =
+      workspaceFrameCss.match(/[.]workspaceFrame\[data-workspace-frame="true"\]\s*[{][^}]+[}]/u)?.[0] ??
+      "";
     const overviewSource = readFileSync("src/features/overview/OverviewPage.jsx", "utf8");
     const sqlSource = readFileSync("src/features/sql-workbench/SqlWorkbenchPage.jsx", "utf8");
     const skillSource = readFileSync("src/features/skill-registry/SkillRegistryPage.jsx", "utf8");
     const as400Source = readFileSync("src/features/as400-object-management/As400ObjectManagementPage.jsx", "utf8");
+    const pageCanvasCss = [
+      overviewCss,
+      sqlWorkbenchCss,
+      skillRegistryCss,
+      ragQuestionCss,
+      meetingNotesCss,
+      auditRecordsCss,
+      helpCss,
+    ];
 
     expect(appContentRule).toContain("max-width: none");
     expect(appContentRule).not.toContain("max-width: var(--content-max)");
     expect(activeNavRule).toContain("--nav-color: var(--color-info)");
-    expect(activeNavRule).toContain("--nav-mark: #207fa4");
     expect(activeNavRule).toContain("--nav-icon-radius: 13px");
+    expect(activeNavRule).toContain("--nav-mark: #207fa4");
     expect(activeNavRule).toContain("--nav-symbol-radius: 9px");
     expect(activeNavRule).toContain("--nav-detail-radius: 5px");
-    expect(frameRule).toContain("--workspace-layout-gap: 24px");
-    expect(frameRule).toContain("--workspace-sidebar-width: 250px");
-    expect(frameRule).toContain("width: calc(100vw - var(--workspace-canvas-left) - var(--workspace-layout-gap))");
-    expect(frameRule).toContain("min-height: calc(100vh - 48px)");
+    expect(appShellCss).toContain(".navSymbol");
+    expect(appShellCss).toContain("width: 22px");
+    expect(frameRule).toContain("--workspace-layout-gap: var(--app-shell-gap, 9px)");
+    expect(appContentRule).toContain("margin-left: var(--app-content-margin-left)");
+    expect(appShellCss).toContain("--app-sidebar-width: 238px");
+    expect(appShellCss).not.toContain("--app-sidebar-width: 250px");
+    expect(appShellCss).toContain("--app-sidebar-width: 88px");
+    expect(frameRule).toContain("--workspace-shell-left: var(--app-content-margin-left, 268px)");
+    expect(frameRule).toContain("--workspace-shell-inline: 0px");
+    expect(frameRule).toContain("--workspace-sidebar-left: var(--app-shell-gap, 9px)");
+    expect(frameRule).toContain("--workspace-sidebar-width: var(--app-sidebar-width, 250px)");
+    expect(frameRule).toContain("--workspace-vertical-align-offset: 0px");
     expect(frameRule).toContain("gap: var(--workspace-layout-gap)");
-    expect(frameRule).toContain("padding: 12px");
+    expect(frameMetricRule).toContain(
+      "width: calc(100vw - var(--workspace-canvas-left) - var(--workspace-layout-gap))",
+    );
+    expect(frameMetricRule).toContain("height: calc(100vh - (var(--workspace-layout-gap) * 2))");
+    expect(frameMetricRule).toContain("min-height: 0");
+    expect(frameMetricRule).toContain("margin-left: 0");
+    expect(frameMetricRule).toContain("margin-top: 0");
+    expect(frameMetricRule).toContain("margin-bottom: 0");
+    expect(frameMetricRule).toContain("padding: 9px");
     expect(frameRule).toContain("border: 1px solid rgba(166, 64, 92, 0.18)");
+    expect(frameRule).toContain("0 18px 38px rgba(166, 64, 92, 0.08)");
+    expect(frameRule).toContain("inset 0 1px 0 rgba(255, 255, 255, 0.72)");
     expect(frameRule).toContain("border-radius: 24px");
-    expect(frameRule).toContain("0 18px 56px rgba(31, 41, 51, 0.055)");
+    expect(frameRule).not.toContain("border: 1px solid rgba(166, 64, 92, 0.1)");
+    expect(frameRule).not.toContain("0 18px 56px rgba(31, 41, 51, 0.055)");
+    expect(frameRule).not.toContain("inset 0 0 0 1px rgba(255, 255, 255, 0.62)");
+    expect(helpCss).not.toContain("--workspace-layout-gap: 24px");
+    for (const css of pageCanvasCss) {
+      expect(css).not.toContain("height: calc(100vh - 48px)");
+      expect(css).not.toContain("min-height: calc(100vh - 48px)");
+    }
+    expect(workspaceFrameCss).toContain(".workspaceFrameExpanded");
+    expect(workspaceFrameCss).toContain("position: fixed");
+    expect(workspaceFrameCss).toContain("inset: 0");
     expect(overviewSource).toContain("WorkspacePageFrame");
     expect(sqlSource).toContain("WorkspacePageFrame");
     expect(skillSource).toContain("WorkspacePageFrame");
     expect(as400Source).toContain("WorkspacePageFrame");
+  });
+
+  it("keeps expanded workspace coverage stronger than menu page canvas height rules", () => {
+    const expandedRule =
+      workspaceFrameCss.match(/[.]workspaceFrame\[data-workspace-frame="true"\][.]workspaceFrameExpanded\s*[{][^}]+[}]/u)?.[0] ??
+      "";
+
+    expect(expandedRule).toContain("position: fixed");
+    expect(expandedRule).toContain("inset: 0");
+    expect(expandedRule).toContain("height: 100vh");
+    expect(expandedRule).toContain("min-height: 0");
+    expect(expandedRule).toContain("overflow: hidden");
+    expect(ragQuestionCss).toContain(".ragCanvas");
+    expect(skillRegistryCss).toContain(".registryCanvas");
+    expect(meetingNotesCss).toContain(".meetingCanvas");
+    expect(auditRecordsCss).toContain(".auditCanvas");
+    expect(helpCss).toContain(".helpCanvas");
   });
 
   it("keeps overview, SQL, and Skill inner grid gaps aligned to Agent workspace", () => {
@@ -499,6 +706,8 @@ describe("operator console routes", () => {
       overviewCss.match(/[.]queueGrid\s*[{][^}]+[}]/u)?.[0] ?? "";
     const guideListRule =
       overviewCss.match(/[.]guideList\s*[{][^}]+[}]/u)?.[0] ?? "";
+    const guidePanelRule =
+      overviewCss.match(/[.]guidePanel\s*[{][^}]+[}]/u)?.[0] ?? "";
     const capabilityMapRule =
       overviewCss.match(/[.]capabilityMap\s*[{][^}]+[}]/u)?.[0] ?? "";
     const capabilityRowRule =
@@ -510,6 +719,8 @@ describe("operator console routes", () => {
       as400ObjectCss.match(/[.]objectLayout\s*[{][^}]+[}]/u)?.[0] ?? "";
     const as400ToolbarRule =
       as400ObjectCss.match(/[.]modeToolbar\s*[{][^}]+[}]/u)?.[0] ?? "";
+    const pageToolbarSurfaceRule =
+      pageToolbarCss.match(/[.]surface\s*[{][^}]+[}]/u)?.[0] ?? "";
 
     expect(canvasRule).toContain("grid-template-rows: auto minmax(0, 1fr)");
     expect(overviewGridRule).toContain("grid-template-columns: minmax(0, 1fr)");
@@ -517,7 +728,9 @@ describe("operator console routes", () => {
     expect(statusStripRule).toContain("grid-template-columns: repeat(4, minmax(0, 1fr))");
     expect(statusStripRule).toContain("gap: 10px");
     expect(guideListRule).toContain("grid-template-columns: repeat(3, minmax(0, 1fr))");
-    expect(entryGridRule).toContain("grid-template-columns: repeat(2, minmax(0, 1fr))");
+    expect(guidePanelRule).not.toContain("padding-top");
+    expect(guidePanelRule).not.toContain("border-top");
+    expect(entryGridRule).toContain("grid-template-columns: repeat(3, minmax(0, 1fr))");
     expect(entryGridRule).toContain("gap: 14px");
     expect(queueGridRule).toContain("grid-template-columns: repeat(3, minmax(0, 1fr))");
     expect(queueGridRule).toContain("gap: 10px");
@@ -525,6 +738,8 @@ describe("operator console routes", () => {
     expect(overviewCss).not.toContain(".policyMatrix");
     expect(overviewCss).not.toContain(".evidenceRail");
     expect(overviewCss).not.toContain(".eventTimeline");
+    expect(overviewCss).not.toContain(".stateHeader");
+    expect(overviewCss).not.toContain(".eyebrow");
     expect(capabilityMapRule).toContain("grid-template-columns: repeat(2, minmax(0, 1fr))");
     expect(capabilityMapRule).toContain("gap: 10px");
     expect(capabilityRowRule).toContain("grid-template-columns: 36px minmax(0, 1fr) auto");
@@ -532,7 +747,8 @@ describe("operator console routes", () => {
     expect(workbenchGridRule).toContain("gap: 12px");
     expect(as400LayoutRule).toContain("grid-template-columns: minmax(0, 1fr) 292px");
     expect(as400LayoutRule).toContain("gap: 12px");
-    expect(as400ToolbarRule).toContain("border-radius: 18px");
+    expect(as400ToolbarRule).toContain("grid-template-columns: auto minmax(0, 1fr) auto auto");
+    expect(pageToolbarSurfaceRule).toContain("border-radius: 14px");
     expect(as400ObjectCss).toContain(".candidateSelect");
     expect(as400ObjectCss).not.toContain(".candidateChip");
     expect(skillRegistryCss).toContain(".registryCanvas");
@@ -768,7 +984,7 @@ const sqlConnections = [
     targetEnvironment: "development",
     platformType: "DB2_FOR_I",
     allowedSchemas: ["ORDERS", "INVENTORY"],
-    capabilities: ["VALIDATE", "RUN_READ_ONLY", "PREFLIGHT_DML"],
+    capabilities: ["VALIDATE", "RUN_READ_ONLY", "PREFLIGHT_DML", "COMMIT_DML"],
   },
 ];
 

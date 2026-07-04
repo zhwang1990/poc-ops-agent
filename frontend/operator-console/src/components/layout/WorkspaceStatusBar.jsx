@@ -1,10 +1,20 @@
-import { Activity, LogOut, TimerReset, UserRound } from "lucide-react";
+import {
+  Activity,
+  LogOut,
+  Maximize2,
+  Minimize2,
+  PanelLeftClose,
+  PanelLeftOpen,
+  TimerReset,
+  UserRound,
+} from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { getBrowserSession, logout } from "../../api/auth-api.js";
 import styles from "./WorkspaceStatusBar.module.css";
+import { useWorkspaceLayout } from "./WorkspaceLayoutContext.jsx";
 
 const OFF_WORK_HOUR = 18;
 const WORKDAY_START_HOUR = 9;
@@ -20,6 +30,12 @@ const WORKDAY_START_HOUR = 9;
 export function WorkspaceStatusBar({
   title,
 }) {
+  const {
+    isWorkspaceExpanded,
+    showMenuLabels,
+    toggleMenuLabels,
+    toggleWorkspaceExpanded,
+  } = useWorkspaceLayout();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const sessionQuery = useQuery({
@@ -73,6 +89,71 @@ export function WorkspaceStatusBar({
         operatorId={operatorId}
         username={username}
       />
+      <WorkspaceToolbar
+        isWorkspaceExpanded={isWorkspaceExpanded}
+        onToggleMenuLabels={toggleMenuLabels}
+        onToggleWorkspace={toggleWorkspaceExpanded}
+        showMenuLabels={showMenuLabels}
+      />
+    </section>
+  );
+}
+
+/**
+ * @param {{
+ *   isWorkspaceExpanded: boolean,
+ *   onToggleMenuLabels: () => void,
+ *   onToggleWorkspace: () => void,
+ *   showMenuLabels: boolean,
+ * }} props
+ */
+function WorkspaceToolbar({
+  isWorkspaceExpanded,
+  onToggleMenuLabels,
+  onToggleWorkspace,
+  showMenuLabels,
+}) {
+  const menuLabel = showMenuLabels ? "关闭菜单名称" : "展示菜单名称";
+  const workspaceLabel = isWorkspaceExpanded ? "退出展开" : "展开工作区";
+
+  return (
+    <section aria-label="工作区工具栏" className={styles.workspaceToolbar} role="toolbar">
+      <button
+        aria-label={menuLabel}
+        aria-pressed={showMenuLabels}
+        className={`${styles.toolbarIconToggle} ${
+          showMenuLabels ? styles.toolbarIconTogglePressed : ""
+        }`}
+        onClick={onToggleMenuLabels}
+        title={menuLabel}
+        type="button"
+      >
+        <span aria-hidden="true" className={styles.toolbarButtonIcon}>
+          {showMenuLabels ? (
+            <PanelLeftClose size={15} strokeWidth={2.4} />
+          ) : (
+            <PanelLeftOpen size={15} strokeWidth={2.4} />
+          )}
+        </span>
+      </button>
+      <button
+        aria-label={workspaceLabel}
+        aria-pressed={isWorkspaceExpanded}
+        className={`${styles.toolbarButton} ${
+          isWorkspaceExpanded ? styles.toolbarButtonPressed : ""
+        }`}
+        onClick={onToggleWorkspace}
+        title={workspaceLabel}
+        type="button"
+      >
+        <span aria-hidden="true" className={styles.toolbarButtonIcon}>
+          {isWorkspaceExpanded ? (
+            <Minimize2 size={15} strokeWidth={2.4} />
+          ) : (
+            <Maximize2 size={15} strokeWidth={2.4} />
+          )}
+        </span>
+      </button>
     </section>
   );
 }
@@ -90,6 +171,7 @@ function OperatorDock({ isLogoutPending, onLogout, operatorId, username }) {
 
   return (
     <section aria-label="当前登录人" className={styles.operatorDock}>
+      <WorkdayCountdown />
       <div className={styles.operatorProfile} data-operator-profile="">
         <span aria-hidden="true" className={styles.operatorAvatar}>
           <UserRound size={17} strokeWidth={2.4} />
@@ -101,7 +183,6 @@ function OperatorDock({ isLogoutPending, onLogout, operatorId, username }) {
           </small>
         </span>
       </div>
-      <WorkdayCountdown />
       <button
         aria-label="登出当前账号"
         className={styles.logoutButton}

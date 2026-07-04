@@ -1,4 +1,5 @@
 import styles from "./WorkspacePageFrame.module.css";
+import { useWorkspaceLayout } from "./WorkspaceLayoutContext.jsx";
 
 /**
  * @typedef {object} WorkspacePageFrameProps
@@ -10,8 +11,16 @@ import styles from "./WorkspacePageFrame.module.css";
  * @param {WorkspacePageFrameProps} props
  */
 export function WorkspacePageFrame({ children, className = "" }) {
+  const { isWorkspaceExpanded } = useWorkspaceLayout();
+
   return (
-    <div className={`${styles.workspaceFrame} ${className}`.trim()}>
+    <div
+      className={`${styles.workspaceFrame} ${
+        isWorkspaceExpanded ? styles.workspaceFrameExpanded : ""
+      } ${className}`.trim()}
+      data-workspace-expanded={isWorkspaceExpanded ? "true" : "false"}
+      data-workspace-frame="true"
+    >
       {children}
     </div>
   );

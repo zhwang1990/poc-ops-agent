@@ -5,6 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  createBackendBuildCommand,
   createFrontendBuildSteps,
   parseReleasePackageArgs,
 } from "./package-release-options.mjs";
@@ -42,20 +43,8 @@ for (const step of createFrontendBuildSteps(options)) {
 }
 await assertDirectoryExists(frontendDist, "frontend dist");
 
-const mavenGoal = options.skipTests ? "package" : "verify";
-const mavenArgs = [
-  "-f",
-  "pom.xml",
-  "-B",
-  "-ntp",
-  "-Dops-agent.include-operator-console=true",
-  `-Dops-agent.operator-console.dist=${frontendDist}`,
-];
-if (options.skipTests) {
-  mavenArgs.push("-DskipTests");
-}
-mavenArgs.push(mavenGoal);
-await runMaven(mavenArgs);
+const backendBuild = createBackendBuildCommand(options, frontendDist);
+await runPortableCommand(backendBuild.command, backendBuild.args, { cwd: backendRoot });
 
 const controlPlaneJar = await findSingleJar(
   join(backendRoot, "control-plane", "bootstrap", "target"),
@@ -89,6 +78,7 @@ Options:
   --version <value>             Override release version. Defaults to backend/pom.xml version.
   --artifact-root <path>        Output root. Defaults to artifacts/release.
   --publish-dir <path>          Copy zip, manifest, and checksum files to an external directory.
+  --maven-command <command>     Maven executable. Defaults to system mvn on PATH.
   --skip-tests                  Use Maven package with -DskipTests for local packaging verification.
   --skip-frontend-install       Skip npm ci when node_modules is already prepared.
   --skip-frontend-tests         Run only Vite build for the frontend.
@@ -103,11 +93,6 @@ async function readMavenProjectVersion(pomPath) {
     throw new Error(`Cannot read Maven project version from ${pomPath}`);
   }
   return match[1].trim();
-}
-
-async function runMaven(args) {
-  const wrapper = process.platform === "win32" ? "mvnw.cmd" : "./mvnw";
-  await runPortableCommand(wrapper, args, { cwd: backendRoot });
 }
 
 async function runPortableCommand(command, args, options) {

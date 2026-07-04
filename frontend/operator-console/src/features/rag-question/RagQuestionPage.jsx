@@ -62,7 +62,6 @@ export function RagQuestionPage() {
           <div className={styles.ragHead}>
             <div>
               <h2>知识库问答</h2>
-              <span>当前范围：Runbook、ADR、工单复盘、发布记录</span>
             </div>
             <Badge className={styles.citationBadge} tone="success">
               引用已开启

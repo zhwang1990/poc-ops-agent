@@ -197,4 +197,4 @@ for /f "delims=" %%J in ('dir /b control-plane\bootstrap\target\control-plane-bo
 - `admin / Admin#2026Demo` 只允许用于本地演示 profile。
 - 不得把 demo profile、demo 密码或本地 H2 数据源当成生产配置。
 - 本流程不开放生产发布、生产写执行、任意脚本执行或目标系统长期凭据。
-- 如需生成包含清单、校验和、前端快照和启动脚本的统一发布 ZIP，应改用 `tools\release\package-release.mjs`。
+- 如需生成包含清单、校验和、前端快照和启动脚本的统一发布 ZIP，应改用 `tools\release\package-release.mjs`；该脚本同样默认使用系统 `mvn`，不依赖 PowerShell 或 Maven Wrapper，必要时可通过 `--maven-command <command>` 指定 Maven 可执行文件。

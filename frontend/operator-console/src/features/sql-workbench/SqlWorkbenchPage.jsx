@@ -6,9 +6,8 @@ import {
   Database,
   FileSearch,
   LoaderCircle,
-  Maximize2,
-  Minimize2,
   Plus,
+  Settings2,
   ShieldCheck,
   Sparkles,
   Table2,
@@ -23,7 +22,9 @@ import {
 } from "../../api/sql-api.js";
 import { DataTable } from "../../components/data-display/DataTable.jsx";
 import { StatusPill } from "../../components/data-display/StatusPill.jsx";
+import toolbarStyles from "../../components/layout/PageToolbar.module.css";
 import { WorkspacePageFrame } from "../../components/layout/WorkspacePageFrame.jsx";
+import { useWorkspaceLayout } from "../../components/layout/WorkspaceLayoutContext.jsx";
 import { WorkspaceStatusBar } from "../../components/layout/WorkspaceStatusBar.jsx";
 import { Dialog } from "../../components/primitives/Dialog.jsx";
 import {
@@ -191,7 +192,7 @@ export function SqlWorkbenchPage() {
     /** @type {PendingDmlRiskConfirmation | null} */ (null),
   );
   const [isDmlRiskCommitPending, setIsDmlRiskCommitPending] = useState(false);
-  const [isWorkspaceExpanded, setIsWorkspaceExpanded] = useState(false);
+  const { isWorkspaceExpanded } = useWorkspaceLayout();
   const [editorResultSplit, setEditorResultSplit] = useState(DEFAULT_EDITOR_RESULT_SPLIT);
 
   const activeSession =
@@ -1289,8 +1290,11 @@ export function SqlWorkbenchPage() {
   }
 
   return (
-    <SqlWorkbenchFrame expanded={isWorkspaceExpanded}>
-      <section aria-label="SQL 工作区连接上下文" className={styles.connectionBar}>
+    <SqlWorkbenchFrame>
+      <section
+        aria-label="SQL 工作区连接上下文"
+        className={`${styles.connectionBar} ${toolbarStyles.surface}`}
+      >
         <div className={styles.connectionMeta}>
           <StatusPill tone={isReadyConnection ? "success" : "warning"}>
             {connectionsQuery.isLoading
@@ -1316,9 +1320,9 @@ export function SqlWorkbenchPage() {
           <span>{activeSchema || "未选择 Schema"}</span>
           <span>maxRows {activeLimits.maxRows}</span>
         </div>
-        <div className={styles.connectionActions}>
+        <div className={`${styles.connectionActions} ${toolbarStyles.actionGroup}`}>
           <button
-            className={styles.secondaryButton}
+            className={`${toolbarStyles.button} ${toolbarStyles.neutral}`}
             disabled={!hasConnections}
             onClick={() => setIsObjectDrawerOpen((current) => !current)}
             type="button"
@@ -1327,31 +1331,12 @@ export function SqlWorkbenchPage() {
             对象浏览器
           </button>
           <button
-            className={styles.secondaryButton}
+            className={`${toolbarStyles.button} ${toolbarStyles.neutral}`}
             onClick={() => setIsConnectionDialogOpen(true)}
             type="button"
           >
-            <Database aria-hidden="true" size={15} />
+            <Settings2 aria-hidden="true" size={15} />
             管理连接
-          </button>
-          <button
-            aria-pressed={isWorkspaceExpanded}
-            className={styles.primaryButton}
-            onClick={() => {
-              const nextExpanded = !isWorkspaceExpanded;
-              setIsWorkspaceExpanded(nextExpanded);
-              if (nextExpanded) {
-                setIsObjectDrawerOpen(false);
-              }
-            }}
-            type="button"
-          >
-            {isWorkspaceExpanded ? (
-              <Minimize2 aria-hidden="true" size={15} />
-            ) : (
-              <Maximize2 aria-hidden="true" size={15} />
-            )}
-            {isWorkspaceExpanded ? "退出 SQL 展开" : "展开 SQL 工作区"}
           </button>
         </div>
       </section>
@@ -1507,13 +1492,11 @@ export function SqlWorkbenchPage() {
 }
 
 /**
- * @param {{children: import("react").ReactNode, expanded?: boolean}} props
+ * @param {{children: import("react").ReactNode}} props
  */
-function SqlWorkbenchFrame({ children, expanded = false }) {
+function SqlWorkbenchFrame({ children }) {
   return (
-    <WorkspacePageFrame
-      className={`${styles.sqlCanvas} ${expanded ? styles.workspaceExpanded : ""}`}
-    >
+    <WorkspacePageFrame className={styles.sqlCanvas}>
       <WorkspaceStatusBar title="SQL 工作台" />
       {children}
     </WorkspacePageFrame>

@@ -6,7 +6,7 @@
 
 **架构：** 使用 Node.js ESM 实现发布脚本和脚本测试；使用 Maven Profile 在构建期把 Vite `dist` 复制到控制面 JAR 的 `static/` classpath；使用 JDK `jar` 工具生成 ZIP 格式发布包。脚本只做本地构建和制品组装，不连接目标环境。
 
-**技术栈：** Node.js ESM、npm、Vite、Java 21、Maven Wrapper、Spring Boot Maven Plugin、JDK `jar`。
+**技术栈：** Node.js ESM、npm、Vite、Java 21、系统 Maven、Spring Boot Maven Plugin、JDK `jar`。
 
 ---
 
@@ -83,6 +83,7 @@ node tools/release/package-release.mjs
 --version <value>
 --artifact-root <path>
 --publish-dir <path>
+--maven-command <command>
 --skip-tests
 --skip-frontend-install
 ```
@@ -92,10 +93,10 @@ node tools/release/package-release.mjs
 ```text
 npm ci
 npm run build
-backend/mvnw(.cmd) -f backend/pom.xml -B -ntp -Dops-agent.include-operator-console=true -Dops-agent.operator-console.dist=<dist> verify
+mvn -f backend/pom.xml -B -ntp -Dops-agent.include-operator-console=true -Dops-agent.operator-console.dist=<dist> verify
 ```
 
-`--skip-tests` 用于本地快速打包验证，会让 Maven 使用 `package -DskipTests`。
+`--skip-tests` 用于本地快速打包验证，会让 Maven 使用 `package -DskipTests`。`--maven-command` 用于受限环境显式指定系统 Maven 可执行文件；发布脚本不依赖 Maven Wrapper。
 
 - [x] **步骤 3：运行模块测试确认通过**
 
@@ -115,7 +116,7 @@ node tools/release/test-release-packaging.mjs
 
 - [x] **步骤 1：记录发布打包命令**
 
-在 `tools/README.md` 中说明 Node 发布脚本入口、模块测试入口，以及发布脚本不使用 PowerShell。
+在 `tools/README.md` 中说明 Node 发布脚本入口、模块测试入口，以及发布脚本不使用 PowerShell 和 Maven Wrapper。
 
 - [x] **步骤 2：纳入仓库基线检查**
 
@@ -174,8 +175,8 @@ tools/ci/scan-secrets.ps1
 
 命令：
 
-```powershell
-backend/mvnw.cmd -f backend/pom.xml -B -ntp verify
+```cmd
+mvn -f backend/pom.xml -B -ntp verify
 ```
 
 预期：后端 Maven 全量验证通过。

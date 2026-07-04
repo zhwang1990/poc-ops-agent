@@ -8,6 +8,7 @@ import {
   Network,
   SearchCheck,
   ServerCog,
+  Wrench,
   Workflow,
 } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -17,7 +18,7 @@ import { WorkspaceStatusBar } from "../../components/layout/WorkspaceStatusBar.j
 import styles from "./OverviewPage.module.css";
 
 const statusMetrics = [
-  { label: "已开放入口", value: "2", detail: "Agent / SQL", tone: "info" },
+  { label: "已开放入口", value: "3", detail: "Agent / SQL / Tools", tone: "info" },
   { label: "只读 Skill", value: "5", detail: "签名注册", tone: "accent" },
   { label: "治理观察面", value: "2", detail: "事件 / 审计", tone: "green" },
   { label: "受限能力", value: "4", detail: "占位禁用", tone: "warning" },
@@ -43,6 +44,16 @@ const primaryEntries = [
     to: "/sql",
     summary: "连接目录、SQL 校验、只读风险报告和 DML 预检保持服务端判定。",
     boundary: "P1 不开放生产写入、提交或回滚。",
+  },
+  {
+    icon: Wrench,
+    label: "工具中心",
+    module: "M09 / M02 / M07",
+    status: "页面规划",
+    tone: "quick",
+    to: "/tools",
+    summary: "JSON 本地格式化、API Caller 请求草稿和管理员 allowlist 设置集中在一个工具视图。",
+    boundary: "首版页面不直接调用目标系统，真实执行必须经过服务端 allowlist、策略和审计。",
   },
 ];
 
@@ -158,9 +169,6 @@ export function OverviewPage() {
       <div className={styles.overviewGrid}>
         <div className={styles.primaryColumn}>
           <section aria-label="总览功能状态" className={styles.statePanel}>
-            <div className={styles.stateHeader}>
-              <span className={styles.eyebrow}>M09 / P1 MVP</span>
-            </div>
             <section aria-label="总览使用步骤" className={styles.guidePanel}>
               <div className={styles.guideList}>
                 {overviewGuideItems.map((item, index) => (

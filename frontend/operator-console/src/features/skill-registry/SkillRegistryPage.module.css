@@ -5,8 +5,6 @@
   --registry-blue: #2584a9;
   --registry-red: #d31145;
   --registry-green: #148c60;
-  height: calc(100vh - 48px);
-  min-height: 0;
   grid-template-rows: auto minmax(0, 1fr);
   overflow: auto;
 }
@@ -19,8 +17,8 @@
   display: grid;
   min-height: 0;
   grid-template-rows: auto minmax(0, 1fr);
-  gap: 18px;
-  padding: 20px 0 24px;
+  gap: var(--workspace-layout-gap);
+  padding: 0 0 24px;
 }
 
 .filters,
@@ -153,7 +151,10 @@
 }
 
 .registryTable {
+  display: grid;
   min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 14px;
   overflow: hidden;
   padding: 18px;
 }
@@ -163,7 +164,11 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 14px;
+}
+
+.registryDataTable {
+  height: 100%;
+  min-height: 0;
 }
 
 .primaryCell,
@@ -287,11 +292,6 @@
 }
 
 @media (max-width: 1120px) {
-  .registryCanvas {
-    height: auto;
-    min-height: calc(100vh - 48px);
-  }
-
   .filters {
     grid-template-columns: 1fr;
   }
@@ -299,8 +299,8 @@
 
 @media (max-width: 720px) {
   .workspaceBody {
-    gap: 14px;
-    padding: 16px 0;
+    gap: var(--workspace-layout-gap);
+    padding: 0 0 16px;
   }
 
   .detailGrid {

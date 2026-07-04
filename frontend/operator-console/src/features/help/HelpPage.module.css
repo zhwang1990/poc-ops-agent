@@ -5,11 +5,8 @@
   --agent-red: #d31145;
   --agent-muted: #6f7c8b;
   --agent-border: #d7e4ec;
-  --workspace-layout-gap: 24px;
   display: grid;
   box-sizing: border-box;
-  height: calc(100vh - 48px);
-  min-height: 0;
   grid-template-rows: auto minmax(0, 1fr);
   gap: var(--workspace-layout-gap);
   overflow: hidden;
@@ -278,6 +275,32 @@
   color: color-mix(in srgb, var(--agent-blue) 62%, var(--agent-ink));
 }
 
+.primaryLink {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  border: 1px solid rgba(34, 126, 166, 0.24);
+  border-radius: 8px;
+  background: rgba(34, 126, 166, 0.08);
+  color: var(--agent-blue);
+  font-size: 13px;
+  font-weight: 880;
+  text-decoration: none;
+}
+
+.primaryLink:hover,
+.primaryLink:focus-visible {
+  border-color: rgba(34, 126, 166, 0.42);
+  background: rgba(34, 126, 166, 0.12);
+  outline: none;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .scenarioList,
 .faqList,
 .searchResults {
@@ -423,8 +446,6 @@
 
 @media (max-width: 1360px) {
   .helpCanvas {
-    height: auto;
-    min-height: calc(100vh - 48px);
     overflow: visible;
   }
 

@@ -4,8 +4,6 @@ import {
   DatabaseZap,
   FileClock,
   FileSpreadsheet,
-  Maximize2,
-  Minimize2,
   Plus,
   SearchCheck,
   ShieldCheck,
@@ -15,7 +13,9 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 
+import toolbarStyles from "../../components/layout/PageToolbar.module.css";
 import { WorkspacePageFrame } from "../../components/layout/WorkspacePageFrame.jsx";
+import { useWorkspaceLayout } from "../../components/layout/WorkspaceLayoutContext.jsx";
 import { WorkspaceStatusBar } from "../../components/layout/WorkspaceStatusBar.jsx";
 import { Badge } from "../../components/primitives/Badge.jsx";
 import { Button } from "../../components/primitives/Button.jsx";
@@ -149,7 +149,7 @@ export function As400ObjectManagementPage() {
   const [activeMode, setActiveMode] = useState(/** @type {"excel" | "manual"} */ ("manual"));
   const [fieldRows, setFieldRows] = useState(/** @type {FieldRow[]} */ (initialFieldRows));
   const [importFile, setImportFile] = useState(mockImportFile);
-  const [isWorkspaceExpanded, setIsWorkspaceExpanded] = useState(false);
+  const { isWorkspaceExpanded } = useWorkspaceLayout();
 
   const primaryKeyCount = fieldRows.filter((row) => row.primaryKey).length;
   const chineseFieldCount = fieldRows.filter((row) => row.supportsChinese).length;
@@ -223,9 +223,7 @@ export function As400ObjectManagementPage() {
       <section aria-label="AS400 数据对象管理工作区" className={styles.objectWorkspace}>
         <ObjectToolbar
           activeMode={activeMode}
-          isWorkspaceExpanded={isWorkspaceExpanded}
           onModeChange={setActiveMode}
-          onToggleWorkspace={() => setIsWorkspaceExpanded((current) => !current)}
         />
 
         <div className={styles.objectLayout}>
@@ -292,19 +290,15 @@ export function As400ObjectManagementPage() {
 /**
  * @param {{
  *   activeMode: "excel" | "manual",
- *   isWorkspaceExpanded: boolean,
  *   onModeChange: (mode: "excel" | "manual") => void,
- *   onToggleWorkspace: () => void,
  * }} props
  */
-function ObjectToolbar({
-  activeMode,
-  isWorkspaceExpanded,
-  onModeChange,
-  onToggleWorkspace,
-}) {
+function ObjectToolbar({ activeMode, onModeChange }) {
   return (
-    <section aria-label="对象管理模式" className={styles.modeToolbar}>
+    <section
+      aria-label="对象管理模式"
+      className={`${styles.modeToolbar} ${toolbarStyles.surface}`}
+    >
       <span className={styles.modeIcon}>
         <DatabaseZap size={17} strokeWidth={2.4} />
       </span>
@@ -312,10 +306,12 @@ function ObjectToolbar({
         <strong>表结构草稿</strong>
         <small>建表可编辑，改表入口保留为后续受控变更</small>
       </div>
-      <div className={styles.modeTabs} role="tablist">
+      <div className={`${styles.modeTabs} ${toolbarStyles.actionGroup}`} role="tablist">
         <button
           aria-selected={activeMode === "excel"}
-          className={styles.modeTab}
+          className={`${toolbarStyles.button} ${
+            activeMode === "excel" ? toolbarStyles.selected : toolbarStyles.neutral
+          }`}
           onClick={() => onModeChange("excel")}
           role="tab"
           type="button"
@@ -325,7 +321,9 @@ function ObjectToolbar({
         </button>
         <button
           aria-selected={activeMode === "manual"}
-          className={styles.modeTab}
+          className={`${toolbarStyles.button} ${
+            activeMode === "manual" ? toolbarStyles.selected : toolbarStyles.neutral
+          }`}
           onClick={() => onModeChange("manual")}
           role="tab"
           type="button"
@@ -334,24 +332,15 @@ function ObjectToolbar({
           在线设计
         </button>
       </div>
-      <div className={styles.modeActions}>
+      <div className={`${styles.modeActions} ${toolbarStyles.actionGroup}`}>
         <button
-          aria-pressed={isWorkspaceExpanded}
-          className={styles.expandAction}
-          onClick={onToggleWorkspace}
+          aria-disabled="true"
+          className={`${toolbarStyles.button} ${toolbarStyles.neutral}`}
           type="button"
         >
-          {isWorkspaceExpanded ? (
-            <Minimize2 aria-hidden="true" size={15} strokeWidth={2.4} />
-          ) : (
-            <Maximize2 aria-hidden="true" size={15} strokeWidth={2.4} />
-          )}
-          {isWorkspaceExpanded ? "退出展开" : "展开工作区"}
-        </button>
-        <button aria-disabled="true" className={styles.ghostAction} type="button">
           改表草稿
         </button>
-        <button className={styles.primaryDisabled} disabled type="button">
+        <button className={`${toolbarStyles.button} ${toolbarStyles.primary}`} disabled type="button">
           提交审批
         </button>
       </div>

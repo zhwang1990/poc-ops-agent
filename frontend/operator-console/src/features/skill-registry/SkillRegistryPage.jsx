@@ -326,6 +326,7 @@ function SkillCatalogState({ page, query, rows, setPage, showDetail }) {
 
   return (
     <DataTable
+      className={styles.registryDataTable}
       ariaLabel="内置 Skill 表格"
       columns={skillColumns(showDetail)}
       emptyMessage="控制面当前没有返回符合筛选条件的 Skill。"

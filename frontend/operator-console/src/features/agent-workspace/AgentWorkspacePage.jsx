@@ -12,6 +12,8 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { NaturalLanguageDialog } from "../../components/conversation/NaturalLanguageDialog.jsx";
+import toolbarStyles from "../../components/layout/PageToolbar.module.css";
+import { WorkspacePageFrame } from "../../components/layout/WorkspacePageFrame.jsx";
 import { WorkspaceStatusBar } from "../../components/layout/WorkspaceStatusBar.jsx";
 import { Badge } from "../../components/primitives/Badge.jsx";
 import { Button } from "../../components/primitives/Button.jsx";
@@ -54,7 +56,6 @@ const agentMarkdownComponents = {
 };
 
 export function AgentWorkspacePage() {
-  const [isWorkspaceExpanded, setIsWorkspaceExpanded] = useState(false);
   const [taskGoal, setTaskGoal] = useState("");
   const [activeDetailPanel, setActiveDetailPanel] = useState(
     /** @type {"task" | "skill" | "chain" | null} */ (null),
@@ -74,9 +75,7 @@ export function AgentWorkspacePage() {
   };
 
   return (
-    <div
-      className={`${styles.agentCanvas} ${isWorkspaceExpanded ? styles.workspaceFullscreen : ""}`}
-    >
+    <WorkspacePageFrame className={styles.agentCanvas}>
       <div aria-hidden="true" className={styles.agentIonField}>
         {agentIonSpecs.map(([size, tone, lane], index) => (
           <i
@@ -91,10 +90,7 @@ export function AgentWorkspacePage() {
       </div>
       <WorkspaceStatusBar title="Agent 工作区" />
 
-      <ConversationToolbar
-        isWorkspaceExpanded={isWorkspaceExpanded}
-        onToggleWorkspace={() => setIsWorkspaceExpanded((current) => !current)}
-      />
+      <ConversationToolbar />
 
       <section className={styles.agentLayout}>
         <div className={styles.exchangeWindow}>
@@ -163,7 +159,7 @@ export function AgentWorkspacePage() {
         onClose={() => setActiveDetailPanel(null)}
         task={agentTask}
       />
-    </div>
+    </WorkspacePageFrame>
   );
 }
 
@@ -435,15 +431,12 @@ function formatJson(value) {
   return JSON.stringify(value, null, 2);
 }
 
-/**
- * @param {{
- *   isWorkspaceExpanded: boolean,
- *   onToggleWorkspace: () => void,
- * }} props
- */
-function ConversationToolbar({ isWorkspaceExpanded, onToggleWorkspace }) {
+function ConversationToolbar() {
   return (
-    <section aria-label="会话工具栏" className={styles.conversationToolbar}>
+    <section
+      aria-label="会话工具栏"
+      className={`${styles.conversationToolbar} ${toolbarStyles.surface}`}
+    >
       <span className={styles.conversationToolbarButton}>
         <span
           aria-hidden="true"
@@ -459,21 +452,17 @@ function ConversationToolbar({ isWorkspaceExpanded, onToggleWorkspace }) {
         <strong>当前会话</strong>
         <small>1 个 workflow · 1 分钟前更新</small>
       </div>
-      <div className={styles.conversationToolbarActions}>
-        <button
-          aria-pressed={isWorkspaceExpanded}
-          className={styles.workspaceExpand}
-          onClick={onToggleWorkspace}
-          type="button"
-        >
-          {isWorkspaceExpanded ? "收起工作区" : "展开工作区"}
-        </button>
+      <div className={`${styles.conversationToolbarActions} ${toolbarStyles.actionGroup}`}>
         {secondaryConversationActions.map((action) => (
-          <button className={styles.conversationAction} key={action} type="button">
+          <button
+            className={`${toolbarStyles.button} ${toolbarStyles.neutral}`}
+            key={action}
+            type="button"
+          >
             {action}
           </button>
         ))}
-        <button className={`${styles.conversationAction} ${styles.primaryAction}`} type="button">
+        <button className={`${toolbarStyles.button} ${toolbarStyles.primary}`} type="button">
           + 新建会话
         </button>
       </div>

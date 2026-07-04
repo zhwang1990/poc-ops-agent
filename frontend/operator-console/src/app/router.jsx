@@ -18,6 +18,9 @@ import { RagQuestionPage } from "../features/rag-question/RagQuestionPage.jsx";
 import { ReleaseCenterPage } from "../features/release-center/ReleaseCenterPage.jsx";
 import { SkillRegistryPage } from "../features/skill-registry/SkillRegistryPage.jsx";
 import { SqlWorkbenchPage } from "../features/sql-workbench/SqlWorkbenchPage.jsx";
+import { ThirdPartyLicenseDetailPage } from "../features/third-party-licenses/ThirdPartyLicenseDetailPage.jsx";
+import { ThirdPartyLicensesPage } from "../features/third-party-licenses/ThirdPartyLicensesPage.jsx";
+import { ToolCenterPage } from "../features/tool-center/ToolCenterPage.jsx";
 import { WorkflowEventsPage } from "../features/workflow-events/WorkflowEventsPage.jsx";
 
 const legacyAgentViewRoutes = {
@@ -110,6 +113,22 @@ export function AppRouter() {
       <Route
         element={
           <ProtectedRoute>
+            <ThirdPartyLicensesPage />
+          </ProtectedRoute>
+        }
+        path="/third-party-licenses"
+      />
+      <Route
+        element={
+          <ProtectedRoute>
+            <ThirdPartyLicenseDetailPage />
+          </ProtectedRoute>
+        }
+        path="/third-party-licenses/:licenseId"
+      />
+      <Route
+        element={
+          <ProtectedRoute>
             <SkillRegistryPage />
           </ProtectedRoute>
         }
@@ -178,6 +197,14 @@ export function AppRouter() {
           </ProtectedRoute>
         }
         path="/sql"
+      />
+      <Route
+        element={
+          <ProtectedRoute>
+            <ToolCenterPage />
+          </ProtectedRoute>
+        }
+        path="/tools"
       />
       <Route
         element={

@@ -1,6 +1,7 @@
 export function parseReleasePackageArgs(args) {
   const parsed = {
     artifactRoot: undefined,
+    mavenCommand: "mvn",
     publishDirectory: undefined,
     skipFrontendInstall: false,
     skipFrontendTests: false,
@@ -41,6 +42,11 @@ export function parseReleasePackageArgs(args) {
       index += 1;
       continue;
     }
+    if (arg === "--maven-command") {
+      parsed.mavenCommand = readValue(args, index, arg);
+      index += 1;
+      continue;
+    }
     throw new Error(`Unknown argument: ${arg}`);
   }
 
@@ -53,6 +59,27 @@ export function createFrontendBuildSteps(options) {
   }
 
   return [{ command: "npm", args: ["exec", "vite", "--", "build"] }];
+}
+
+export function createBackendBuildCommand(options, frontendDist) {
+  const mavenGoal = options.skipTests ? "package" : "verify";
+  const args = [
+    "-f",
+    "pom.xml",
+    "-B",
+    "-ntp",
+    "-Dops-agent.include-operator-console=true",
+    `-Dops-agent.operator-console.dist=${frontendDist}`,
+  ];
+  if (options.skipTests) {
+    args.push("-DskipTests");
+  }
+  args.push(mavenGoal);
+
+  return {
+    command: options.mavenCommand,
+    args,
+  };
 }
 
 function readValue(args, index, name) {

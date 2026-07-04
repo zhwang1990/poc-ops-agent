@@ -44,18 +44,32 @@ tools\demo\start-demo.cmd "C:\path\to\jdk-21\bin"
 http://127.0.0.1:5173
 ```
 
-如果前端已经内嵌进控制面 JAR，且后端 JAR 已经打好，可以只启动后端两个 JAR：
+如果前端已经内嵌进控制面 JAR，且后端两个 JAR 已经单独拷贝出来，可以把脚本复制到这两个 JAR 所在目录后双击运行：
 
 ```text
-tools\demo\start-backend-jars.cmd
+start-backend-jars.cmd
 ```
 
-该脚本不会运行 Maven、npm 或前端开发服务器，只会从以下位置查找已生成的 JAR 并启动：
+这个目录里应只保留一份控制面 JAR 和一份 Worker JAR：
 
 ```text
-backend\control-plane\bootstrap\target\control-plane-bootstrap-*.jar
-backend\execution-worker\target\execution-worker-*.jar
+control-plane-bootstrap-*.jar
+execution-worker-*.jar
 ```
+
+如果不想移动脚本，也可以把 JAR 目录作为第一个参数传入：
+
+```text
+tools\demo\start-backend-jars.cmd D:\ops-agent-jars
+```
+
+如需显式指定 JDK 21 的 `bin` 目录，第二个参数传入：
+
+```text
+tools\demo\start-backend-jars.cmd D:\ops-agent-jars "C:\path\to\jdk-21\bin"
+```
+
+该脚本不会运行 Maven、npm 或前端开发服务器，只会启动已经拷贝出来的两个 JAR。
 
 控制面会使用 `demo` profile 启动，页面地址为：
 
@@ -107,7 +121,7 @@ tools\demo\stop-demo.cmd
 h2-local-test
 ```
 
-这是本地 H2 内存数据源，目标环境为 `test`，只用于演示 SQL 工作台只读查询链路。
+这是本地 H2 内存数据源，目标环境为 `sit`，只用于演示 SQL 工作台只读查询和非生产受控 DML 链路。
 
 可演示的查询：
 
@@ -132,7 +146,7 @@ where ENVIRONMENT = 'test'
 order by P95_LATENCY_MS desc
 ```
 
-以下语句可用于演示 DML 不会真实执行：
+以下语句可用于演示非生产受控 DML 手动提交：
 
 ```sql
 update PUBLIC.ORDERS
@@ -140,7 +154,7 @@ set STATUS = 'DONE'
 where ORDER_ID = 1
 ```
 
-P1 仍只允许受控单条 `SELECT` 执行。`INSERT`、`UPDATE`、`DELETE`、DDL、存储过程、多语句脚本、提交和回滚不属于本 demo 的执行能力。
+P2 demo 允许 `sit` 环境单条 `INSERT`、`UPDATE`、`DELETE` 通过“事务模式”和“手动提交”进入短事务。无 `WHERE` 的 `UPDATE` / `DELETE` 会要求二次确认。DDL、存储过程、多语句脚本、长期事务、交互式回滚和生产写执行不属于本 demo 的执行能力。
 
 ## 7. 常见问题
 
@@ -181,7 +195,7 @@ tools\demo\stop-demo.cmd
 
 - 本启动器不是生产部署方案。
 - 不保存真实数据库密码、模型 API Key 或生产连接串。
-- 不开放生产 SQL 连接。
+- 生产 SQL 连接只能用于查询，不开放生产写执行。
 - 不开放任意脚本执行。
 - 前端仍只调用控制面，不直接调用 Worker 或 H2。
 - SQL 执行仍经过控制面校验、策略授权、工作流和 Worker 二次校验。

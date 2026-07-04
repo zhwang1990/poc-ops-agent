@@ -10,8 +10,27 @@ import { server } from "../../test/server.js";
 import { ReleaseCenterPage } from "./ReleaseCenterPage.jsx";
 
 const releaseCenterCss = readFileSync("src/features/release-center/ReleaseCenterPage.module.css", "utf8");
+const releaseCenterSource = readFileSync("src/features/release-center/ReleaseCenterPage.jsx", "utf8");
+const pageToolbarCss = readFileSync("src/components/layout/PageToolbar.module.css", "utf8");
 
 describe("ReleaseCenterPage", () => {
+  it("uses the shared Agent-style toolbar surface for release actions", () => {
+    const summaryRule = cssRule("summaryBand");
+    const summaryActionsRule = cssRule("summaryActions");
+    const pageToolbarSurfaceRule =
+      pageToolbarCss.match(/[.]surface\s*[{][^}]+[}]/u)?.[0] ?? "";
+
+    expect(releaseCenterSource).toContain("PageToolbar.module.css");
+    expect(releaseCenterSource).toContain("styles.summaryBand} ${toolbarStyles.surface}");
+    expect(pageToolbarSurfaceRule).toContain("border-radius: 14px");
+    expect(pageToolbarSurfaceRule).toContain("backdrop-filter: blur(18px)");
+    expect(summaryRule).not.toContain("background: var(--release-surface)");
+    expect(summaryRule).toContain("grid-template-columns: max-content minmax(0, 1fr)");
+    expect(summaryRule).toContain("justify-content: start");
+    expect(summaryRule).not.toContain("justify-content: end");
+    expect(summaryActionsRule).toContain("justify-self: end");
+  });
+
   it("keeps Liberty script parameter remove buttons compact", () => {
     const rowRule = cssRule("scriptParameterRow");
     const removeButtonRule = cssRule("removeParameterButton");
@@ -106,6 +125,51 @@ describe("ReleaseCenterPage", () => {
     }
   });
 
+  it("omits the release workspace summary component", async () => {
+    server.use(
+      http.get("/auth/session", () =>
+        HttpResponse.json({
+          authenticated: true,
+          subject: "operator-1",
+          username: "ops.release",
+          roles: ["ROLE_ops-release"],
+          authenticationType: "built-in",
+        }),
+      ),
+    );
+
+    renderReleaseCenter();
+
+    const overview = await screen.findByRole("region", { name: "发布中心概览" });
+    expect(within(overview).queryByText("M09 / P2")).not.toBeInTheDocument();
+    expect(within(overview).queryByRole("heading", { name: "非生产发布工作区" })).not.toBeInTheDocument();
+    for (const label of ["DEV", "SIT", "UAT"]) {
+      expect(within(overview).getByRole("button", { name: label })).toBeInTheDocument();
+    }
+  });
+
+  it("omits the empty release history environment summary", async () => {
+    server.use(
+      http.get("/auth/session", () =>
+        HttpResponse.json({
+          authenticated: true,
+          subject: "operator-1",
+          username: "ops.release",
+          roles: ["ROLE_ops-release"],
+          authenticationType: "built-in",
+        }),
+      ),
+    );
+
+    renderReleaseCenter();
+
+    const sideCard = await screen.findByRole("complementary", { name: "发布中心全局配置" });
+    const history = await within(sideCard).findByRole("region", { name: "发布历史" });
+    expect(within(history).queryByText("DEV 暂无发布记录")).not.toBeInTheDocument();
+    expect(within(history).queryByText(/暂无发布记录/)).not.toBeInTheDocument();
+    expect(within(history).getByText("暂无发布历史")).toBeInTheDocument();
+  });
+
   it("renders the release center workspace tabs", async () => {
     server.use(
       http.get("/auth/session", () =>
@@ -135,7 +199,7 @@ describe("ReleaseCenterPage", () => {
     for (const label of ["发布单", "制品", "服务器", "策略"]) {
       expect(within(tabs).getByRole("tab", { name: label })).toBeInTheDocument();
     }
-    for (const label of ["应用", "Script profiles", "凭据"]) {
+    for (const label of ["应用", "发布脚本", "凭据"]) {
       expect(within(tabs).queryByRole("tab", { name: label })).not.toBeInTheDocument();
     }
     const planList = await screen.findByRole("region", { name: "发布单列表" });
@@ -168,24 +232,25 @@ describe("ReleaseCenterPage", () => {
     expect(within(globalPanel).getByRole("heading", { name: "全局配置" })).toBeInTheDocument();
     expect(within(globalPanel).queryByText("Global catalog")).not.toBeInTheDocument();
     expect(await within(globalPanel).findByText("应用目录")).toBeInTheDocument();
-    expect(within(globalPanel).getByText("Script profiles")).toBeInTheDocument();
+    expect(within(globalPanel).getByText("发布脚本")).toBeInTheDocument();
+    expect(within(globalPanel).queryByText("Script profiles")).not.toBeInTheDocument();
     expect(within(globalPanel).getByText("启动脚本")).toBeInTheDocument();
     expect(within(globalPanel).getByText("停止脚本")).toBeInTheDocument();
     expect(within(globalPanel).getByText("凭据别名")).toBeInTheDocument();
 
     const tabs = screen.getByRole("tablist", { name: "发布中心环境资源" });
-    expect(within(tabs).queryByRole("tab", { name: "Script profiles" })).not.toBeInTheDocument();
+    expect(within(tabs).queryByRole("tab", { name: "发布脚本" })).not.toBeInTheDocument();
     expect(within(tabs).queryByRole("tab", { name: "应用" })).not.toBeInTheDocument();
     expect(within(tabs).queryByRole("tab", { name: "凭据" })).not.toBeInTheDocument();
 
-    const scriptProfilesConfigButton = await within(globalPanel).findByRole("button", { name: "配置 Script profiles" });
+    const scriptProfilesConfigButton = await within(globalPanel).findByRole("button", { name: "配置 发布脚本" });
     expect(scriptProfilesConfigButton.textContent?.trim()).toBe("");
     expect(scriptProfilesConfigButton.querySelector("svg")).toBeInTheDocument();
 
     await userEvent.click(scriptProfilesConfigButton);
-    const dialog = await screen.findByRole("dialog", { name: "配置 Script profiles" });
+    const dialog = await screen.findByRole("dialog", { name: "配置 发布脚本" });
     expect(within(dialog).getByText("Liberty WAR deploy")).toBeInTheDocument();
-    await userEvent.click(within(dialog).getByLabelText("关闭配置 Script profiles"));
+    await userEvent.click(within(dialog).getByLabelText("关闭配置 发布脚本"));
 
     await userEvent.click(within(globalPanel).getByRole("button", { name: "配置 启动脚本" }));
     const startScriptDialog = await screen.findByRole("dialog", { name: "配置 启动脚本" });
@@ -243,8 +308,8 @@ describe("ReleaseCenterPage", () => {
       renderReleaseCenter();
 
       const globalPanel = await screen.findByRole("complementary", { name: "发布中心全局配置" });
-      await userEvent.click(within(globalPanel).getByRole("button", { name: "配置 Script profiles" }));
-      const dialog = await screen.findByRole("dialog", { name: "配置 Script profiles" });
+      await userEvent.click(within(globalPanel).getByRole("button", { name: "配置 发布脚本" }));
+      const dialog = await screen.findByRole("dialog", { name: "配置 发布脚本" });
       const identityText = `${longProfile.profileId}\n${longProfile.displayName}`;
       const argumentsText = longProfile.arguments.join(" ");
 
@@ -304,15 +369,15 @@ describe("ReleaseCenterPage", () => {
 
     const globalPanel = await screen.findByRole("complementary", { name: "发布中心全局配置" });
     expect(await within(globalPanel).findByText("应用目录")).toBeInTheDocument();
-    expect(within(globalPanel).getByText("Script profiles")).toBeInTheDocument();
+    expect(within(globalPanel).getByText("发布脚本")).toBeInTheDocument();
     expect(within(globalPanel).getByText("启动脚本")).toBeInTheDocument();
     expect(within(globalPanel).getByText("停止脚本")).toBeInTheDocument();
     expect(within(globalPanel).getByText("凭据别名")).toBeInTheDocument();
     expect(within(globalPanel).getAllByText("读取失败").length).toBeGreaterThanOrEqual(1);
     expect(within(globalPanel).getByRole("button", { name: "配置 应用目录" })).toBeInTheDocument();
 
-    await userEvent.click(within(globalPanel).getByRole("button", { name: "配置 Script profiles" }));
-    const dialog = await screen.findByRole("dialog", { name: "配置 Script profiles" });
+    await userEvent.click(within(globalPanel).getByRole("button", { name: "配置 发布脚本" }));
+    const dialog = await screen.findByRole("dialog", { name: "配置 发布脚本" });
     expect(within(dialog).getByRole("button", { name: "Add script profile" })).toBeInTheDocument();
     await userEvent.click(within(dialog).getByRole("button", { name: "Add script profile" }));
     expect(await screen.findByRole("dialog", { name: "New script profile" })).toBeInTheDocument();
@@ -1047,8 +1112,8 @@ describe("ReleaseCenterPage", () => {
 
     renderReleaseCenter();
 
-    await userEvent.click(await screen.findByRole("button", { name: "配置 Script profiles" }));
-    const configDialog = await screen.findByRole("dialog", { name: "配置 Script profiles" });
+    await userEvent.click(await screen.findByRole("button", { name: "配置 发布脚本" }));
+    const configDialog = await screen.findByRole("dialog", { name: "配置 发布脚本" });
     await userEvent.click(await within(configDialog).findByRole("button", { name: "Add script profile" }));
 
     const dialog = await screen.findByRole("dialog", { name: "New script profile" });

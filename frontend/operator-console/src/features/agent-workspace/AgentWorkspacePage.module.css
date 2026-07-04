@@ -10,71 +10,9 @@
   --agent-green: #16875a;
   --agent-border: #d7e4ec;
   --agent-muted: #6f7c8b;
-  --agent-layout-gap: 24px;
-  --agent-shell-left: 284px;
-  --agent-shell-inline: clamp(32px, 4vw, 72px);
-  --agent-sidebar-left: var(--agent-layout-gap);
-  --agent-sidebar-width: 250px;
-  --agent-vertical-align-offset: 16px;
-  --agent-canvas-left: calc(var(--agent-sidebar-left) + var(--agent-sidebar-width) + var(--agent-layout-gap));
-  --agent-canvas-offset: calc(var(--agent-shell-left) + var(--agent-shell-inline) - var(--agent-canvas-left));
-  display: grid;
-  box-sizing: border-box;
-  width: calc(100vw - var(--agent-canvas-left) - var(--agent-layout-gap));
-  height: calc(100vh - 48px);
-  min-height: 0;
+  --agent-layout-gap: var(--workspace-layout-gap);
   grid-template-rows: auto auto minmax(0, 1fr);
   gap: var(--agent-layout-gap);
-  align-content: stretch;
-  margin-left: calc(0px - var(--agent-canvas-offset));
-  margin-top: calc(0px - var(--agent-vertical-align-offset));
-  margin-bottom: calc(0px - var(--agent-vertical-align-offset));
-  min-width: 0;
-  position: relative;
-  isolation: isolate;
-  overflow: clip;
-  overflow-clip-margin: 0;
-  padding: 12px;
-  border: 1px solid rgba(166, 64, 92, 0.18);
-  border-radius: 24px;
-  background: var(--agent-bg-base);
-  font-family: var(--agent-font-sans);
-  box-shadow:
-    0 18px 56px rgba(31, 41, 51, 0.055),
-    0 0 30px rgba(166, 64, 92, 0.035),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.62);
-}
-
-.agentCanvas::before,
-.agentCanvas::after {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  content: "";
-  pointer-events: none;
-}
-
-.agentCanvas::before {
-  background:
-    radial-gradient(circle at 78% 14%, rgba(14, 165, 183, 0.14), transparent 18rem),
-    radial-gradient(circle at 84% 76%, rgba(211, 17, 69, 0.08), transparent 15rem),
-    radial-gradient(circle at 18% 86%, rgba(211, 17, 69, 0.11), transparent 18rem),
-    radial-gradient(circle at 30% 78%, rgba(183, 119, 31, 0.055), transparent 14rem);
-  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.82), rgba(0, 0, 0, 0.74) 62%, transparent 96%);
-}
-
-.agentCanvas::after {
-  background:
-    radial-gradient(ellipse at 50% 24%, rgba(255, 255, 255, 0.92), transparent 34rem),
-    radial-gradient(ellipse at 50% 8%, rgba(34, 126, 166, 0.1), transparent 42rem),
-    radial-gradient(circle at 8% 18%, rgba(211, 17, 69, 0.08), transparent 22rem),
-    radial-gradient(circle at 92% 16%, rgba(14, 165, 183, 0.1), transparent 24rem),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.46), transparent 36%, rgba(34, 126, 166, 0.045));
-}
-
-.agentCanvas > :not(.agentIonField) {
-  position: relative;
-  z-index: 1;
 }
 
 .agentIonField {
@@ -235,25 +173,12 @@
   --agent-ion-delay: -27s;
 }
 
-.workspaceFullscreen {
-  position: fixed;
-  inset: 0;
-  z-index: 60;
-  width: auto;
-  height: 100vh;
-  min-height: 0;
-  margin: 0;
-  padding: 24px;
-  overflow: hidden;
-  background: var(--agent-bg-base);
-}
-
-.workspaceFullscreen .agentLayout {
+.agentCanvas[data-workspace-expanded="true"] .agentLayout {
   min-height: 0;
   grid-template-columns: minmax(0, 1fr);
 }
 
-.workspaceFullscreen .agentSide {
+.agentCanvas[data-workspace-expanded="true"] .agentSide {
   display: none;
 }
 
@@ -926,28 +851,15 @@
 }
 
 .conversationToolbar {
+  --page-toolbar-accent: var(--agent-blue);
+  --page-toolbar-primary: var(--agent-red);
   display: grid;
-  min-height: 60px;
   grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 16px;
   align-items: center;
-  padding: 10px 16px;
-  overflow: hidden;
-  border: 1px solid rgba(37, 132, 169, 0.18);
-  border-radius: 18px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.66), rgba(248, 252, 253, 0.42)),
-    radial-gradient(circle at 15% 0%, rgba(216, 11, 70, 0.06), transparent 12rem);
-  box-shadow:
-    0 12px 30px rgba(31, 41, 51, 0.055),
-    inset 0 1px 0 rgba(255, 255, 255, 0.72);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
 }
 
-.conversationToolbarButton,
-.conversationAction,
-.workspaceExpand {
+.conversationToolbarButton {
   appearance: none;
   height: 38px;
   display: inline-flex;
@@ -972,26 +884,16 @@
     transform 150ms ease;
 }
 
-.conversationToolbarButton:hover,
-.conversationAction:hover,
-.workspaceExpand:hover {
+.conversationToolbarButton:hover {
   border-color: rgba(37, 132, 169, 0.34);
   background: #f8fafb;
   box-shadow: 0 12px 22px rgba(31, 41, 51, 0.075);
   transform: translateY(-1px);
 }
 
-.conversationToolbarButton:active,
-.conversationAction:active,
-.workspaceExpand:active {
+.conversationToolbarButton:active {
   box-shadow: 0 5px 12px rgba(31, 41, 51, 0.06);
   transform: translateY(1px) scale(0.98);
-}
-
-.conversationAction:focus-visible,
-.workspaceExpand:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--agent-blue) 54%, transparent);
-  outline-offset: 2px;
 }
 
 .conversationToolbarButton {
@@ -1093,7 +995,6 @@
   text-overflow: ellipsis;
 }
 
-.conversationToolbarActions,
 .workflowTaskTags,
 .workflowTaskActions {
   display: flex;
@@ -1105,28 +1006,6 @@
   justify-content: flex-end;
   justify-self: end;
   margin-left: auto;
-}
-
-.primaryAction {
-  min-width: 102px;
-  border-color: rgba(211, 17, 69, 0.62);
-  background:
-    radial-gradient(circle at 18% 50%, rgba(255, 255, 255, 0.18), transparent 4.8rem),
-    linear-gradient(90deg, var(--agent-red), #e01851 48%, var(--agent-red-dark));
-  color: #fff;
-  box-shadow:
-    0 16px 34px rgba(211, 17, 69, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.22);
-}
-
-.primaryAction:hover {
-  border-color: rgba(211, 17, 69, 0.72);
-  background:
-    radial-gradient(circle at 18% 50%, rgba(255, 255, 255, 0.22), transparent 4.8rem),
-    linear-gradient(90deg, #d9174e, #e32358 48%, var(--agent-red-dark));
-  box-shadow:
-    0 18px 38px rgba(211, 17, 69, 0.24),
-    0 0 0 4px rgba(211, 17, 69, 0.08);
 }
 
 .agentLayout {
@@ -1885,15 +1764,13 @@
 }
 
 .agentSide {
-  --agent-side-row-gap-share: 16px;
-  --agent-side-row-shift: 5px;
   display: grid;
   height: 100%;
   max-height: 100%;
   min-height: 0;
   align-self: stretch;
-  align-content: stretch;
-  grid-template-rows: calc(33.333333% - var(--agent-side-row-gap-share) - var(--agent-side-row-shift)) calc(33.333333% - var(--agent-side-row-gap-share)) calc(33.333333% - var(--agent-side-row-gap-share) + var(--agent-side-row-shift));
+  align-content: start;
+  grid-auto-rows: max-content;
   gap: var(--agent-layout-gap);
   overflow-x: hidden;
   overflow-y: auto;
@@ -1905,11 +1782,11 @@
   position: relative;
   display: grid;
   min-height: 0;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
-  align-content: stretch;
-  gap: 8px;
+  grid-template-rows: auto auto auto auto;
+  align-content: start;
+  gap: 7px;
   overflow: hidden;
-  padding: 10px 12px;
+  padding: 9px 11px;
   border: 1px solid var(--agent-border);
   border-radius: 12px;
   background:
@@ -1931,7 +1808,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 40px;
+  min-height: 36px;
   margin: 0;
   color: #1f6f8a;
   font-family: var(--agent-font-display);
@@ -2046,7 +1923,7 @@
   gap: 4px 8px;
   align-items: center;
   overflow: hidden;
-  padding: 0 0 7px;
+  padding: 0 0 5px;
   border-bottom: 1px solid rgba(37, 132, 169, 0.11);
   color: var(--agent-muted);
 }
@@ -2125,17 +2002,17 @@
   align-content: start;
   gap: 0;
   margin: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .panelFact {
   display: grid;
   min-width: 0;
-  min-height: 28px;
+  min-height: 26px;
   grid-template-columns: minmax(0, 0.64fr) minmax(82px, 1fr);
   gap: 8px;
   align-items: center;
-  padding: 6px 0;
+  padding: 4px 0;
   border-top: 1px solid rgba(37, 132, 169, 0.11);
 }
 
@@ -3115,15 +2992,8 @@
   }
 }
 
-@media (min-width: 1680px) {
-  .agentCanvas {
-    --agent-shell-left: 300px;
-  }
-}
-
 @media (max-width: 1360px) {
-  .appCapsule,
-  .conversationToolbar {
+  .appCapsule {
     border-radius: 18px;
   }
 

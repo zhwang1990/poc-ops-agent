@@ -6,8 +6,6 @@
   --quick-green: #168a63;
   --quick-red: #c93b4e;
   --quick-gold: #b8791c;
-  height: calc(100vh - 48px);
-  min-height: 0;
   grid-template-rows: auto minmax(0, 1fr);
   overflow: auto;
 }
@@ -506,11 +504,6 @@
 }
 
 @media (max-width: 1180px) {
-  .quickLinksCanvas {
-    height: auto;
-    min-height: calc(100vh - 48px);
-  }
-
   .quickLinkGrid {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto;

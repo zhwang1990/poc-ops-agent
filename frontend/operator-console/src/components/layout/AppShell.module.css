@@ -1,17 +1,24 @@
 .shell {
+  --app-shell-gap: 9px;
+  --app-sidebar-width: 238px;
+  --app-content-margin-left: calc(var(--app-sidebar-width) + (var(--app-shell-gap) * 2));
   min-height: 100vh;
   background: var(--color-canvas);
 }
 
+.iconOnlyShell {
+  --app-sidebar-width: 88px;
+}
+
 .sidebar {
   position: fixed;
-  inset: 24px auto 24px 24px;
+  inset: var(--app-shell-gap) auto var(--app-shell-gap) var(--app-shell-gap);
   z-index: 10;
   display: flex;
-  width: 250px;
+  width: var(--app-sidebar-width);
   flex-direction: column;
   gap: 16px;
-  padding: 24px 16px 18px;
+  padding: 12px 10px 18px;
   border: 1px solid rgba(166, 64, 92, 0.18);
   border-radius: 18px;
   background:
@@ -22,12 +29,25 @@
     0 18px 38px rgba(166, 64, 92, 0.08),
     inset 0 1px 0 rgba(255, 255, 255, 0.72),
     inset 0 -18px 42px rgba(255, 255, 255, 0.24);
+  transition:
+    width 180ms ease,
+    padding 180ms ease;
 }
 
 .nav {
   display: grid;
+  flex: 1 1 auto;
+  min-height: 0;
   gap: 10px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-right: 2px;
+  scrollbar-width: none;
   transform: translateY(-3px);
+}
+
+.nav::-webkit-scrollbar {
+  display: none;
 }
 
 .navLink {
@@ -77,6 +97,22 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.iconOnlyShell .navLink {
+  grid-template-columns: 54px;
+  justify-content: center;
+  gap: 0;
+  padding: 7px;
+}
+
+.iconOnlyShell .navLabel,
+.iconOnlyShell .navPulse {
+  display: none;
+}
+
+.iconOnlyShell :where(.navIcon) {
+  justify-self: center;
 }
 
 .navLink::after {
@@ -133,8 +169,8 @@
 .navIcon::after {
   position: absolute;
   border-radius: var(--nav-symbol-radius);
-  content: "";
   pointer-events: none;
+  content: "";
 }
 
 .navIcon::before {
@@ -167,6 +203,10 @@
     0 7px 13px color-mix(in srgb, var(--nav-mark) 24%, transparent),
     inset 0 1px 0 rgba(255, 255, 255, 0.42),
     inset 0 -3px 0 rgba(31, 45, 61, 0.16);
+  transition:
+    background 150ms ease,
+    box-shadow 150ms ease,
+    transform 150ms ease;
 }
 
 .navSymbol::before,
@@ -201,7 +241,7 @@
   width: 22px;
   height: 22px;
   color: #fff;
-  filter: drop-shadow(0 1px 1px rgba(31, 45, 61, 0.18));
+  shape-rendering: geometricPrecision;
 }
 
 .navPulse {
@@ -393,7 +433,6 @@
 
 .active .navGlyph {
   color: var(--nav-color);
-  filter: drop-shadow(0 1px 0 rgba(255, 255, 255, 0.5));
 }
 
 .active .navIcon::before {
@@ -413,7 +452,7 @@
   background: var(--nav-color);
 }
 
-.navLink:hover {
+.navLink:hover:not(.active) {
   border-color: color-mix(in srgb, var(--nav-color) 34%, #dfe7ee);
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(255, 255, 255, 0.54)),
@@ -426,18 +465,18 @@
   transform: translateY(-1px);
 }
 
-.navLink:hover::after,
+.navLink:hover:not(.active)::after,
 .active::after {
   opacity: 0.55;
   transform: translateX(18%);
 }
 
-.navLink:hover::before {
+.navLink:hover:not(.active)::before {
   width: 4px;
   background: var(--nav-color);
 }
 
-.navLink:hover .navIcon {
+.navLink:hover:not(.active) .navIcon {
   border-color: color-mix(in srgb, var(--nav-color) 48%, #dfe7ee);
   background: color-mix(in srgb, var(--nav-color) 15%, #f8fafb);
   box-shadow:
@@ -447,15 +486,15 @@
   transform: translateX(1px);
 }
 
-.navLink:hover .navIcon::before {
+.navLink:hover:not(.active) .navIcon::before {
   background: color-mix(in srgb, var(--nav-color) 22%, #fff);
 }
 
-.navLink:hover .navSymbol {
+.navLink:hover:not(.active) .navSymbol {
   transform: translateY(-1px) scale(1.04);
 }
 
-.navLink:hover .navPulse {
+.navLink:hover:not(.active) .navPulse {
   background: var(--nav-color);
   transform: scale(1.18);
 }
@@ -474,131 +513,173 @@
 .sidebarFooter {
   display: grid;
   flex: 0 0 auto;
+  gap: 10px;
   margin-top: auto;
 }
 
-.sidebarPreview {
-  position: relative;
+.legalLink {
+  --legal-color: #627489;
   display: grid;
-  min-height: 110px;
-  padding: 14px;
-  isolation: isolate;
-  overflow: hidden;
-  border: 1px solid #e2e8ee;
-  border-radius: 8px;
-  background:
-    linear-gradient(180deg, #ffffff 0%, #f8fafb 100%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92);
-}
-
-.sidebarPreview::before,
-.sidebarPreview::after {
-  position: absolute;
-  right: 14px;
-  left: 14px;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(37, 132, 169, 0.24), transparent);
-  content: "";
-}
-
-.sidebarPreview::before {
-  top: 16px;
-}
-
-.sidebarPreview::after {
-  bottom: 16px;
-}
-
-.sidebarPreviewOrbit {
-  position: relative;
-  z-index: 2;
-  display: grid;
-  width: 100%;
-  min-height: 82px;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 12px 10px;
-  align-content: center;
+  min-height: 42px;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 8px;
   align-items: center;
-}
-
-.sidebarPreviewCore {
-  position: absolute;
-  z-index: 1;
-  top: 50%;
-  right: 14px;
-  left: 14px;
-  height: 32px;
-  border: 1px solid rgba(37, 132, 169, 0.1);
+  padding: 4px 8px;
+  border: 1px solid rgba(114, 133, 154, 0.16);
   border-radius: 8px;
-  background: linear-gradient(
-    90deg,
-    rgba(37, 132, 169, 0.06),
-    rgba(216, 11, 70, 0.05),
-    rgba(27, 139, 96, 0.05)
-  );
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.84);
-  transform: translateY(-50%);
-}
-
-.sidebarPreviewMenuNode {
-  position: relative;
-  z-index: 3;
-  height: 18px;
-  border: 1px solid color-mix(in srgb, var(--nav-color) 22%, #dfe7ee);
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--nav-color) 9%, #fff);
+  background: rgba(255, 255, 255, 0.62);
+  color: var(--color-text);
+  font-size: 12px;
+  font-weight: 820;
+  text-decoration: none;
   box-shadow:
-    0 6px 12px rgba(31, 45, 61, 0.04),
-    inset 0 1px 0 rgba(255, 255, 255, 0.64);
-  animation: sidebar-preview-node 5.4s ease-in-out infinite;
+    inset 0 1px 0 rgba(255, 255, 255, 0.78),
+    0 7px 16px rgba(31, 45, 61, 0.035);
+  transition:
+    border-color 150ms ease,
+    background 150ms ease,
+    color 150ms ease;
 }
 
-.sidebarPreviewMenuNode::before {
+.legalLink:hover,
+.legalLink:focus-visible,
+.activeLegalLink {
+  border-color: color-mix(in srgb, var(--legal-color) 34%, #dfe7ee);
+  background: color-mix(in srgb, var(--legal-color) 8%, #fff);
+  color: color-mix(in srgb, var(--legal-color) 74%, var(--color-text));
+  outline: none;
+}
+
+.legalLink:focus-visible {
+  box-shadow:
+    0 0 0 3px rgba(114, 133, 154, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.82);
+}
+
+.legalIcon {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid rgba(114, 133, 154, 0.2);
+  border-radius: 7px;
+  background: rgba(114, 133, 154, 0.08);
+  color: var(--legal-color);
+}
+
+.legalLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebarLabelSwitch {
+  appearance: none;
+  display: grid;
+  min-width: 0;
+  min-height: 36px;
+  grid-template-columns: 28px minmax(0, 1fr) 40px;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 8px;
+  border: 1px solid rgba(166, 64, 92, 0.14);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.68);
+  color: var(--color-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 820;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.8),
+    0 7px 16px rgba(31, 45, 61, 0.035);
+}
+
+.sidebarLabelSwitch:focus-visible {
+  outline: 3px solid rgba(37, 132, 169, 0.18);
+  outline-offset: 2px;
+}
+
+.sidebarLabelSwitchIcon {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border: 1px solid rgba(37, 132, 169, 0.18);
+  border-radius: 7px;
+  background: rgba(37, 132, 169, 0.08);
+  color: #2f748a;
+}
+
+.sidebarLabelSwitchText {
+  min-width: 0;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebarSwitchTrack {
+  position: relative;
+  width: 34px;
+  height: 18px;
+  border: 1px solid rgba(114, 133, 154, 0.22);
+  border-radius: 999px;
+  background: rgba(114, 133, 154, 0.12);
+}
+
+.sidebarSwitchThumb {
   position: absolute;
   top: 50%;
-  left: 6px;
-  width: 6px;
-  height: 6px;
+  left: 3px;
+  width: 12px;
+  height: 12px;
   border-radius: 999px;
-  background: var(--nav-color);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--nav-color) 10%, transparent);
-  content: "";
+  background: #7890a6;
+  box-shadow: 0 2px 5px rgba(31, 45, 61, 0.16);
   transform: translateY(-50%);
+  transition:
+    background 160ms ease,
+    transform 160ms ease;
 }
 
-.sidebarPreviewMenuNodeActive {
-  border-color: color-mix(in srgb, var(--nav-color) 54%, #dfe7ee);
-  background: color-mix(in srgb, var(--nav-color) 14%, #fff);
-  box-shadow:
-    0 8px 14px color-mix(in srgb, var(--nav-color) 12%, transparent),
-    inset 0 1px 0 rgba(255, 255, 255, 0.72);
+.sidebarLabelSwitchOn .sidebarSwitchThumb {
+  background: #2f8198;
+  transform: translate(15px, -50%);
 }
 
-.sidebarPreviewMenuNodeActive::before {
-  width: 8px;
-  height: 8px;
+.iconOnlyShell .sidebarLabelSwitch {
+  grid-template-columns: 1fr;
+  justify-items: center;
+  padding: 5px;
+}
+
+.iconOnlyShell .legalLink {
+  grid-template-columns: 1fr;
+  justify-items: center;
+  padding: 6px;
+}
+
+.iconOnlyShell .legalLabel {
+  display: none;
+}
+
+.iconOnlyShell .sidebarLabelSwitchText,
+.iconOnlyShell .sidebarSwitchTrack {
+  display: none;
 }
 
 .content {
-  margin-left: 284px;
+  margin-left: var(--app-content-margin-left);
   max-width: none;
   min-width: 0;
-  padding: 40px clamp(32px, 4vw, 72px);
-}
-
-@keyframes sidebar-preview-node {
-  0%,
-  100% {
-    opacity: 0.72;
-  }
-
-  50% {
-    opacity: 1;
-  }
+  padding: var(--app-shell-gap) var(--app-shell-gap) var(--app-shell-gap) 0;
+  transition: margin-left 180ms ease;
 }
 
 @media (min-width: 1680px) {
   .content {
-    margin-left: 300px;
+    margin-left: var(--app-content-margin-left);
   }
 }

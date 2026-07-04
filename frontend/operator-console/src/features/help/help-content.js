@@ -23,6 +23,12 @@
  */
 
 /**
+ * @typedef {Object} HelpPrimaryLink
+ * @property {string} label
+ * @property {string} to
+ */
+
+/**
  * @typedef {Object} HelpSection
  * @property {string} sectionId
  * @property {string} title
@@ -34,6 +40,7 @@
  * @property {string[]} keywords
  * @property {HelpScenario[]} scenarios
  * @property {HelpFaq[]} faqs
+ * @property {HelpPrimaryLink} [primaryLink]
  */
 
 /**
@@ -416,6 +423,37 @@ export const helpSections = [
     ],
   },
   {
+    sectionId: "third-party-licenses",
+    title: "第三方组件声明",
+    module: "M09 / M00",
+    summary: "说明操作台第三方开源组件声明、MIT License 保留义务和法律信息入口。",
+    roleHints: ["所有操作台用户", "平台管理员", "合规审查人员"],
+    relatedPages: ["第三方组件声明", "帮助中心", "法律信息"],
+    boundary: "第三方组件声明只展示已确认集成组件的版权和许可证信息，不新增执行能力、授权入口或外部系统调用。",
+    keywords: ["第三方组件", "开源声明", "许可证", "MIT", "法律信息", "合规"],
+    scenarios: [],
+    faqs: [
+      {
+        id: "why-third-party-license-page",
+        title: "为什么需要第三方组件声明？",
+        summary: "用于集中展示前端已确认集成开源组件的版权声明和许可证文本。",
+        answer: "MIT License 要求在分发软件时保留版权声明和许可声明。操作台提供独立页面，方便用户、管理员和合规审查人员查阅。",
+        keywords: ["第三方组件", "MIT", "版权声明", "许可证", "合规"],
+      },
+      {
+        id: "why-unconfirmed-components-not-listed",
+        title: "为什么未确认集成的组件不在清单中？",
+        summary: "声明页必须基于当前代码和依赖事实，不把未确认组件提前写入正式清单。",
+        answer: "只有确认进入当前代码、依赖声明或分发包的组件，才会写入第三方组件声明。新增组件时应同步更新声明数据和测试。",
+        keywords: ["清单范围", "依赖声明", "合规", "开源组件"],
+      },
+    ],
+    primaryLink: {
+      label: "打开第三方组件声明",
+      to: "/third-party-licenses",
+    },
+  },
+  {
     sectionId: "faq",
     title: "常见问题",
     module: "M09 / M11",
@@ -496,6 +534,8 @@ export function searchHelpContent(query) {
       section.keywords,
       section.roleHints,
       section.relatedPages,
+      section.primaryLink?.label,
+      section.primaryLink?.to,
     ]);
 
     if (sectionSearchText.includes(normalizedQuery)) {

@@ -22,6 +22,7 @@ describe("help manual content", () => {
       ["workflow-events", "工作流事件"],
       ["audit-records", "审计记录"],
       ["permissions-security", "权限与安全边界"],
+      ["third-party-licenses", "第三方组件声明"],
       ["faq", "常见问题"],
     ]);
   });
@@ -100,6 +101,22 @@ describe("help manual content", () => {
 
     expect(results.some((result) => result.title === "校验 SQL 是否只读")).toBe(true);
     expect([...resultTypes].every((type) => allowedSearchResultTypes.includes(type))).toBe(true);
+  });
+
+  test("finds third party license guidance and legal link keywords", () => {
+    const results = searchHelpContent("MIT");
+
+    expect(results).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "section",
+          sectionId: "third-party-licenses",
+          title: "第三方组件声明",
+          anchorId: "help-section-third-party-licenses",
+        }),
+      ]),
+    );
+    expect(searchHelpContent("法律信息").some((result) => result.sectionId === "third-party-licenses")).toBe(true);
   });
 
   test("returns DOM-ready anchor ids for section, scenario, and faq results", () => {
