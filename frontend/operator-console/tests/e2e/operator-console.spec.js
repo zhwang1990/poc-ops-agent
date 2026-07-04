@@ -89,6 +89,39 @@ test("发布中心页面在桌面视口中展示非生产发布配置", async ({
   await attachVisualEvidence(page, testInfo, "release");
 });
 
+test("tool center exposes local tools and disabled API execution", async ({ page }, testInfo) => {
+  await page.goto("/overview");
+
+  await page.locator('a[href="/tools"]').first().click();
+  await page.waitForURL("**/tools");
+
+  await expect(page.getByText("M09 / Tool Center")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "工具目录" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "JSON Formatter" })).toBeVisible();
+  await expect(page.getByRole("tab", { exact: true, name: "API Caller" })).toBeVisible();
+
+  await page.getByLabel("JSON 输入").fill('{"orders":[{"id":1}]}');
+  await page.getByRole("button", { name: "格式化 JSON" }).click();
+  await expect(page.getByLabel("JSON 输出")).toHaveValue(
+    '{\n  "orders": [\n    {\n      "id": 1\n    }\n  ]\n}',
+  );
+
+  await page.getByRole("tab", { exact: true, name: "API Caller" }).click();
+  await expect(page.getByText("https://api.quefork.internal")).toBeVisible();
+  await expect(page.getByRole("button", { name: "发送请求" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "AI 生成请求草稿" })).toBeDisabled();
+  await page.getByLabel("临时凭据").fill("super-secret-token");
+  await expect(page.getByText("super-secret-token")).toHaveCount(0);
+
+  await page.getByRole("tab", { name: "API Caller 设置" }).click();
+  await page.getByLabel("允许域名").fill("https://api.quefork.internal");
+  await page.getByRole("button", { name: "校验 allowlist 草稿" }).click();
+  await expect(page.getByRole("status")).toContainText("allowlist 草稿校验通过");
+  await expect(page.getByRole("button", { name: "保存 allowlist 草稿" })).toBeDisabled();
+  await assertNoHorizontalOverflow(page);
+  await attachVisualEvidence(page, testInfo, "tool-center");
+});
+
 test("SQL 工作台通过行级按钮执行受控 SELECT 且隐藏顶部校验执行入口", async ({ page }) => {
   await page.goto("/sql");
 
