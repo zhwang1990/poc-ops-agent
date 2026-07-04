@@ -7,8 +7,6 @@
   --audit-red: #d31145;
   --audit-yellow: #bd7b1d;
   --audit-dark: #27323f;
-  height: calc(100vh - 48px);
-  min-height: 0;
   grid-template-rows: auto minmax(0, 1fr);
   overflow: auto;
 }
@@ -456,11 +454,6 @@
 }
 
 @media (max-width: 760px) {
-  .auditCanvas {
-    height: auto;
-    min-height: calc(100vh - 48px);
-  }
-
   .workspaceBody {
     padding: 18px;
   }

@@ -24,7 +24,7 @@
 新增 `tools/release` 目录，发布脚本统一使用 Node.js ESM，不使用 PowerShell：
 
 - `release-packaging.mjs`：提供可测试的打包函数，包括路径校验、发布目录初始化、文件复制、SHA-256 校验和生成、构建清单生成、ZIP 生成和可选发布目录复制。
-- `package-release.mjs`：面向开发者和 CI 的入口脚本，负责编排前端构建、后端 Maven 构建、发布目录组装和 ZIP 生成。
+- `package-release.mjs`：面向开发者和 CI 的入口脚本，负责编排前端构建、后端系统 Maven 构建、发布目录组装和 ZIP 生成；默认使用 `PATH` 中的 `mvn`，可通过 `--maven-command` 指定 Maven 可执行文件，不依赖 Maven Wrapper。
 - `test-release-packaging.mjs`：使用临时目录和假制品验证模块函数，不运行真实 Maven 或 npm 构建。
 
 后端 `backend/control-plane/bootstrap/pom.xml` 增加一个受属性控制的 Maven Profile。脚本在构建前端后，通过 `-Dops-agent.include-operator-console=true` 和 `-Dops-agent.operator-console.dist=<dist路径>` 让 Maven 在 `process-resources` 阶段把前端 `dist` 复制到 classpath 的 `static/` 下。该方式不把生成的前端文件提交到源码目录。
@@ -71,7 +71,8 @@ artifacts/release/ops-agent-<version>.zip
 node tools/release/package-release.mjs --skip-tests
 ```
 
-默认脚本会执行前端构建和后端 Maven 构建。`--skip-tests` 仅用于本地快速打包验证，正式发布门禁仍应运行完整测试。
+默认脚本会执行前端构建和后端系统 Maven 构建，不使用 PowerShell 或 Maven Wrapper。`--skip-tests` 仅用于本地快速打包验证，正式发布门禁仍应运行完整测试。
+如果受限环境中的 Maven 不在 `PATH`，使用 `--maven-command <command>` 指定 Maven 可执行文件。
 
 ## 验收标准
 

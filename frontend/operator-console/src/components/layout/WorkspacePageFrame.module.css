@@ -9,37 +9,41 @@
   --agent-muted: #6f7c8b;
   --agent-font-sans: var(--font-sans);
   --agent-font-display: var(--font-display, Outfit, Inter, "Segoe UI", "Microsoft YaHei", sans-serif);
-  --workspace-layout-gap: 24px;
-  --workspace-shell-left: 284px;
-  --workspace-shell-inline: clamp(32px, 4vw, 72px);
-  --workspace-sidebar-left: var(--workspace-layout-gap);
-  --workspace-sidebar-width: 250px;
-  --workspace-vertical-align-offset: 16px;
+  --workspace-layout-gap: var(--app-shell-gap, 9px);
+  --workspace-shell-left: var(--app-content-margin-left, 268px);
+  --workspace-shell-inline: 0px;
+  --workspace-sidebar-left: var(--app-shell-gap, 9px);
+  --workspace-sidebar-width: var(--app-sidebar-width, 250px);
+  --workspace-vertical-align-offset: 0px;
   --workspace-canvas-left: calc(var(--workspace-sidebar-left) + var(--workspace-sidebar-width) + var(--workspace-layout-gap));
   --workspace-canvas-offset: calc(var(--workspace-shell-left) + var(--workspace-shell-inline) - var(--workspace-canvas-left));
   position: relative;
   isolation: isolate;
   display: grid;
   box-sizing: border-box;
-  width: calc(100vw - var(--workspace-canvas-left) - var(--workspace-layout-gap));
-  min-height: calc(100vh - 48px);
   grid-template-rows: auto minmax(0, 1fr);
   gap: var(--workspace-layout-gap);
   align-content: stretch;
-  margin-left: calc(0px - var(--workspace-canvas-offset));
-  margin-top: calc(0px - var(--workspace-vertical-align-offset));
-  margin-bottom: calc(0px - var(--workspace-vertical-align-offset));
   min-width: 0;
   overflow: hidden;
-  padding: 12px;
   border: 1px solid rgba(166, 64, 92, 0.18);
   border-radius: 24px;
   background: var(--agent-bg-base);
   font-family: var(--agent-font-sans);
   box-shadow:
-    0 18px 56px rgba(31, 41, 51, 0.055),
-    0 0 30px rgba(166, 64, 92, 0.035),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.62);
+    0 18px 38px rgba(166, 64, 92, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.72),
+    inset 0 -18px 42px rgba(255, 255, 255, 0.24);
+}
+
+.workspaceFrame[data-workspace-frame="true"] {
+  width: calc(100vw - var(--workspace-canvas-left) - var(--workspace-layout-gap));
+  height: calc(100vh - (var(--workspace-layout-gap) * 2));
+  min-height: 0;
+  margin-left: 0;
+  margin-top: 0;
+  margin-bottom: 0;
+  padding: 9px;
 }
 
 .workspaceFrame::before,
@@ -74,14 +78,21 @@
   z-index: 1;
 }
 
-@media (min-width: 1680px) {
-  .workspaceFrame {
-    --workspace-shell-left: 300px;
-  }
+.workspaceFrame[data-workspace-frame="true"].workspaceFrameExpanded {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  width: auto;
+  height: 100vh;
+  min-height: 0;
+  margin: 0;
+  padding: 9px;
+  overflow: hidden;
+  border-radius: 0;
 }
 
 @media (max-width: 820px) {
-  .workspaceFrame {
+  .workspaceFrame[data-workspace-frame="true"] {
     width: 100%;
     margin-left: 0;
   }

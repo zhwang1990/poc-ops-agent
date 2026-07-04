@@ -1,5 +1,6 @@
 import { CircleHelp, Search, ShieldCheck } from "lucide-react";
 import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 
 import { WorkspacePageFrame } from "../../components/layout/WorkspacePageFrame.jsx";
 import { WorkspaceStatusBar } from "../../components/layout/WorkspaceStatusBar.jsx";
@@ -138,6 +139,8 @@ function SectionContent({ section }) {
     return null;
   }
 
+  const shouldShowPromotedScenario = !section.primaryLink;
+
   return (
     <article className={styles.sectionContent} id={`help-section-${section.sectionId}`}>
       <header className={styles.sectionHero}>
@@ -148,10 +151,17 @@ function SectionContent({ section }) {
           <ShieldCheck aria-hidden="true" size={18} strokeWidth={2.4} />
           <span>只读诊断，不执行生产写操作。</span>
         </div>
-        <p className={styles.promotedScenario}>
-          推荐场景：
-          <span>用 Agent 排查服务错误</span>
-        </p>
+        {section.primaryLink ? (
+          <Link className={styles.primaryLink} to={section.primaryLink.to}>
+            {section.primaryLink.label}
+          </Link>
+        ) : null}
+        {shouldShowPromotedScenario ? (
+          <p className={styles.promotedScenario}>
+            推荐场景：
+            <span>用 Agent 排查服务错误</span>
+          </p>
+        ) : null}
       </header>
 
       {section.scenarios.length > 0 ? (

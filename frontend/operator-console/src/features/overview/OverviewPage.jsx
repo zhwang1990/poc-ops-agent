@@ -8,8 +8,8 @@ import {
   Network,
   SearchCheck,
   ServerCog,
-  Workflow,
   Wrench,
+  Workflow,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 
@@ -169,9 +169,6 @@ export function OverviewPage() {
       <div className={styles.overviewGrid}>
         <div className={styles.primaryColumn}>
           <section aria-label="总览功能状态" className={styles.statePanel}>
-            <div className={styles.stateHeader}>
-              <span className={styles.eyebrow}>M09 / P1 MVP</span>
-            </div>
             <section aria-label="总览使用步骤" className={styles.guidePanel}>
               <div className={styles.guideList}>
                 {overviewGuideItems.map((item, index) => (

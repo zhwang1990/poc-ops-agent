@@ -9,8 +9,6 @@
   --meeting-green: var(--agent-green);
   --meeting-gold: #b7771f;
   --meeting-font-display: var(--agent-font-display);
-  height: calc(100vh - 48px);
-  min-height: 0;
 }
 
 .meetingIonField {

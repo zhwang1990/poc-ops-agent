@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
@@ -7,6 +8,8 @@ import { beforeEach, describe, expect, test } from "vitest";
 import App from "../../app/App.jsx";
 import { AppProviders } from "../../app/providers.jsx";
 import { server } from "../../test/server.js";
+
+const toolCenterCss = readFileSync("src/features/tool-center/ToolCenterPage.module.css", "utf8");
 
 function renderToolCenter() {
   return render(
@@ -47,12 +50,24 @@ describe("ToolCenterPage", () => {
     renderToolCenter();
 
     expect(await screen.findByRole("heading", { name: "工具中心" })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "JSON Formatter" })).toHaveAttribute(
+    const toolbar = screen.getByRole("toolbar", { name: "工具中心工具栏" });
+    expect(
+      screen.queryByRole("complementary", { name: "工具中心边界状态" }),
+    ).not.toBeInTheDocument();
+    const toolSwitch = within(toolbar).getByRole("tablist", { name: "工具中心工具切换" });
+    expect(within(toolSwitch).getByRole("tab", { name: "JSON Formatter" })).toHaveAttribute(
       "aria-selected",
       "true",
     );
-    expect(screen.getByRole("tab", { name: "API Caller" })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "API Caller 设置" })).toBeInTheDocument();
+    expect(within(toolSwitch).getByRole("tab", { name: "API Caller" })).toBeInTheDocument();
+    expect(toolbar.children).toHaveLength(1);
+    expect(toolbar.firstElementChild).toBe(toolSwitch);
+    expect(within(toolSwitch).getByRole("tab", { name: "API Caller 设置" })).toBeInTheDocument();
+    for (const label of ["JSON Formatter", "API Caller", "API Caller 设置"]) {
+      expect(within(toolSwitch).getByRole("tab", { name: label }).querySelector("svg")).toBeInTheDocument();
+    }
+    expect(cssRule("toolToolbar")).toContain("justify-content: flex-start");
+    expect(cssRule("toolToolbar")).not.toContain("justify-content: flex-end");
 
     await userEvent.click(screen.getByRole("tab", { name: "API Caller" }));
     expect(screen.getByRole("button", { name: "发送请求" })).toBeDisabled();
@@ -116,3 +131,12 @@ describe("ToolCenterPage", () => {
     expect(within(settingsPanel).getByText("首版不允许配置通配域名。")).toBeInTheDocument();
   });
 });
+
+/**
+ * @param {string} className
+ */
+function cssRule(className) {
+  const escapedClassName = className.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = new RegExp(`\\.${escapedClassName}\\s*\\{([^}]*)\\}`).exec(toolCenterCss);
+  return match?.[1] ?? "";
+}

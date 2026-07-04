@@ -17,6 +17,14 @@ const workspaceStatusBarCss = readFileSync(
   "src/components/layout/WorkspaceStatusBar.module.css",
   "utf8",
 );
+const pageToolbarCss = readFileSync(
+  "src/components/layout/PageToolbar.module.css",
+  "utf8",
+);
+const workspaceFrameCss = readFileSync(
+  "src/components/layout/WorkspacePageFrame.module.css",
+  "utf8",
+);
 const dialogCss = readFileSync(
   "src/components/primitives/Dialog.module.css",
   "utf8",
@@ -84,6 +92,23 @@ describe("AgentWorkspacePage", () => {
     expect(agentWorkspaceSource).not.toContain("logoutMutation");
   });
 
+  test("uses the shared workspace frame for the same expanded mode as other menu pages", () => {
+    const expandedFrameRule =
+      workspaceFrameCss.match(/[.]workspaceFrame\[data-workspace-frame="true"\][.]workspaceFrameExpanded\s*[{][^}]+[}]/u)?.[0] ??
+      "";
+
+    expect(agentWorkspaceSource).toContain("WorkspacePageFrame");
+    expect(agentWorkspaceSource).toContain("<WorkspacePageFrame className={styles.agentCanvas}>");
+    expect(agentWorkspaceSource).not.toContain("workspaceFullscreen");
+    expect(agentWorkspaceCss).not.toContain(".workspaceFullscreen");
+    expect(agentWorkspaceCss).toContain('.agentCanvas[data-workspace-expanded="true"] .agentLayout');
+    expect(agentWorkspaceCss).toContain('.agentCanvas[data-workspace-expanded="true"] .agentSide');
+    expect(expandedFrameRule).toContain("position: fixed");
+    expect(expandedFrameRule).toContain("inset: 0");
+    expect(expandedFrameRule).toContain("padding: 9px");
+    expect(expandedFrameRule).toContain("overflow: hidden");
+  });
+
   test("renders a single-session toolbar without the seeded node-a investigation title", async () => {
     const { container } = renderPage();
 
@@ -134,6 +159,8 @@ describe("AgentWorkspacePage", () => {
       agentWorkspaceCss.match(/(?:^|\n)[.]panelSummary strong\s*[{][^}]+[}]/u)?.[0] ?? "";
     const panelSummaryTextRule =
       agentWorkspaceCss.match(/(?:^|\n)[.]panelSummary p\s*[{][^}]+[}]/u)?.[0] ?? "";
+    const panelFactListRule =
+      agentWorkspaceCss.match(/(?:^|\n)[.]panelFactList\s*[{][^}]+[}]/u)?.[0] ?? "";
     const panelFactRule =
       agentWorkspaceCss.match(/(?:^|\n)[.]panelFact\s*[{][^}]+[}]/u)?.[0] ?? "";
     const panelFactLabelRule =
@@ -151,23 +178,21 @@ describe("AgentWorkspacePage", () => {
     expect(agentLayoutRule).toContain("align-items: stretch");
     expect(agentSideRule).toContain("max-height: 100%");
     expect(agentSideRule).toContain("align-self: stretch");
-    expect(agentSideRule).toContain("--agent-side-row-gap-share: 16px");
-    expect(agentSideRule).toContain("--agent-side-row-shift: 5px");
-    expect(agentSideRule).toContain(
-      "grid-template-rows: calc(33.333333% - var(--agent-side-row-gap-share) - var(--agent-side-row-shift)) calc(33.333333% - var(--agent-side-row-gap-share)) calc(33.333333% - var(--agent-side-row-gap-share) + var(--agent-side-row-shift))",
-    );
-    expect(agentSideRule).toContain("align-content: stretch");
-    expect(agentSideRule).not.toContain("grid-auto-rows: max-content");
+    expect(agentSideRule).not.toContain("--agent-side-row-gap-share");
+    expect(agentSideRule).not.toContain("--agent-side-row-shift");
+    expect(agentSideRule).toContain("grid-auto-rows: max-content");
+    expect(agentSideRule).toContain("align-content: start");
+    expect(agentSideRule).not.toContain("grid-template-rows: repeat(3, minmax(0, 1fr))");
     expect(agentSideRule).not.toContain("overflow-y: hidden");
-    expect(agentPanelRule).toContain("grid-template-rows: auto auto minmax(0, 1fr) auto");
-    expect(agentPanelRule).toContain("align-content: stretch");
-    expect(agentPanelRule).toContain("gap: 8px");
+    expect(agentPanelRule).toContain("grid-template-rows: auto auto auto auto");
+    expect(agentPanelRule).toContain("align-content: start");
+    expect(agentPanelRule).toContain("gap: 7px");
     expect(agentPanelRule).toContain("overflow: hidden");
     expect(agentWorkspaceCss).not.toContain(".agentPanel::before");
     expect(agentPanelRule).not.toContain("minmax(38px, 1fr)");
     expect(agentWorkspaceCss).not.toContain(".agentPanel:has(> .statusNote)");
     expect(agentWorkspaceCss).not.toContain(".panelStatusNote");
-    expect(panelHeadingRule).toContain("min-height: 40px");
+    expect(panelHeadingRule).toContain("min-height: 36px");
     expect(panelSummaryRule).toContain("display: grid");
     expect(panelSummaryRule).toContain("grid-template-columns: minmax(0, 0.64fr) minmax(82px, 1fr)");
     expect(panelSummaryRule).toContain('grid-template-areas: "label value" "note note"');
@@ -190,7 +215,9 @@ describe("AgentWorkspacePage", () => {
     expect(panelSummaryTextRule).toContain("grid-area: note");
     expect(panelSummaryTextRule).toContain("font-size: 12px");
     expect(panelSummaryTextRule).toContain("overflow-wrap: anywhere");
-    expect(panelFactRule).toContain("padding: 6px 0");
+    expect(panelFactListRule).toContain("overflow: visible");
+    expect(panelFactRule).toContain("min-height: 26px");
+    expect(panelFactRule).toContain("padding: 4px 0");
     expect(panelFactLabelRule).toContain("align-self: center");
     expect(panelFactLabelRule).toContain("font-size: 12px");
     expect(panelFactValueRule).toContain("align-self: center");
@@ -805,7 +832,7 @@ describe("AgentWorkspacePage", () => {
     expect(operatorIdText).toHaveTextContent(`ID ${longOperatorId}`);
     expect(operatorProfile).toBeInTheDocument();
     expect(operatorDockRule).toContain("min-width: 0");
-    expect(operatorDockRule).toContain("grid-template-columns: minmax(150px, 190px) 132px 92px");
+    expect(operatorDockRule).toContain("grid-template-columns: 132px minmax(150px, 190px) 92px");
     expect(operatorDockRule).toContain("gap: 9px");
     expect(operatorDockRule).not.toContain("backdrop-filter");
     expect(operatorProfileRule).toContain("min-width: 0");
@@ -852,11 +879,39 @@ describe("AgentWorkspacePage", () => {
 
     const agentCanvasRule =
       agentWorkspaceCss.match(/[.]agentCanvas\s*[{][^}]+[}]/u)?.[0] ?? "";
+    const frameRule =
+      workspaceFrameCss.match(/[.]workspaceFrame\s*[{][^}]+[}]/u)?.[0] ?? "";
+    const frameMetricRule =
+      workspaceFrameCss.match(/[.]workspaceFrame\[data-workspace-frame="true"\]\s*[{][^}]+[}]/u)?.[0] ??
+      "";
 
-    expect(agentCanvasRule).toContain("box-sizing: border-box");
-    expect(agentCanvasRule).toContain("padding: 12px");
-    expect(agentCanvasRule).toContain("border: 1px solid rgba(166, 64, 92, 0.18)");
-    expect(agentCanvasRule).toContain("border-radius: 24px");
+    expect(frameRule).toContain("box-sizing: border-box");
+    expect(agentCanvasRule).not.toContain("box-sizing: border-box");
+    expect(agentCanvasRule).not.toContain("padding: 9px");
+    expect(frameRule).toContain("border: 1px solid rgba(166, 64, 92, 0.18)");
+    expect(frameRule).toContain("border-radius: 24px");
+    expect(frameRule).toContain("0 18px 38px rgba(166, 64, 92, 0.08)");
+    expect(frameRule).toContain("inset 0 1px 0 rgba(255, 255, 255, 0.72)");
+    expect(frameMetricRule).toContain("padding: 9px");
+    expect(agentCanvasRule).not.toContain("border: 1px solid rgba(166, 64, 92, 0.18)");
+    expect(agentCanvasRule).not.toContain("border-radius: 24px");
+    expect(agentCanvasRule).not.toContain("box-shadow:");
+    expect(agentWorkspaceCss).not.toContain(".agentCanvas::before");
+    expect(agentWorkspaceCss).not.toContain(".agentCanvas::after");
+  });
+
+  test("delegates outer workspace sizing to the shared frame", () => {
+    const agentCanvasRule =
+      agentWorkspaceCss.match(/[.]agentCanvas\s*[{][^}]+[}]/u)?.[0] ?? "";
+
+    expect(agentCanvasRule).toContain("--agent-layout-gap: var(--workspace-layout-gap)");
+    expect(agentCanvasRule).not.toContain("--agent-shell-left");
+    expect(agentCanvasRule).not.toContain("--agent-canvas-left");
+    expect(agentCanvasRule).not.toContain("width: calc(100vw");
+    expect(agentCanvasRule).not.toContain("height: calc(100vh");
+    expect(agentCanvasRule).not.toContain("margin-left: 0");
+    expect(agentCanvasRule).not.toContain("margin-top: 0");
+    expect(agentCanvasRule).not.toContain("margin-bottom: 0");
   });
 
   test("keeps the work session height fixed and scrolls overflowing conversation content", async () => {
@@ -866,6 +921,8 @@ describe("AgentWorkspacePage", () => {
 
     const agentCanvasRule =
       agentWorkspaceCss.match(/[.]agentCanvas\s*[{][^}]+[}]/u)?.[0] ?? "";
+    const frameRule =
+      workspaceFrameCss.match(/[.]workspaceFrame\s*[{][^}]+[}]/u)?.[0] ?? "";
     const agentLayoutRule =
       agentWorkspaceCss.match(/(?:^|\n)[.]agentLayout\s*[{][^}]+[}]/u)?.[0] ?? "";
     const exchangeWindowRule =
@@ -873,7 +930,7 @@ describe("AgentWorkspacePage", () => {
     const exchangeBodyRule =
       agentWorkspaceCss.match(/[.]exchangeBody\s*[{][^}]+[}]/u)?.[0] ?? "";
 
-    expect(agentCanvasRule).toMatch(/(?:^|\n)\s{2}height: calc\(100vh - 48px\);/u);
+    expect(agentCanvasRule).not.toContain("height: calc(100vh");
     expect(agentLayoutRule).toContain("height: 100%");
     expect(agentLayoutRule).toContain("min-height: 0");
     expect(exchangeWindowRule).toContain("height: 100%");
@@ -882,8 +939,9 @@ describe("AgentWorkspacePage", () => {
     expect(exchangeWindowRule).toContain("overflow: hidden");
     expect(exchangeBodyRule).toContain("min-height: 0");
     expect(exchangeBodyRule).toContain("overflow-y: auto");
-    expect(agentCanvasRule).toContain("overflow: clip");
-    expect(agentCanvasRule).toContain("overflow-clip-margin: 0");
+    expect(frameRule).toContain("overflow: hidden");
+    expect(agentCanvasRule).not.toContain("overflow: clip");
+    expect(agentCanvasRule).not.toContain("overflow-clip-margin");
     expect(agentCanvasRule).not.toContain("overflow: hidden");
   });
 
@@ -1016,6 +1074,8 @@ describe("AgentWorkspacePage", () => {
       workspaceStatusBarCss.match(/[.]operatorDock\s*[{][^}]+[}]/u)?.[0] ?? "";
     const agentCanvasRule =
       agentWorkspaceCss.match(/[.]agentCanvas\s*[{][^}]+[}]/u)?.[0] ?? "";
+    const workspaceFrameRule =
+      workspaceFrameCss.match(/[.]workspaceFrame\s*[{][^}]+[}]/u)?.[0] ?? "";
     const capsuleHeadingRule =
       workspaceStatusBarCss.match(/[.]capsuleHeading\s*[{][^}]+[}]/u)?.[0] ?? "";
     const exchangeWindowRule =
@@ -1032,8 +1092,12 @@ describe("AgentWorkspacePage", () => {
       agentWorkspaceCss.match(/[.]composerBox:focus-within\s*[{][^}]+[}]/u)?.[0] ?? "";
     const agentIonFieldRule =
       agentWorkspaceCss.match(/[.]agentIonField\s*[{][^}]+[}]/u)?.[0] ?? "";
-    const primaryActionRule =
-      agentWorkspaceCss.match(/[.]primaryAction\s*[{][^}]+[}]/u)?.[0] ?? "";
+    const pageToolbarButtonRule =
+      pageToolbarCss.match(/[.]button\s*[{][^}]+[}]/u)?.[0] ?? "";
+    const pageToolbarSurfaceRule =
+      pageToolbarCss.match(/[.]surface\s*[{][^}]+[}]/u)?.[0] ?? "";
+    const pageToolbarPrimaryRule =
+      pageToolbarCss.match(/[.]primary\s*[{][^}]+[}]/u)?.[0] ?? "";
     const sendButtonRule =
       agentWorkspaceCss.match(/[.]sendButton\s*[{][^}]+[}]/u)?.[0] ?? "";
 
@@ -1043,18 +1107,27 @@ describe("AgentWorkspacePage", () => {
     expect(agentWorkspaceCss).toContain("backdrop-filter: blur(18px)");
     expect(agentWorkspaceCss).toContain("@keyframes agent-ion-drift");
     expect(agentWorkspaceCss).toContain("@keyframes frame-glass-sheen");
-    expect(agentWorkspaceCss).toContain("radial-gradient(circle at 78% 14%, rgba(14, 165, 183, 0.14), transparent 18rem)");
-    expect(agentCanvasRule).toContain("border: 1px solid rgba(166, 64, 92, 0.18)");
-    expect(agentCanvasRule).toContain("border-radius: 24px");
-    expect(agentCanvasRule).toContain("overflow: clip");
-    expect(agentCanvasRule).toContain("overflow-clip-margin: 0");
+    expect(workspaceFrameCss).toContain("radial-gradient(circle at 78% 14%, rgba(14, 165, 183, 0.14), transparent 18rem)");
+    expect(workspaceFrameRule).toContain("border: 1px solid rgba(166, 64, 92, 0.18)");
+    expect(workspaceFrameRule).toContain("border-radius: 24px");
+    expect(workspaceFrameRule).toContain("0 18px 38px rgba(166, 64, 92, 0.08)");
+    expect(workspaceFrameRule).toContain("inset 0 1px 0 rgba(255, 255, 255, 0.72)");
+    expect(agentWorkspaceCss).not.toContain(".agentCanvas::before");
+    expect(agentWorkspaceCss).not.toContain(".agentCanvas::after");
+    expect(agentCanvasRule).not.toContain("border: 1px solid rgba(166, 64, 92, 0.18)");
+    expect(agentCanvasRule).not.toContain("border-radius: 24px");
+    expect(agentCanvasRule).not.toContain("box-shadow:");
+    expect(workspaceFrameRule).toContain("overflow: hidden");
+    expect(agentCanvasRule).not.toContain("overflow: clip");
+    expect(agentCanvasRule).not.toContain("overflow-clip-margin");
     expect(agentCanvasRule).not.toContain("overflow: hidden");
-    expect(agentCanvasRule).toContain("background: var(--agent-bg-base)");
-    expect(agentCanvasRule).toContain("font-family: var(--agent-font-sans)");
-    expect(agentCanvasRule).toContain("0 18px 56px rgba(31, 41, 51, 0.055)");
+    expect(workspaceFrameRule).toContain("background: var(--agent-bg-base)");
+    expect(workspaceFrameRule).toContain("font-family: var(--agent-font-sans)");
+    expect(agentCanvasRule).not.toContain("background: var(--agent-bg-base)");
+    expect(agentCanvasRule).not.toContain("font-family: var(--agent-font-sans)");
     expect(agentIonFieldRule).toContain("pointer-events: none");
     expect(appCapsuleRule).toContain("min-height: 84px");
-    expect(appCapsuleRule).toContain("grid-template-columns: minmax(260px, 360px) minmax(360px, 1fr) max-content");
+    expect(appCapsuleRule).toContain("grid-template-columns: minmax(260px, 360px) max-content minmax(0, 1fr) max-content max-content");
     expect(appCapsuleRule).toContain("border: 1px solid oklch");
     expect(appCapsuleRule).toContain("border-radius: 18px");
     expect(appCapsuleRule).toContain("background: oklch");
@@ -1069,13 +1142,15 @@ describe("AgentWorkspacePage", () => {
     expect(brandPlateBeforeRule).toContain("mask-image: linear-gradient");
     expect(brandPlateBeforeRule).not.toContain("repeating-linear-gradient");
     expect(brandPlateBeforeRule).not.toContain("linear-gradient(90deg, transparent 0 60px");
-    expect(brandPlateAfterRule).toContain("height: 2px");
+    expect(brandPlateAfterRule).toContain("height: 1px");
+    expect(brandPlateAfterRule).toContain("opacity: 0.32");
     expect(brandNameRule).toContain("font-size: 0.73rem");
     expect(brandNameRule).toContain("font-weight: 830");
     expect(brandNameRule).not.toContain("font-weight: 950");
-    expect(workspaceContextRule).toContain("grid-template-columns: 38px minmax(112px, 0.7fr) max-content minmax(118px, 1fr)");
-    expect(signalRailRule).toContain("min-width: 118px");
-    expect(operatorDockRule).toContain("grid-template-columns: minmax(150px, 190px) 132px 92px");
+    expect(workspaceContextRule).toContain("width: max-content");
+    expect(workspaceContextRule).toContain("grid-template-columns: 38px max-content max-content 68px");
+    expect(signalRailRule).toContain("min-width: 68px");
+    expect(operatorDockRule).toContain("grid-template-columns: 132px minmax(150px, 190px) 92px");
     expect(capsuleHeadingRule).toContain("font-family: var(--font-heading");
     expect(capsuleHeadingRule).toContain("font-size: 1.06rem");
     expect(capsuleHeadingRule).toContain("font-synthesis-weight: none");
@@ -1087,7 +1162,20 @@ describe("AgentWorkspacePage", () => {
     expect(workspaceStatusBarCss).not.toContain(".workspaceTrail");
     expect(workspaceStatusBarCss).not.toContain(".trailItem");
     expect(workspaceStatusBarCss).not.toContain("frame-glass-sheen");
-    expect(primaryActionRule).toContain("linear-gradient(90deg, var(--agent-red), #e01851 48%, var(--agent-red-dark))");
+    expect(agentWorkspaceCss).not.toContain(".primaryAction");
+    expect(agentWorkspaceCss).not.toContain(".workspaceExpand");
+    expect(agentWorkspaceSource).toContain("PageToolbar.module.css");
+    expect(agentWorkspaceSource).toContain("toolbarStyles.surface");
+    expect(agentWorkspaceSource).not.toContain("onToggleWorkspace");
+    expect(agentWorkspaceCss).not.toContain(".appCapsule,\n  .conversationToolbar");
+    expect(pageToolbarSurfaceRule).toContain("border-radius: 14px");
+    expect(pageToolbarSurfaceRule).toContain("radial-gradient(circle at 15% 0%, rgba(216, 11, 70, 0.06), transparent 12rem)");
+    expect(pageToolbarSurfaceRule).toContain("box-shadow:");
+    expect(pageToolbarSurfaceRule).toContain("backdrop-filter: blur(18px)");
+    expect(pageToolbarButtonRule).toContain("height: 38px");
+    expect(pageToolbarButtonRule).toContain("border-radius: 11px");
+    expect(pageToolbarButtonRule).toContain("white-space: nowrap");
+    expect(pageToolbarPrimaryRule).toContain("linear-gradient(90deg, var(--page-toolbar-primary");
     expect(exchangeWindowRule).toContain("rgba(255, 255, 255, 0.68)");
     expect(exchangeWindowRule).toContain("backdrop-filter: blur(18px)");
     expect(agentPanelRule).toContain("rgba(255, 255, 255, 0.66)");

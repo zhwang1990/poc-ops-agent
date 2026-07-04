@@ -77,4 +77,18 @@ describe("HelpPage", () => {
     expect(screen.queryByRole("button", { name: "提交 RAG 问题" })).not.toBeInTheDocument();
     expect(screen.queryByText("正在生成")).not.toBeInTheDocument();
   });
+
+  it("渲染第三方组件声明帮助入口链接", async () => {
+    const user = userEvent.setup();
+    renderHelpPage();
+
+    await user.click(await screen.findByRole("button", { name: "第三方组件声明" }));
+
+    expect(screen.getByRole("heading", { name: "第三方组件声明" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "打开第三方组件声明" })).toHaveAttribute(
+      "href",
+      "/third-party-licenses",
+    );
+    expect(screen.queryByText("用 Agent 排查服务错误")).not.toBeInTheDocument();
+  });
 });

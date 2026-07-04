@@ -9,10 +9,40 @@ const appShellCss = readFileSync(
 const appShellSource = readFileSync("src/components/layout/AppShell.jsx", "utf8");
 
 describe("AppShell styles", () => {
+  it("reserves compact 9px gutters for the sidebar and workspace", () => {
+    const shellRule = appShellCss.match(/[.]shell\s*[{][^}]+[}]/u)?.[0] ?? "";
+    const iconOnlyRule = appShellCss.match(/[.]iconOnlyShell\s*[{][^}]+[}]/u)?.[0] ?? "";
+    const sidebarRule = appShellCss.match(/[.]sidebar\s*[{][^}]+[}]/u)?.[0] ?? "";
+    const contentRule = appShellCss.match(/[.]content\s*[{][^}]+[}]/u)?.[0] ?? "";
+    const wideShellRule =
+      appShellCss.match(/@media [(]min-width: 1680px[)]\s*[{][\s\S]*?[}]\s*[}]/u)?.[0] ?? "";
+
+    expect(shellRule).toContain("--app-shell-gap: 9px");
+    expect(shellRule).toContain("--app-sidebar-width: 238px");
+    expect(shellRule).not.toContain("--app-sidebar-width: 250px");
+    expect(shellRule).toContain(
+      "--app-content-margin-left: calc(var(--app-sidebar-width) + (var(--app-shell-gap) * 2))",
+    );
+    expect(iconOnlyRule).toContain("--app-sidebar-width: 88px");
+    expect(iconOnlyRule).not.toContain("--app-content-margin-left");
+    expect(sidebarRule).toContain(
+      "inset: var(--app-shell-gap) auto var(--app-shell-gap) var(--app-shell-gap)",
+    );
+    expect(sidebarRule).toContain("padding: 12px 10px 18px");
+    expect(sidebarRule).not.toContain("padding: 24px");
+    expect(contentRule).toContain("padding: var(--app-shell-gap) var(--app-shell-gap) var(--app-shell-gap) 0");
+    expect(wideShellRule).not.toContain("--app-content-margin-left: 300px");
+  });
+
   it("lifts the whole sidebar navigation stack by three pixels", () => {
     const navRule = appShellCss.match(/[.]nav\s*[{][^}]+[}]/u)?.[0] ?? "";
+    const sidebarFooterRule = appShellCss.match(/[.]sidebarFooter\s*[{][^}]+[}]/u)?.[0] ?? "";
 
+    expect(navRule).toContain("flex: 1 1 auto");
+    expect(navRule).toContain("min-height: 0");
+    expect(navRule).toContain("overflow-y: auto");
     expect(navRule).toContain("transform: translateY(-3px)");
+    expect(sidebarFooterRule).toContain("flex: 0 0 auto");
   });
 
   it("renders sidebar menu buttons with login-aligned glass highlights", () => {
@@ -20,7 +50,9 @@ describe("AppShell styles", () => {
     const navLinkRule = appShellCss.match(/[.]navLink\s*[{][^}]+[}]/u)?.[0] ?? "";
     const navLinkSheenRule = appShellCss.match(/[.]navLink::after\s*[{][^}]+[}]/u)?.[0] ?? "";
     const activeRule = appShellCss.match(/[.]active\s*[{][^}]+[}]/u)?.[0] ?? "";
-    const hoverRule = appShellCss.match(/[.]navLink:hover\s*[{][^}]+[}]/u)?.[0] ?? "";
+    const activeIconRule = appShellCss.match(/[.]active\s+[.]navIcon\s*[{][^}]+[}]/u)?.[0] ?? "";
+    const activeSymbolRule = appShellCss.match(/[.]active\s+[.]navSymbol\s*[{][^}]+[}]/u)?.[0] ?? "";
+    const hoverRule = appShellCss.match(/[.]navLink:hover:not[(][.]active[)]\s*[{][^}]+[}]/u)?.[0] ?? "";
 
     expect(sidebarRule).toContain("radial-gradient(circle at 18% 8%, rgba(211, 17, 69, 0.13), transparent 10rem)");
     expect(sidebarRule).toContain("radial-gradient(circle at 88% 86%, rgba(166, 64, 92, 0.1), transparent 11rem)");
@@ -39,42 +71,45 @@ describe("AppShell styles", () => {
     expect(navLinkSheenRule).toContain("pointer-events: none");
     expect(activeRule).toContain("rgba(211, 17, 69, 0.1)");
     expect(activeRule).toContain("inset 0 1px 0 rgba(255, 255, 255, 0.88)");
+    expect(activeIconRule).toContain("background: var(--nav-color)");
+    expect(activeSymbolRule).toContain("background: #fff");
     expect(hoverRule).toContain("rgba(255, 255, 255, 0.82)");
     expect(hoverRule).toContain("0 14px 26px rgba(31, 45, 61, 0.08)");
   });
 
-  it("uses larger tactile navigation icons with refined symbol layers", () => {
+  it("recreates the legacy tactile navigation badge while keeping the svg crisp", () => {
     const linkRule = appShellCss.match(/[.]navLink\s*[{][^}]+[}]/u)?.[0] ?? "";
     const iconRule = appShellCss.match(/[.]navIcon\s*[{][^}]+[}]/u)?.[0] ?? "";
-    const iconBeforeRule = appShellCss.match(/[.]navIcon::before\s*[{][^}]+[}]/u)?.[0] ?? "";
-    const iconAfterRule =
-      [...appShellCss.matchAll(/[.]navIcon::after\s*[{][^}]+[}]/gu)].at(-1)?.[0] ?? "";
+    const iconInnerLayerRule = appShellCss.match(/[.]navIcon::before\s*[{][^}]+[}]/u)?.[0] ?? "";
     const symbolRule = appShellCss.match(/[.]navSymbol\s*[{][^}]+[}]/u)?.[0] ?? "";
-    const symbolBeforeRule =
-      appShellCss.match(/[.]navSymbol::before\s*[{][^}]+[}]/u)?.[0] ?? "";
-    const symbolAfterRule =
-      [...appShellCss.matchAll(/[.]navSymbol::after\s*[{][^}]+[}]/gu)].at(-1)?.[0] ?? "";
+    const symbolDetailRule = appShellCss.match(/[.]navSymbol::before\s*[{][^}]+[}]/u)?.[0] ?? "";
+    const symbolSparkRule =
+      [...appShellCss.matchAll(/[.]navSymbol::after\s*[{][^}]+[}]/gu)]
+        .map((match) => match[0])
+        .find((rule) => rule.includes("top: var(--nav-spark-y)")) ?? "";
     const glyphRule = appShellCss.match(/[.]navGlyph\s*[{][^}]+[}]/u)?.[0] ?? "";
 
     expect(appShellSource).toContain("className={styles.navSymbol}");
+    expect(linkRule).toContain("--nav-mark: var(--nav-color)");
+    expect(linkRule).toContain("--nav-symbol-radius: 10px");
     expect(linkRule).toContain("grid-template-columns: 54px minmax(0, 1fr) 12px");
+    expect(linkRule).toContain("min-height: 60px");
     expect(iconRule).toContain("width: 44px");
     expect(iconRule).toContain("height: 44px");
     expect(iconRule).toContain("box-shadow:");
     expect(iconRule).toContain("inset 0 1px 0");
-    expect(appShellCss).toContain(".navIcon::before,\n.navIcon::after");
-    expect(appShellCss).toContain("content: \"\"");
-    expect(iconBeforeRule).toContain("inset: 7px");
-    expect(iconAfterRule).toContain("border-bottom-color");
+    expect(iconInnerLayerRule).toContain("inset: 7px");
     expect(symbolRule).toContain("width: 25px");
     expect(symbolRule).toContain("height: 25px");
     expect(symbolRule).toContain("background: var(--nav-mark)");
-    expect(symbolBeforeRule).toContain("border:");
-    expect(symbolAfterRule).toContain("box-shadow:");
-    expect(appShellCss.match(/--nav-mark:/gu)?.length ?? 0).toBeGreaterThanOrEqual(9);
+    expect(symbolRule).toContain("inset 0 -3px 0 rgba(31, 45, 61, 0.16)");
+    expect(symbolDetailRule).toContain("border: 2px solid rgba(255, 255, 255, 0.72)");
+    expect(symbolSparkRule).toContain("top: var(--nav-spark-y)");
+    expect(symbolSparkRule).toContain("left: var(--nav-spark-x)");
+    expect(appShellCss).not.toContain("filter: drop-shadow");
     expect(glyphRule).toContain("width: 22px");
     expect(glyphRule).toContain("height: 22px");
-    expect(glyphRule).toContain("z-index: 2");
+    expect(glyphRule).toContain("shape-rendering: geometricPrecision");
     expect(appShellSource.indexOf('label: "总览"')).toBeLessThan(
       appShellSource.indexOf('label: "Agent 工作区"'),
     );
@@ -103,48 +138,16 @@ describe("AppShell styles", () => {
     expect(appShellSource).not.toContain("快捷连接");
   });
 
-  it("keeps the sidebar footer preview aligned to the navigation stack", () => {
-    const previewRule =
-      appShellCss.match(/[.]sidebarPreview\s*[{][^}]+[}]/u)?.[0] ?? "";
-    const previewRailRule =
-      appShellCss.match(/[.]sidebarPreview::before,[\s\S]*?[.]sidebarPreview::after\s*[{][^}]+[}]/u)?.[0] ??
-      "";
-    const previewFieldRule =
-      appShellCss.match(/[.]sidebarPreview::before\s*[{][^}]+[}]/u)?.[0] ?? "";
-    const previewSweepRule =
-      [...appShellCss.matchAll(/[.]sidebarPreview::after\s*[{][^}]+[}]/gu)].at(-1)?.[0] ??
-      "";
-    const previewOrbitRule =
-      appShellCss.match(/[.]sidebarPreviewOrbit\s*[{][^}]+[}]/u)?.[0] ?? "";
-    const previewCoreRule =
-      appShellCss.match(/[.]sidebarPreviewCore\s*[{][^}]+[}]/u)?.[0] ?? "";
-    const previewMenuNodeRule =
-      appShellCss.match(/[.]sidebarPreviewMenuNode\s*[{][^}]+[}]/u)?.[0] ?? "";
-    const previewActiveNodeRule =
-      appShellCss.match(/[.]sidebarPreviewMenuNodeActive\s*[{][^}]+[}]/u)?.[0] ?? "";
-
-    expect(appShellSource).toContain("className={styles.sidebarPreview}");
-    expect(appShellSource).toContain("className={styles.sidebarPreviewOrbit}");
-    expect(appShellSource).toContain("className={styles.sidebarPreviewCore}");
-    expect(appShellSource).toContain("styles.sidebarPreviewMenuNode");
-    expect(appShellSource).toContain("styles.sidebarPreviewMenuNodeActive");
+  it("omits the decorative sidebar footer preview component", () => {
+    expect(appShellSource).not.toContain("className={styles.sidebarPreview}");
+    expect(appShellSource).not.toContain("className={styles.sidebarPreviewOrbit}");
+    expect(appShellSource).not.toContain("className={styles.sidebarPreviewCore}");
+    expect(appShellSource).not.toContain("styles.sidebarPreviewMenuNode");
+    expect(appShellSource).not.toContain("styles.sidebarPreviewMenuNodeActive");
     expect(appShellSource).not.toContain("styles.sidebarSearch");
     expect(appShellSource).not.toContain("styles.sidebarActions");
-    expect(previewRule).toContain("display: grid");
-    expect(previewRule).toContain("min-height: 110px");
-    expect(previewRule).toContain("isolation: isolate");
-    expect(previewRule).toContain("overflow: hidden");
-    expect(previewRule).not.toContain("--preview-signal-start");
-    expect(previewOrbitRule).toContain("grid-template-columns: repeat(5, minmax(0, 1fr))");
-    expect(previewOrbitRule).toContain("gap: 12px 10px");
-    expect(previewCoreRule).toContain("transform: translateY(-50%)");
-    expect(previewMenuNodeRule).toContain("background: color-mix(in srgb, var(--nav-color)");
-    expect(previewMenuNodeRule).toContain("animation: sidebar-preview-node");
-    expect(previewActiveNodeRule).toContain("border-color: color-mix");
-    expect(previewRailRule).toContain("height: 1px");
-    expect(previewFieldRule).toContain("top: 16px");
-    expect(previewSweepRule).not.toContain("conic-gradient");
-    expect(appShellCss).toContain("@keyframes sidebar-preview-node");
+    expect(appShellCss).not.toContain(".sidebarPreview");
+    expect(appShellCss).not.toContain("sidebar-preview-node");
     expect(appShellCss).not.toContain("@keyframes sidebar-radar-sweep");
     expect(appShellCss).not.toContain("sidebarPreviewMenuRail");
     expect(appShellCss).not.toContain("sidebar-menu-sync");

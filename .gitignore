@@ -46,3 +46,5 @@ credentials/
 .scannerwork/
 frontend/operator-console/test-results/
 .demo/
+.codex-run/
+frontend/.codex-run/

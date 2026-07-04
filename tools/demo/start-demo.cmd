@@ -54,7 +54,7 @@ call :freePort 8080 "Control Plane" || goto :fail
 call :checkPort 5173 "Operator Console" || goto :fail
 
 echo Preparing backend reactor artifacts...
-call mvnw.cmd -f pom.xml -pl control-plane/bootstrap,execution-worker -am -DskipTests install >> "%LAUNCHER_LOG%" 2>&1 || goto :fail
+call "%BACKEND_DIR%\mvnw.cmd" -f "%BACKEND_DIR%\pom.xml" -pl control-plane/bootstrap,execution-worker -am -DskipTests install >> "%LAUNCHER_LOG%" 2>&1 || goto :fail
 
 echo Logs:
 echo   Worker:          %WORKER_LOG%

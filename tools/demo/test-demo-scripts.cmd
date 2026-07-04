@@ -101,13 +101,33 @@ findstr /I /C:"taskkill /PID" "%STOP_SCRIPT%" >nul || (
   exit /b 1
 )
 
-findstr /I /C:"control-plane\bootstrap\target\control-plane-bootstrap-*.jar" "%START_BACKEND_JARS_SCRIPT%" >nul || (
-  echo start-backend-jars.cmd must locate the built control plane jar
+findstr /I /C:"control-plane-bootstrap-*.jar" "%START_BACKEND_JARS_SCRIPT%" >nul || (
+  echo start-backend-jars.cmd must locate the copied control plane jar
   exit /b 1
 )
 
-findstr /I /C:"execution-worker\target\execution-worker-*.jar" "%START_BACKEND_JARS_SCRIPT%" >nul || (
-  echo start-backend-jars.cmd must locate the built execution worker jar
+findstr /I /C:"execution-worker-*.jar" "%START_BACKEND_JARS_SCRIPT%" >nul || (
+  echo start-backend-jars.cmd must locate the copied execution worker jar
+  exit /b 1
+)
+
+findstr /I /C:"set \"JAR_DIR=%%SCRIPT_DIR%%\"" "%START_BACKEND_JARS_SCRIPT%" >nul || (
+  echo start-backend-jars.cmd must default to jars copied next to the script
+  exit /b 1
+)
+
+findstr /I /C:"Usage: start-backend-jars.cmd [JAR_DIR] [JDK21_BIN_PATH]" "%START_BACKEND_JARS_SCRIPT%" >nul || (
+  echo start-backend-jars.cmd must document copied jar directory usage
+  exit /b 1
+)
+
+findstr /I /C:"backend\control-plane\bootstrap\target" "%START_BACKEND_JARS_SCRIPT%" >nul && (
+  echo start-backend-jars.cmd must not assume repository target paths
+  exit /b 1
+)
+
+findstr /I /C:"backend\execution-worker\target" "%START_BACKEND_JARS_SCRIPT%" >nul && (
+  echo start-backend-jars.cmd must not assume repository target paths
   exit /b 1
 )
 

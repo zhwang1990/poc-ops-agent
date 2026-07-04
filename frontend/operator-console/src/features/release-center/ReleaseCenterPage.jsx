@@ -29,6 +29,7 @@ import {
 
 import { StatusPill } from "../../components/data-display/StatusPill.jsx";
 import { FeedbackState } from "../../components/feedback/FeedbackState.jsx";
+import toolbarStyles from "../../components/layout/PageToolbar.module.css";
 import { WorkspacePageFrame } from "../../components/layout/WorkspacePageFrame.jsx";
 import { WorkspaceStatusBar } from "../../components/layout/WorkspaceStatusBar.jsx";
 import { Button } from "../../components/primitives/Button.jsx";
@@ -231,17 +232,10 @@ export function ReleaseCenterPage() {
       <WorkspaceStatusBar title="发布中心" />
 
       <main className={styles.releaseBody}>
-        <section aria-label="发布中心概览" className={styles.summaryBand}>
-          <div className={styles.summaryLead}>
-            <span aria-hidden="true" className={styles.summaryIcon}>
-              <Rocket size={19} />
-            </span>
-            <div>
-              <span className={styles.kicker}>M09 / P2</span>
-              <h2>非生产发布工作区</h2>
-            </div>
-          </div>
-
+        <section
+          aria-label="发布中心概览"
+          className={`${styles.summaryBand} ${toolbarStyles.surface}`}
+        >
           <div aria-label="目标环境" className={styles.environmentSwitch}>
             {TARGET_ENVIRONMENTS.map((environment) => {
               const EnvironmentIcon = environment.icon;
@@ -261,7 +255,7 @@ export function ReleaseCenterPage() {
             })}
           </div>
 
-          <div className={styles.summaryActions}>
+          <div className={`${styles.summaryActions} ${toolbarStyles.actionGroup}`}>
             <input
               accept=".war"
               aria-label="选择 WAR 制品"
@@ -270,23 +264,24 @@ export function ReleaseCenterPage() {
               ref={fileInputRef}
               type="file"
             />
-            <Button
-              className={styles.actionButton}
+            <button
+              className={`${styles.actionButton} ${toolbarStyles.button} ${toolbarStyles.neutral}`}
               disabled={!canUpload}
               onClick={handleUploadClick}
-              variant="secondary"
+              type="button"
             >
               <UploadCloud aria-hidden="true" size={16} />
               上传 WAR
-            </Button>
-            <Button
-              className={styles.actionButton}
+            </button>
+            <button
+              className={`${styles.actionButton} ${toolbarStyles.button} ${toolbarStyles.primary}`}
               disabled={createPlanMutation.isPending}
               onClick={() => setCreateDialogOpen(true)}
+              type="button"
             >
               <Rocket aria-hidden="true" size={16} />
               新建发布单
-            </Button>
+            </button>
           </div>
         </section>
 
@@ -1043,7 +1038,7 @@ function ScriptProfilesPanel({ profiles, query, purposeDescription = "" }) {
   const [copiedProfileFieldKey, setCopiedProfileFieldKey] = useState("");
   const saveProfileMutation = useSaveReleaseScriptProfile();
   const deleteProfileMutation = useDeleteReleaseScriptProfile();
-  const queryState = queryFeedback([query], "Script profiles read failed");
+  const queryState = queryFeedback([query], "发布脚本读取失败");
 
   /**
    * @param {ReleaseScriptProfileDefinition} profile
@@ -1082,11 +1077,11 @@ function ScriptProfilesPanel({ profiles, query, purposeDescription = "" }) {
 
   return (
     <>
-      <section className={styles.panelStack} aria-label="Script profile definitions">
+      <section className={styles.panelStack} aria-label="发布脚本定义">
         <div className={styles.panelHeader}>
           <div className={styles.panelTitle}>
-            <span className={styles.kicker}>Script profiles</span>
-            <strong>Liberty shared script profiles</strong>
+            <span className={styles.kicker}>发布脚本</span>
+            <strong>Liberty 通用发布脚本</strong>
           </div>
           <Button
             aria-label="Add script profile"
@@ -1105,9 +1100,9 @@ function ScriptProfilesPanel({ profiles, query, purposeDescription = "" }) {
           queryState
         ) : profiles.length === 0 ? (
           <FeedbackState
-            message="No shared Liberty script profile definitions have been configured yet."
+            message="尚未配置可复用的 Liberty 发布脚本。"
             state="empty"
-            title="No script profiles"
+            title="暂无发布脚本"
           />
         ) : (
           <section className={styles.tablePanel} aria-label="Script profile list">
@@ -2183,7 +2178,7 @@ function InventoryPanel({
     },
     {
       id: "scriptProfiles",
-      label: "Script profiles",
+      label: "发布脚本",
       icon: Code2,
       status: resourceStatusLabel(
         scriptProfilesQuery,
@@ -2333,11 +2328,9 @@ function ReleaseHistoryPanel({ applications, onSelectReleaseLog, plans, targetEn
           {historyPlans.length > 0 ? `${historyPlans.length} 条` : targetEnvironmentLabel(targetEnvironment)}
         </StatusPill>
       </div>
-      <p className={styles.releaseHistoryContext}>
-        {historyPlans.length > 0
-          ? `${targetEnvironmentLabel(targetEnvironment)} 发布记录`
-          : `${targetEnvironmentLabel(targetEnvironment)} 暂无发布记录`}
-      </p>
+      {historyPlans.length > 0 ? (
+        <p className={styles.releaseHistoryContext}>{`${targetEnvironmentLabel(targetEnvironment)} 发布记录`}</p>
+      ) : null}
       {historyPlans.length === 0 ? (
         <p className={styles.releaseHistoryEmpty}>暂无发布历史</p>
       ) : (

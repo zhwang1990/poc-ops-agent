@@ -11,6 +11,8 @@ import { AppProviders } from "../../app/providers.jsx";
 import { server } from "../../test/server.js";
 
 const sqlWorkbenchCss = readFileSync("src/features/sql-workbench/SqlWorkbenchPage.module.css", "utf8");
+const sqlWorkbenchSource = readFileSync("src/features/sql-workbench/SqlWorkbenchPage.jsx", "utf8");
+const pageToolbarCss = readFileSync("src/components/layout/PageToolbar.module.css", "utf8");
 
 /**
  * @param {string} path
@@ -150,6 +152,17 @@ describe("SqlWorkbenchPage", () => {
     expect(toolbarRule).not.toContain("min-height: 46px");
   });
 
+  test("keeps the query result panel close to the resize handle", () => {
+    const editorPanelRule = cssRule("editorPanel");
+    const resizeHandleRule = cssRule("resultResizeHandle");
+
+    expect(editorPanelRule).toContain("grid-template-rows: auto minmax(170px, 72fr) 8px minmax(96px, 28fr)");
+    expect(editorPanelRule).toContain("gap: 5px");
+    expect(editorPanelRule).not.toContain("gap: 10px");
+    expect(resizeHandleRule).toContain("height: 8px");
+    expect(resizeHandleRule).toContain("min-height: 8px");
+  });
+
   test("stacks connection capability labels above capability chips", () => {
     const capabilitiesRule = cssRule("formCapabilities");
     const capabilityLabelRule = Array.from(
@@ -223,8 +236,21 @@ describe("SqlWorkbenchPage", () => {
     expect(within(contextBar).getByText("as400-development")).toBeInTheDocument();
     expect(within(contextBar).getByText("ORDERS")).toBeInTheDocument();
     expect(within(contextBar).getByText("maxRows 500")).toBeInTheDocument();
-    expect(within(contextBar).getByRole("button", { name: "管理连接" })).toBeEnabled();
-    expect(within(contextBar).getByRole("button", { name: "展开 SQL 工作区" })).toBeEnabled();
+    const objectBrowserButton = within(contextBar).getByRole("button", { name: "对象浏览器" });
+    const connectionManagerButton = within(contextBar).getByRole("button", { name: "管理连接" });
+    expect(objectBrowserButton).toBeEnabled();
+    expect(connectionManagerButton).toBeEnabled();
+    expect(objectBrowserButton.querySelector(".lucide-database")).toBeInTheDocument();
+    expect(connectionManagerButton.querySelector(".lucide-database")).not.toBeInTheDocument();
+    expect(connectionManagerButton.querySelector(".lucide-settings-2")).toBeInTheDocument();
+    expect(within(contextBar).queryByRole("button", { name: "展开 SQL 工作区" })).not.toBeInTheDocument();
+    expect(sqlWorkbenchSource).toContain("PageToolbar.module.css");
+    expect(sqlWorkbenchSource).toContain("styles.connectionBar} ${toolbarStyles.surface}");
+    expect(sqlWorkbenchSource).not.toContain("setWorkspaceExpanded");
+    expect(sqlWorkbenchSource).not.toContain("展开 SQL 工作区");
+    expect(pageToolbarCss).toContain(".actionGroup");
+    expect(pageToolbarCss).toContain(".surface");
+    expect(pageToolbarCss).toContain(".button");
 
     expect(screen.queryByRole("complementary", { name: "SQL 连接目录" })).not.toBeInTheDocument();
     expect(screen.queryByLabelText("数据库对象浏览器")).not.toBeInTheDocument();
@@ -250,10 +276,10 @@ describe("SqlWorkbenchPage", () => {
     expect(screen.getByText(/PRIMARY_KEY_ORDERS/u)).toBeInTheDocument();
     expect(screen.queryByText("对象目录尚未接入真实元数据")).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "展开 SQL 工作区" }));
+    await user.click(screen.getByRole("button", { name: "展开工作区" }));
     expect(screen.queryByLabelText("数据库对象浏览器")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("SQL 信息面板")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "退出 SQL 展开" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "退出展开" })).toBeInTheDocument();
   });
 
   test("renders metadata objects in scroll pages with collapsed object details", async () => {
@@ -1266,7 +1292,7 @@ describe("SqlWorkbenchPage", () => {
     renderAt("/sql");
 
     await screen.findByText("已连接 · development");
-    await user.click(screen.getByRole("button", { name: "展开 SQL 工作区" }));
+    await user.click(screen.getByRole("button", { name: "展开工作区" }));
     expect(screen.queryByLabelText("SQL 信息面板")).not.toBeInTheDocument();
     await replaceSqlText(user, failedSql);
     await clickRunSqlButton(user);

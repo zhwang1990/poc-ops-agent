@@ -10,20 +10,13 @@
 }
 
 .modeToolbar {
+  --page-toolbar-accent: var(--agent-blue);
+  --page-toolbar-primary: var(--agent-red);
   display: grid;
   min-width: 0;
   grid-template-columns: auto minmax(0, 1fr) auto auto;
-  gap: 12px;
+  gap: 16px;
   align-items: center;
-  padding: 12px;
-  border: 1px solid rgba(37, 132, 169, 0.14);
-  border-radius: 18px;
-  background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.82), rgba(246, 251, 253, 0.68)),
-    radial-gradient(circle at 92% 20%, rgba(37, 132, 169, 0.08), transparent 12rem);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.78),
-    0 12px 28px rgba(31, 41, 51, 0.045);
 }
 
 .modeIcon {
@@ -65,82 +58,7 @@
 
 .modeTabs,
 .modeActions {
-  display: flex;
   min-width: 0;
-  align-items: center;
-  gap: 8px;
-}
-
-.modeTab,
-.expandAction,
-.ghostAction,
-.primaryDisabled {
-  appearance: none;
-  height: 34px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  padding: 0 12px;
-  border: 1px solid rgba(37, 132, 169, 0.14);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.68);
-  color: var(--agent-muted);
-  cursor: pointer;
-  font-family: inherit;
-  font-size: 11px;
-  font-weight: 760;
-  line-height: 1;
-  white-space: nowrap;
-  transition:
-    border-color 150ms ease,
-    background 150ms ease,
-    color 150ms ease,
-    box-shadow 150ms ease;
-}
-
-.modeTab:hover,
-.expandAction:hover,
-.ghostAction:hover {
-  border-color: rgba(37, 132, 169, 0.24);
-  background: rgba(255, 255, 255, 0.86);
-  color: var(--agent-blue);
-}
-
-.expandAction {
-  border-color: rgba(37, 132, 169, 0.2);
-  background: rgba(37, 132, 169, 0.08);
-  color: var(--agent-blue);
-}
-
-.expandAction[aria-pressed="true"] {
-  border-color: rgba(27, 139, 96, 0.2);
-  background: rgba(27, 139, 96, 0.08);
-  color: var(--agent-green);
-}
-
-.modeTab[aria-selected="true"] {
-  border-color: rgba(37, 132, 169, 0.24);
-  background: rgba(37, 132, 169, 0.1);
-  color: var(--agent-blue);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.78),
-    0 8px 18px rgba(37, 132, 169, 0.08);
-}
-
-.primaryDisabled {
-  border-color: rgba(211, 17, 69, 0.12);
-  background: rgba(211, 17, 69, 0.08);
-  color: color-mix(in srgb, var(--agent-red) 62%, var(--agent-muted));
-  cursor: not-allowed;
-}
-
-.expandAction:focus-visible,
-.modeTab:focus-visible,
-.ghostAction:focus-visible,
-.primaryDisabled:focus-visible {
-  outline: 2px solid rgba(37, 132, 169, 0.16);
-  outline-offset: 2px;
 }
 
 .objectLayout {
@@ -148,19 +66,6 @@
   min-height: 0;
   grid-template-columns: minmax(0, 1fr) 292px;
   gap: 12px;
-}
-
-.workspaceExpanded {
-  position: fixed;
-  inset: 0;
-  z-index: 60;
-  width: auto;
-  height: 100vh;
-  min-height: 0;
-  margin: 0;
-  padding: 18px;
-  overflow: hidden;
-  border-radius: 0;
 }
 
 .workspaceExpanded .objectLayout {

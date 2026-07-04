@@ -1,4 +1,4 @@
-/* global document */
+/* global document, getComputedStyle */
 import { expect, test } from "@playwright/test";
 
 test.beforeEach(async ({ page }) => {
@@ -70,21 +70,189 @@ test("受保护页面导航、层级和禁用态在桌面视口中稳定", async
   await attachVisualEvidence(page, testInfo, "help");
 });
 
+test("1920x1080 下导航图标保持清晰且右侧状态组件不裁切", async ({ page }) => {
+  await page.goto("/agent");
+
+  const navIconMetrics = await page.locator("nav[aria-label] a svg").evaluateAll((icons) =>
+    icons.map((icon) => {
+      const rect = icon.getBoundingClientRect();
+      const styles = getComputedStyle(icon);
+      return {
+        filter: styles.filter,
+        height: rect.height,
+        strokeWidth: icon.getAttribute("stroke-width"),
+        width: rect.width,
+      };
+    }),
+  );
+
+  expect(navIconMetrics.length).toBeGreaterThan(0);
+  expect(
+    navIconMetrics.filter(
+      (icon) =>
+        Math.round(icon.width) !== 22 ||
+        Math.round(icon.height) !== 22 ||
+        icon.filter !== "none" ||
+        icon.strokeWidth !== "2",
+    ),
+  ).toEqual([]);
+
+  const clippedStatusPanels = await page.evaluate(() => {
+    const panels = [];
+
+    for (const panel of document.querySelectorAll("main aside > section")) {
+      const factList = panel.querySelector("dl");
+      const button = panel.querySelector("button");
+      const lastFact = factList?.lastElementChild;
+      if (!factList || !button || !lastFact) {
+        continue;
+      }
+
+      const listRect = factList.getBoundingClientRect();
+      const lastFactRect = lastFact.getBoundingClientRect();
+      const buttonRect = button.getBoundingClientRect();
+      const panelState = {
+        clippedByList: factList.scrollHeight > factList.clientHeight + 1,
+        lastFactBehindButton: lastFactRect.bottom > buttonRect.top + 1,
+        lastFactOutsideList: lastFactRect.bottom > listRect.bottom + 1,
+        title: panel.querySelector("h3")?.textContent?.trim() ?? "unknown",
+      };
+
+      if (
+        panelState.clippedByList ||
+        panelState.lastFactBehindButton ||
+        panelState.lastFactOutsideList
+      ) {
+        panels.push(panelState);
+      }
+    }
+
+    return panels;
+  });
+
+  expect(clippedStatusPanels).toEqual([]);
+
+  const helpLink = page.locator('nav[aria-label] a[href="/help"]');
+  await helpLink.click();
+  await page.waitForURL("**/help");
+  await expect(helpLink).toHaveAttribute("aria-current", "page");
+
+  const activeHelpLinkState = await helpLink.evaluate((link) => {
+    /**
+     * @param {string} value
+     */
+    function parseColorChannels(value) {
+      if (/^#[\dA-Fa-f]{6}$/u.test(value)) {
+        return [1, 3, 5].map((start) => Number.parseInt(value.slice(start, start + 2), 16));
+      }
+
+      return (value.match(/[\d.]+/gu) ?? []).slice(0, 3).map(Number);
+    }
+
+    /**
+     * @param {string} value
+     */
+    function normalizeColor(value) {
+      const canvas = document.createElement("canvas");
+      const context = canvas.getContext("2d");
+      if (!context) {
+        return value;
+      }
+
+      context.fillStyle = value;
+      return context.fillStyle;
+    }
+
+    const icon = link.querySelector("span");
+    const symbol = icon?.querySelector("span");
+    if (!icon || !symbol) {
+      return {
+        ariaCurrent: link.getAttribute("aria-current"),
+        iconBackgroundColor: "",
+        iconBackgroundColorChannels: [],
+        symbolBackgroundColor: "",
+        symbolBackgroundColorChannels: [],
+      };
+    }
+
+    const iconStyles = getComputedStyle(icon);
+    const symbolStyles = getComputedStyle(symbol);
+    const iconBackgroundColor = normalizeColor(iconStyles.backgroundColor);
+    const symbolBackgroundColor = normalizeColor(symbolStyles.backgroundColor);
+    return {
+      ariaCurrent: link.getAttribute("aria-current"),
+      iconBackgroundColor,
+      iconBackgroundColorChannels: parseColorChannels(iconBackgroundColor),
+      symbolBackgroundColor,
+      symbolBackgroundColorChannels: parseColorChannels(symbolBackgroundColor),
+    };
+  });
+
+  expect(activeHelpLinkState).toMatchObject({
+    ariaCurrent: "page",
+  });
+  expect(activeHelpLinkState.iconBackgroundColor).not.toBe("");
+  await expect
+    .poll(async () =>
+      helpLink.evaluate((link) => {
+        /**
+         * @param {string} value
+         */
+        function parseColorChannels(value) {
+          const normalized =
+            /^#[\dA-Fa-f]{6}$/u.test(value)
+              ? value
+              : (() => {
+                  const canvas = document.createElement("canvas");
+                  const context = canvas.getContext("2d");
+                  if (!context) {
+                    return value;
+                  }
+                  context.fillStyle = value;
+                  return context.fillStyle;
+                })();
+
+          if (/^#[\dA-Fa-f]{6}$/u.test(normalized)) {
+            return [1, 3, 5].map((start) => Number.parseInt(normalized.slice(start, start + 2), 16));
+          }
+
+          return (normalized.match(/[\d.]+/gu) ?? []).slice(0, 3).map(Number);
+        }
+
+        const symbol = link.querySelector("span span");
+        if (!symbol) {
+          return false;
+        }
+
+        const channels = parseColorChannels(getComputedStyle(symbol).backgroundColor);
+        return channels.length === 3 && channels.every((channel) => channel >= 245);
+      }),
+    )
+    .toBe(true);
+});
+
 test("发布中心页面在桌面视口中展示非生产发布配置", async ({ page }, testInfo) => {
   await page.goto("/release");
 
   await expect(page.getByRole("link", { name: "发布中心" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "发布中心" })).toBeVisible();
-  const tabs = page.getByRole("tablist", { name: "发布中心配置" });
-  for (const label of ["发布单", "制品", "应用", "服务器", "策略", "凭据"]) {
+  const tabs = page.getByRole("tablist", { name: "发布中心环境资源" });
+  for (const label of ["发布单", "制品", "服务器", "策略"]) {
     await expect(tabs.getByRole("tab", { name: label })).toBeVisible();
   }
-  await expect(page.getByText("orders", { exact: true })).toBeVisible();
-  await expect(page.getByText("node-1", { exact: true })).toBeVisible();
+  await expect(page.getByRole("complementary", { name: "发布中心全局配置" })).toContainText(
+    "应用目录",
+  );
+  await expect(page.getByRole("complementary", { name: "发布中心全局配置" })).toContainText(
+    "凭据别名",
+  );
+  await expect(page.getByText("订单服务 / dev")).toBeVisible();
+  await expect(page.getByText("artifact-1")).toBeVisible();
   await expect(page.getByRole("button", { name: "上传 WAR" })).toBeEnabled();
   await expect(page.getByRole("button", { name: "新建发布单" })).toBeEnabled();
   await tabs.getByRole("tab", { name: "服务器" }).click();
-  await expect(page.getByRole("button", { name: "新增服务器" })).toBeVisible();
+  await expect(page.getByText("node-1", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add release server" })).toBeVisible();
   await assertNoHorizontalOverflow(page);
   await attachVisualEvidence(page, testInfo, "release");
 });
@@ -95,8 +263,6 @@ test("tool center exposes local tools and disabled API execution", async ({ page
   await page.locator('a[href="/tools"]').first().click();
   await page.waitForURL("**/tools");
 
-  await expect(page.getByText("M09 / Tool Center")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "工具目录" })).toBeVisible();
   await expect(page.getByRole("tab", { name: "JSON Formatter" })).toBeVisible();
   await expect(page.getByRole("tab", { exact: true, name: "API Caller" })).toBeVisible();
 
@@ -120,6 +286,50 @@ test("tool center exposes local tools and disabled API execution", async ({ page
   await expect(page.getByRole("button", { name: "保存 allowlist 草稿" })).toBeDisabled();
   await assertNoHorizontalOverflow(page);
   await attachVisualEvidence(page, testInfo, "tool-center");
+});
+
+test("第三方组件声明可从法律信息入口打开", async ({ page }, testInfo) => {
+  await page.goto("/agent");
+
+  await page.getByRole("link", { name: "法律信息" }).click();
+
+  await expect(page.getByRole("heading", { name: "第三方组件声明" })).toBeVisible();
+  await expect(page.getByText("前端操作台 14 项")).toBeVisible();
+  await expect(page.getByText("后端服务 16 项")).toBeVisible();
+  await expect(page.getByText("第 1 / 3 页")).toBeVisible();
+  await expect(page.getByRole("region", { name: "第三方组件清单" })).toContainText("React");
+  const componentList = page.getByRole("region", { name: "第三方组件清单" });
+  const reactRow = componentList.getByRole("row", { exact: true, name: "React 19.2.7" });
+  await expect(reactRow.getByRole("link", { name: "React 许可证" })).toHaveAttribute(
+    "href",
+    "/third-party-licenses/react",
+  );
+
+  await page.getByRole("button", { name: "下一页" }).click();
+  await expect(page.getByText("第 2 / 3 页")).toBeVisible();
+  await expect(componentList.getByRole("row", { name: "Zod 4.4.3" })).toContainText("MIT License");
+  await page.getByRole("button", { name: "下一页" }).click();
+  await expect(page.getByText("第 3 / 3 页")).toBeVisible();
+  await expect(componentList.getByText("后端服务", { exact: true })).toHaveCount(10);
+  await expect(componentList.getByRole("row", { name: "AgentScope Java 2.0.0-RC4" })).toContainText(
+    "Apache License 2.0",
+  );
+  await expect(componentList.getByRole("row", { name: "JT400 21.0.6" })).toContainText(
+    "IBM Public License 1.0",
+  );
+  await page.getByRole("button", { name: "第 1 页" }).click();
+
+  await reactRow.getByRole("link", { name: "React 许可证" }).click();
+
+  await expect(page.getByRole("region", { name: "React 许可证全文" })).toContainText(
+    "Permission is hereby granted, free of charge",
+  );
+  await expect(page.getByRole("heading", { name: "React 许可证" })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "返回工作区" }).click();
+  await expect(page.getByRole("heading", { name: "第三方组件声明" })).toBeVisible();
+  await assertNoHorizontalOverflow(page);
+  await attachVisualEvidence(page, testInfo, "third-party-licenses");
 });
 
 test("SQL 工作台通过行级按钮执行受控 SELECT 且隐藏顶部校验执行入口", async ({ page }) => {
@@ -294,6 +504,12 @@ async function mockConsoleApi(page) {
     });
   });
 
+  await page.route("**/internal/release-center/script-profiles", async (route) => {
+    await route.fulfill({
+      json: releaseScriptProfiles,
+    });
+  });
+
   await page.route("**/internal/release-center/plans", async (route) => {
     await route.fulfill({
       json: releasePlans,
@@ -395,6 +611,20 @@ const releaseApplications = [
     displayName: "订单服务",
     artifactType: "WAR",
     healthCheckPath: "/health",
+    enabled: true,
+  },
+];
+
+const releaseScriptProfiles = [
+  {
+    profileId: "liberty-war-deploy",
+    displayName: "Liberty WAR deploy",
+    executablePath: "C:\\ops\\scripts\\liberty-war-deploy.cmd",
+    workingDirectory: "C:\\ops-agent\\work\\release",
+    arguments: ["{{param.serverName}}", "{{param.applicationName}}", "{{param.artifactPath}}"],
+    successExitCodes: [0],
+    timeoutSeconds: 600,
+    approved: true,
     enabled: true,
   },
 ];

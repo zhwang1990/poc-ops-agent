@@ -1,18 +1,9 @@
-import {
-  Bot,
-  Braces,
-  DatabaseZap,
-  KeyRound,
-  SendHorizontal,
-  Settings2,
-  ShieldCheck,
-  WandSparkles,
-} from "lucide-react";
+import { Braces, KeyRound, SendHorizontal, Settings2, ShieldCheck, WandSparkles } from "lucide-react";
 import { useMemo, useState } from "react";
 
+import toolbarStyles from "../../components/layout/PageToolbar.module.css";
 import { WorkspacePageFrame } from "../../components/layout/WorkspacePageFrame.jsx";
 import { WorkspaceStatusBar } from "../../components/layout/WorkspaceStatusBar.jsx";
-import { Badge } from "../../components/primitives/Badge.jsx";
 import { Button } from "../../components/primitives/Button.jsx";
 import {
   deriveRequestOrigin,
@@ -23,7 +14,23 @@ import {
 } from "./tool-center-utils.js";
 import styles from "./ToolCenterPage.module.css";
 
-const tabs = ["JSON Formatter", "API Caller", "API Caller 设置"];
+const toolModes = [
+  {
+    id: "JSON Formatter",
+    icon: Braces,
+    label: "JSON Formatter",
+  },
+  {
+    id: "API Caller",
+    icon: SendHorizontal,
+    label: "API Caller",
+  },
+  {
+    id: "API Caller 设置",
+    icon: Settings2,
+    label: "API Caller 设置",
+  },
+];
 const initialJson = "{\"service\":\"queFork\",\"enabled\":true}";
 /** @type {{ ok: boolean, errors: string[] }} */
 const initialValidation = { ok: true, errors: [] };
@@ -44,48 +51,64 @@ export function ToolCenterPage() {
     <WorkspacePageFrame className={styles.toolCanvas}>
       <WorkspaceStatusBar title="工具中心" />
 
-      <main className={styles.workspaceBody}>
-        <header className={styles.pageHeader}>
-          <div>
-            <Badge tone="info">M09 / Tool Center</Badge>
-            <h2>工具目录</h2>
-            <p>
-              内置 JSON Formatter、API Caller 和 API Caller 设置。真实请求执行与 allowlist 保存必须由后端策略和审计链路开放。
-            </p>
-          </div>
-          <div aria-label="安全边界" className={styles.boundaryStrip}>
-            <span>
-              <ShieldCheck aria-hidden="true" size={15} /> 服务端 allowlist
-            </span>
-            <span>
-              <DatabaseZap aria-hidden="true" size={15} /> 不保存临时凭据
-            </span>
-            <span>
-              <Bot aria-hidden="true" size={15} /> AI 只生成草稿
-            </span>
-          </div>
-        </header>
+      <ToolCenterToolbar activeTab={activeTab} onSelectTab={setActiveTab} />
 
-        <nav aria-label="工具中心工具切换" className={styles.toolTabs} role="tablist">
-          {tabs.map((tab) => (
-            <button
-              aria-selected={activeTab === tab}
-              className={activeTab === tab ? styles.activeTab : ""}
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              role="tab"
-              type="button"
-            >
-              {tab}
-            </button>
-          ))}
-        </nav>
-
-        {activeTab === "JSON Formatter" ? <JsonFormatterPanel /> : null}
-        {activeTab === "API Caller" ? <ApiCallerPanel /> : null}
-        {activeTab === "API Caller 设置" ? <ApiCallerSettingsPanel /> : null}
+      <main aria-label="工具中心工作区" className={styles.workspaceBody}>
+        <section aria-label={`${activeTab} 工作区`} className={styles.toolWorkbench}>
+          {activeTab === "JSON Formatter" ? <JsonFormatterPanel /> : null}
+          {activeTab === "API Caller" ? <ApiCallerPanel /> : null}
+          {activeTab === "API Caller 设置" ? <ApiCallerSettingsPanel /> : null}
+        </section>
       </main>
     </WorkspacePageFrame>
+  );
+}
+
+/**
+ * @param {{ activeTab: string, onSelectTab: (tab: string) => void }} props
+ */
+function ToolCenterToolbar({ activeTab, onSelectTab }) {
+  return (
+    <section
+      aria-label="工具中心工具栏"
+      className={`${styles.toolToolbar} ${toolbarStyles.surface}`}
+      role="toolbar"
+    >
+      <nav aria-label="工具中心工具切换" className={styles.toolTabs} role="tablist">
+        {toolModes.map((toolMode) => (
+          <ToolTabButton
+            active={activeTab === toolMode.id}
+            icon={toolMode.icon}
+            key={toolMode.id}
+            label={toolMode.label}
+            onClick={() => onSelectTab(toolMode.id)}
+          />
+        ))}
+      </nav>
+    </section>
+  );
+}
+
+/**
+ * @param {{
+ *   active: boolean,
+ *   icon: import("lucide-react").LucideIcon,
+ *   label: string,
+ *   onClick: () => void,
+ * }} props
+ */
+function ToolTabButton({ active, icon: Icon, label, onClick }) {
+  return (
+    <button
+      aria-selected={active}
+      className={active ? styles.activeTab : ""}
+      onClick={onClick}
+      role="tab"
+      type="button"
+    >
+      <Icon aria-hidden="true" size={15} strokeWidth={2.35} />
+      <span>{label}</span>
+    </button>
   );
 }
 

@@ -1,116 +1,58 @@
 .toolCanvas {
-  height: calc(100vh - 48px);
-  min-height: 0;
-  grid-template-rows: auto minmax(0, 1fr);
-  overflow: auto;
+  --tool-accent: var(--agent-blue);
+  --tool-primary: var(--agent-red);
+  --tool-border: var(--agent-border);
+  --tool-muted: var(--agent-muted);
+  --tool-ink: var(--agent-ink);
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: var(--workspace-layout-gap);
+}
+
+.toolToolbar {
+  --page-toolbar-accent: var(--tool-accent);
+  --page-toolbar-primary: var(--tool-primary);
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
 }
 
 .workspaceBody {
   display: grid;
   min-height: 0;
-  grid-template-rows: auto auto minmax(0, 1fr);
-  gap: 14px;
-  padding: 20px 24px 24px;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+  gap: var(--workspace-layout-gap);
 }
 
-.pageHeader,
-.editorPanel,
-.sidePanel {
-  border: 1px solid #d7e4ec;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.88);
-  box-shadow:
-    0 16px 40px rgba(31, 41, 51, 0.055),
-    inset 0 1px 0 rgba(255, 255, 255, 0.76);
-}
-
-.pageHeader {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) max-content;
-  gap: 18px;
-  align-items: start;
-  padding: 18px;
-}
-
-.pageHeader h2 {
-  margin: 8px 0 0;
-  color: #16202a;
-  font-family: var(--font-display);
-  font-size: 30px;
-  font-weight: 760;
-  letter-spacing: 0;
-  line-height: 1.2;
-}
-
-.pageHeader p,
-.panelTitle p,
-.field small {
-  margin: 6px 0 0;
-  color: #667486;
-  font-size: 13px;
-  font-weight: 710;
-  line-height: 1.5;
-}
-
-.boundaryStrip {
-  display: grid;
-  gap: 8px;
-}
-
-.boundaryStrip span {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  color: #476f96;
-  font-size: 12px;
-  font-weight: 820;
-  white-space: nowrap;
-}
-
-.toolTabs {
-  display: inline-flex;
-  width: fit-content;
-  gap: 8px;
-  padding: 6px;
-  border: 1px solid #d7e4ec;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.72);
-}
-
-.toolTabs button {
-  min-height: 34px;
-  padding: 0 12px;
-  border: 1px solid transparent;
-  border-radius: 7px;
-  background: transparent;
-  color: #667486;
-  cursor: pointer;
-  font: inherit;
-  font-size: 13px;
-  font-weight: 850;
-}
-
-.toolTabs .activeTab {
-  border-color: rgba(35, 127, 165, 0.28);
-  background: rgba(35, 127, 165, 0.08);
-  color: #237fa5;
-}
-
-.toolGrid,
-.callerLayout,
-.settingsLayout {
+.toolWorkbench {
   display: grid;
   min-height: 0;
-  gap: 14px;
+  overflow: hidden;
+  border: 1px solid rgba(37, 132, 169, 0.18);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(250, 253, 255, 0.7), rgba(247, 251, 252, 0.46)),
+    radial-gradient(circle at 18% 0%, rgba(37, 132, 169, 0.1), transparent 18rem),
+    radial-gradient(circle at 88% 8%, rgba(216, 11, 70, 0.06), transparent 16rem);
+  box-shadow:
+    0 18px 56px rgba(31, 41, 51, 0.07),
+    inset 0 1px 0 rgba(250, 253, 255, 0.76);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
 }
 
-.toolGrid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.callerLayout,
-.settingsLayout {
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+.editorPanel,
+.sidePanel {
+  border: 1px solid var(--tool-border);
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, rgba(250, 253, 255, 0.68), rgba(248, 252, 253, 0.42)),
+    radial-gradient(circle at 100% 0%, rgba(37, 132, 169, 0.08), transparent 11rem);
+  box-shadow:
+    0 12px 30px rgba(31, 41, 51, 0.055),
+    inset 0 1px 0 rgba(250, 253, 255, 0.72);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
 }
 
 .editorPanel,
@@ -119,34 +61,151 @@
   min-height: 0;
   align-content: start;
   gap: 14px;
-  padding: 16px;
+  padding: 14px;
+}
+
+.toolTabs {
+  display: inline-flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  gap: 7px;
+}
+
+.toolTabs button {
+  appearance: none;
+  height: 38px;
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 12px;
+  border: 1px solid rgba(37, 132, 169, 0.16);
+  border-radius: 11px;
+  background: oklch(0.985 0.006 236);
+  color: var(--tool-accent);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 950;
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow: 0 8px 16px rgba(31, 41, 51, 0.045);
+  transition:
+    background 150ms ease,
+    border-color 150ms ease,
+    box-shadow 150ms ease,
+    color 150ms ease,
+    transform 150ms ease;
+}
+
+.toolTabs button:hover {
+  border-color: rgba(37, 132, 169, 0.34);
+  background: oklch(0.976 0.008 236);
+  box-shadow: 0 12px 22px rgba(31, 41, 51, 0.075);
+  transform: translateY(-1px);
+}
+
+.toolTabs button:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--tool-accent) 54%, transparent);
+  outline-offset: 2px;
+}
+
+.toolTabs svg {
+  flex: 0 0 auto;
+}
+
+.toolTabs span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.toolTabs .activeTab {
+  border-color: rgba(37, 132, 169, 0.24);
+  background: rgba(37, 132, 169, 0.1);
+  color: var(--tool-accent);
+  box-shadow:
+    inset 0 1px 0 rgba(250, 253, 255, 0.78),
+    0 8px 18px rgba(37, 132, 169, 0.08);
+}
+
+.toolGrid,
+.callerLayout,
+.settingsLayout {
+  display: grid;
+  height: 100%;
+  min-height: 0;
+  gap: 14px;
+  overflow: auto;
+  padding: 14px;
+}
+
+.toolGrid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.callerLayout,
+.settingsLayout {
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
+}
+
+.toolGrid .editorPanel {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.toolGrid .textareaField {
+  min-height: 0;
+}
+
+.toolGrid .textareaField textarea {
+  height: 100%;
+  min-height: 320px;
+  resize: none;
 }
 
 .panelTitle {
   display: grid;
-  grid-template-columns: 38px minmax(0, 1fr);
+  grid-template-columns: 36px minmax(0, 1fr);
   gap: 10px;
   align-items: start;
 }
 
 .panelTitle > span {
   display: grid;
-  width: 38px;
-  height: 38px;
+  width: 36px;
+  height: 36px;
   place-items: center;
-  border: 1px solid rgba(35, 127, 165, 0.2);
-  border-radius: 8px;
-  background: rgba(35, 127, 165, 0.08);
-  color: #237fa5;
+  border: 1px solid rgba(37, 132, 169, 0.2);
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, rgba(250, 253, 255, 0.92), rgba(250, 253, 255, 0.48)),
+    color-mix(in srgb, var(--tool-accent) 11%, oklch(0.985 0.006 236));
+  color: var(--tool-accent);
+  box-shadow:
+    0 7px 14px rgba(37, 132, 169, 0.08),
+    inset 0 1px 0 rgba(250, 253, 255, 0.82);
 }
 
 .panelTitle h3 {
   margin: 0;
-  color: #16202a;
-  font-family: var(--font-display);
-  font-size: 18px;
+  color: #1f6f8a;
+  font-family: var(--agent-font-display);
+  font-size: 15px;
   font-weight: 760;
   letter-spacing: 0;
+  line-height: 1.25;
+}
+
+.panelTitle p,
+.field small {
+  margin: 5px 0 0;
+  color: var(--tool-muted);
+  font-size: 12px;
+  font-weight: 760;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .textareaField,
@@ -159,33 +218,31 @@
 .textareaField span,
 .field span,
 .requestLine span {
-  color: #667486;
+  color: var(--tool-muted);
   font-size: 12px;
-  font-weight: 820;
-}
-
-.textareaField textarea {
-  width: 100%;
-  min-height: 260px;
-  resize: vertical;
+  font-weight: 850;
 }
 
 .textareaField textarea,
 .field input,
 .requestLine input,
 .requestLine select {
-  border: 1px solid #d7e4ec;
+  border: 1px solid var(--tool-border);
   border-radius: 8px;
-  background: #fff;
-  color: #16202a;
+  background: oklch(0.985 0.006 236);
+  color: var(--tool-ink);
   font: inherit;
   font-size: 13px;
   line-height: 1.5;
+  box-shadow: inset 0 1px 0 rgba(250, 253, 255, 0.62);
 }
 
 .textareaField textarea {
+  width: 100%;
+  min-height: 220px;
   padding: 12px;
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  resize: vertical;
 }
 
 .field input,
@@ -251,13 +308,13 @@
 .boundaryList li {
   min-width: 0;
   padding: 10px;
-  border: 1px solid #d7e4ec;
+  border: 1px solid var(--tool-border);
   border-radius: 8px;
-  background: #f9fbfc;
+  background: rgba(247, 251, 252, 0.78);
 }
 
 .factList dt {
-  color: #667486;
+  color: var(--tool-muted);
   font-size: 11px;
   font-weight: 850;
 }
@@ -265,7 +322,7 @@
 .factList dd {
   margin: 4px 0 0;
   overflow-wrap: anywhere;
-  color: #16202a;
+  color: var(--tool-ink);
   font-size: 12px;
   font-weight: 800;
 }
@@ -275,29 +332,34 @@
   gap: 8px;
   margin: 0;
   padding: 0;
-  color: #667486;
+  color: var(--tool-muted);
   font-size: 13px;
   font-weight: 740;
   line-height: 1.45;
   list-style: none;
 }
 
-@media (max-width: 1100px) {
-  .toolCanvas {
-    height: auto;
-    min-height: calc(100vh - 48px);
+@media (max-width: 1360px) {
+  .toolWorkbench {
+    min-height: 540px;
+  }
+}
+
+@media (max-width: 980px) {
+  .toolToolbar {
+    justify-content: flex-start;
   }
 
-  .pageHeader,
+  .toolTabs {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
   .toolGrid,
   .callerLayout,
   .settingsLayout,
   .requestLine,
   .formGrid {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .boundaryStrip {
-    justify-self: start;
   }
 }

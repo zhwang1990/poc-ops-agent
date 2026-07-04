@@ -8,14 +8,17 @@ import {
   FileClock,
   Network,
   Rocket,
+  Scale,
   SearchCheck,
   SlidersHorizontal,
   Wrench,
   Workflow,
 } from "lucide-react";
-import { Link, useLocation } from "react-router-dom";
+import { useMemo, useState } from "react";
+import { NavLink } from "react-router-dom";
 
 import styles from "./AppShell.module.css";
+import { WorkspaceLayoutContext } from "./WorkspaceLayoutContext.jsx";
 
 const navigation = [
   {
@@ -39,14 +42,6 @@ const navigation = [
 ];
 
 /**
- * @param {(typeof navigation)[number]} item
- * @param {ReturnType<typeof useLocation>} location
- */
-function isNavigationItemActive(item, location) {
-  return location.pathname === item.to;
-}
-
-/**
  * @typedef {object} AppShellProps
  * @property {import("react").ReactNode} children
  * @property {unknown} [session]
@@ -56,56 +51,71 @@ function isNavigationItemActive(item, location) {
  * @param {AppShellProps} props
  */
 export function AppShell({ children }) {
-  const location = useLocation();
+  const [showMenuLabels, setShowMenuLabels] = useState(true);
+  const [isWorkspaceExpanded, setWorkspaceExpanded] = useState(false);
+  const isIconOnly = !showMenuLabels || isWorkspaceExpanded;
+  const layoutState = useMemo(
+    () => ({
+      showMenuLabels,
+      setShowMenuLabels,
+      isWorkspaceExpanded,
+      setWorkspaceExpanded,
+      toggleMenuLabels: () => setShowMenuLabels((current) => !current),
+      toggleWorkspaceExpanded: () => setWorkspaceExpanded((current) => !current),
+    }),
+    [isWorkspaceExpanded, showMenuLabels],
+  );
 
   return (
-    <div className={styles.shell}>
-      <aside className={styles.sidebar}>
-        <nav aria-label="主导航" className={styles.nav}>
-          {navigation.map((item) => {
-            const Icon = item.icon;
-            const isActive = isNavigationItemActive(item, location);
+    <WorkspaceLayoutContext.Provider value={layoutState}>
+      <div className={`${styles.shell} ${isIconOnly ? styles.iconOnlyShell : ""}`}>
+        <aside className={styles.sidebar}>
+          <nav aria-label="主导航" className={styles.nav}>
+            {navigation.map((item) => {
+              const Icon = item.icon;
 
-            return (
-              <Link
-                className={`${styles.navLink} ${styles[`navTone${item.tone}`]} ${
-                  isActive ? styles.active : ""
-                }`}
-                key={item.to}
-                to={item.to}
-              >
-                <span aria-hidden="true" className={styles.navIcon}>
-                  <span className={styles.navSymbol} />
-                  <Icon className={styles.navGlyph} strokeWidth={2.25} />
-                </span>
-                <span className={styles.navLabel}>{item.label}</span>
-                <span aria-hidden="true" className={styles.navPulse} />
-              </Link>
-            );
-          })}
-        </nav>
-
-        <div className={styles.sidebarFooter}>
-          <div aria-hidden="true" className={styles.sidebarPreview}>
-            <span className={styles.sidebarPreviewOrbit}>
-              {navigation.map((item) => {
-                const isPreviewActive = isNavigationItemActive(item, location);
-
-                return (
-                  <span
-                    className={`${styles.sidebarPreviewMenuNode} ${
-                      styles[`navTone${item.tone}`]
-                    } ${isPreviewActive ? styles.sidebarPreviewMenuNodeActive : ""}`}
-                    key={`preview-${item.to}`}
-                  />
-                );
-              })}
-            </span>
-            <span className={styles.sidebarPreviewCore} />
-          </div>
-        </div>
-      </aside>
-      <main className={styles.content}>{children}</main>
-    </div>
+              return (
+                <NavLink
+                  className={({ isActive }) =>
+                    `${styles.navLink} ${styles[`navTone${item.tone}`]} ${isActive ? styles.active : ""}`
+                  }
+                  aria-label={item.label}
+                  key={item.to}
+                  title={isIconOnly ? item.label : undefined}
+                  to={item.to}
+                >
+                  <span aria-hidden="true" className={styles.navIcon}>
+                    <span className={styles.navSymbol} />
+                    <Icon className={styles.navGlyph} strokeWidth={2} />
+                  </span>
+                  <span aria-hidden={isIconOnly} className={styles.navLabel} hidden={isIconOnly}>
+                    {item.label}
+                  </span>
+                  <span aria-hidden="true" className={styles.navPulse} hidden={isIconOnly} />
+                </NavLink>
+              );
+            })}
+          </nav>
+          <footer className={styles.sidebarFooter}>
+            <NavLink
+              aria-label="法律信息"
+              className={({ isActive }) =>
+                `${styles.legalLink} ${isActive ? styles.activeLegalLink : ""}`
+              }
+              title={isIconOnly ? "法律信息" : undefined}
+              to="/third-party-licenses"
+            >
+              <span aria-hidden="true" className={styles.legalIcon}>
+                <Scale size={17} strokeWidth={2.35} />
+              </span>
+              <span aria-hidden={isIconOnly} className={styles.legalLabel} hidden={isIconOnly}>
+                法律信息
+              </span>
+            </NavLink>
+          </footer>
+        </aside>
+        <main className={styles.content}>{children}</main>
+      </div>
+    </WorkspaceLayoutContext.Provider>
   );
 }

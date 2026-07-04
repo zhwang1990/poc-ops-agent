@@ -6,8 +6,6 @@
   --rag-gold: #bd7b1d;
   --rag-muted: #6f7c8b;
   --rag-border: #d7e4ec;
-  height: calc(100vh - 48px);
-  min-height: 0;
   grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
 }
@@ -51,11 +49,13 @@
 }
 
 .ragHead {
+  box-sizing: border-box;
   display: flex;
+  min-height: 48px;
   align-items: center;
   justify-content: flex-start;
-  gap: 16px;
-  padding: 16px 22px;
+  gap: 12px;
+  padding: 10px 22px;
   border-bottom: 1px solid rgba(34, 126, 166, 0.1);
   background:
     linear-gradient(90deg, rgba(211, 17, 69, 0.055), rgba(34, 126, 166, 0.045), rgba(22, 135, 90, 0.035));
@@ -66,19 +66,9 @@
 }
 
 .ragHead h2 {
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 850;
-  line-height: 1.12;
-}
-
-.ragHead span:not(.citationBadge) {
-  display: block;
-  margin-top: 6px;
-  color: var(--rag-muted);
-  font-size: 12px;
-  font-weight: 800;
-  line-height: 1.2;
-  white-space: nowrap;
+  line-height: 1.05;
 }
 
 .citationBadge {
@@ -417,8 +407,6 @@
   }
 
   .ragCanvas {
-    height: auto;
-    min-height: calc(100vh - 48px);
     overflow: auto;
   }
 
