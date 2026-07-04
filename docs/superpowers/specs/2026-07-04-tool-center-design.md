@@ -9,7 +9,7 @@
 - `JSON Formatter`：面向 JSON 校验、格式化、压缩、差异分析和 Schema 草稿生成。
 - `API Caller`：面向非生产接口调用、上下游接口联调、响应分析、断言生成和请求集合沉淀。
 
-本设计参考 EasyPostman 的集合、环境、请求和响应模型语义，但不引入 EasyPostman 代码。EasyPostman 是 Apache-2.0 许可的 Java/Swing 本地优先工具，本项目首版只借鉴数据模型和交互心智，由 ops-agent 自研受控后端。
+本设计参考 EasyPostman 的集合、环境、请求和响应模型语义，并优先评估复用其非 GUI 核心模块，以降低 API Caller 的开发成本。EasyPostman 是 Apache-2.0 许可的 Java/Swing 本地优先工具，ops-agent 首版不直接暴露其完整桌面应用能力，而是在平台安全边界内复用可控的集合、环境、请求构造和 HTTP 执行能力。
 
 参考资料：
 
@@ -24,6 +24,7 @@
 3. `JSON Formatter` 纯前端本地处理，不上传、不落盘输入内容。
 4. `API Caller` 支持完整 URL 输入、域名级 allowlist、临时凭据、凭据别名、单请求执行、响应查看、简单断言和脱敏历史。
 5. 接入 AI 辅助能力，但 AI 只能生成草稿、解释和建议，不能自动执行请求或绕过平台策略。
+6. 通过技术验证评估引入 EasyPostman 的非 GUI 核心模块，优先复用集合模型、环境变量、请求构造、响应解析和 HTTP runtime 中安全可控的部分。
 
 ## 非目标
 
@@ -35,7 +36,39 @@
 - 脚本执行、插件执行、压测和批量编排。
 - AgentScope Tool Catalog 暴露。
 - 自动化测试平台和完整 CI 测试编排。
-- 引入 EasyPostman 源码或运行时模块。
+- 直接嵌入 EasyPostman 桌面 GUI。
+- 直接暴露 EasyPostman 的脚本、插件、压测、任意外联或本地工作区能力。
+
+## EasyPostman 复用策略
+
+首版不再假设 API Caller 完全自研。实施前必须先做一个受限技术验证，评估 EasyPostman 非 GUI 核心模块是否可以被安全复用。
+
+优先评估范围：
+
+- 集合与目录模型。
+- 环境变量和变量替换。
+- 请求构造模型。
+- 响应解析模型。
+- HTTP runtime 中可被域名级 allowlist 包裹的单请求执行能力。
+
+禁止直接复用或必须默认关闭的能力：
+
+- Swing GUI。
+- 脚本执行。
+- 插件执行。
+- 压测和批量运行。
+- 任意外网或任意内网访问。
+- 本地文件工作区、Git workspace 或不受平台治理的数据持久化。
+
+复用前置条件：
+
+- 完成 Apache-2.0 许可证和 NOTICE 处理确认。
+- 完成依赖树和安全漏洞扫描。
+- 确认 EasyPostman 模块可以在 Java 21 / Maven 多模块工程中稳定构建或被隔离适配。
+- 确认所有 HTTP 出站都能被 ops-agent 的域名级 allowlist、凭据治理、审计和超时限制包裹。
+- 禁止把 EasyPostman 的本地存储、脚本、插件或压测机制作为 ops-agent 的执行事实源。
+
+如果技术验证发现模块耦合 GUI、本地工作区或高风险能力过深，则回退为兼容 EasyPostman 数据模型并自研最小受控执行器。
 
 ## 模块归属
 
