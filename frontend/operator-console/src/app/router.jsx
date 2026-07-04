@@ -18,6 +18,7 @@ import { RagQuestionPage } from "../features/rag-question/RagQuestionPage.jsx";
 import { ReleaseCenterPage } from "../features/release-center/ReleaseCenterPage.jsx";
 import { SkillRegistryPage } from "../features/skill-registry/SkillRegistryPage.jsx";
 import { SqlWorkbenchPage } from "../features/sql-workbench/SqlWorkbenchPage.jsx";
+import { ToolCenterPage } from "../features/tool-center/ToolCenterPage.jsx";
 import { WorkflowEventsPage } from "../features/workflow-events/WorkflowEventsPage.jsx";
 
 const legacyAgentViewRoutes = {
@@ -178,6 +179,14 @@ export function AppRouter() {
           </ProtectedRoute>
         }
         path="/sql"
+      />
+      <Route
+        element={
+          <ProtectedRoute>
+            <ToolCenterPage />
+          </ProtectedRoute>
+        }
+        path="/tools"
       />
       <Route
         element={

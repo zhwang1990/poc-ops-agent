@@ -85,11 +85,18 @@ describe("AppShell styles", () => {
       appShellSource.indexOf('label: "SQL 工作区"'),
     );
     expect(appShellSource.indexOf('label: "SQL 工作区"')).toBeLessThan(
+      appShellSource.indexOf('label: "工具中心"'),
+    );
+    expect(appShellSource.indexOf('label: "工具中心"')).toBeLessThan(
+      appShellSource.indexOf('label: "模型设置"'),
+    );
+    expect(appShellSource.indexOf('label: "SQL 工作区"')).toBeLessThan(
       appShellSource.indexOf('label: "Skill 注册中心"'),
     );
     expect(appShellSource).toContain('label: "Agent 工作区"');
     expect(appShellSource).toContain('label: "RAG 问答"');
     expect(appShellSource).toContain('label: "SQL 工作区"');
+    expect(appShellSource).toContain('label: "工具中心"');
     expect(appShellSource).toContain('label: "Skill 注册中心"');
     expect(appShellSource).toContain("会议录制纪要");
     expect(appShellSource).toContain("AS400对象管理");

@@ -10,6 +10,7 @@ import {
   Rocket,
   SearchCheck,
   SlidersHorizontal,
+  Wrench,
   Workflow,
 } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
@@ -26,6 +27,7 @@ const navigation = [
   { icon: Bot, label: "Agent 工作区", tone: "info", to: "/agent" },
   { icon: Network, label: "RAG 问答", tone: "teal", to: "/rag" },
   { icon: SearchCheck, label: "SQL 工作区", tone: "deep", to: "/sql" },
+  { icon: Wrench, label: "工具中心", tone: "quick", to: "/tools" },
   { icon: SlidersHorizontal, label: "模型设置", tone: "model", to: "/model-settings" },
   { icon: Rocket, label: "发布中心", tone: "release", to: "/release" },
   { icon: Boxes, label: "Skill 注册中心", tone: "warning", to: "/skills" },
