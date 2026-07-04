@@ -26,6 +26,7 @@
 5. 接入 AI 辅助能力，但 AI 只能生成草稿、解释和建议，不能自动执行请求或绕过平台策略。
 6. 通过技术验证评估引入 EasyPostman 的非 GUI 核心模块，优先复用集合模型、环境变量、请求构造、响应解析和 HTTP runtime 中安全可控的部分。
 7. 为后续接入 RAG 预留契约、页面和审计扩展点，使 API 文档、接口规范、错误手册、历史联调摘要和受控测试数据可以作为可引用上下文参与 AI 辅助。
+8. 为管理员提供 `API Caller 设置`，用于维护域名级 allowlist、环境标签、方法策略、超时和请求/响应大小限制。
 
 ## 非目标
 
@@ -94,6 +95,7 @@
 
 - `JSON Formatter`
 - `API Caller`
+- `API Caller 设置`：仅管理员可见，用于维护域名级 allowlist 和默认策略。
 
 ### JSON Formatter
 
@@ -136,6 +138,32 @@
 
 页面右侧为 RAG 预留 `知识上下文` 区域。首版可以显示为禁用态或空状态；后续真实接入后，操作员可选择已授权知识源，例如接口文档、OpenAPI 说明、错误码手册、上下游联调记录、运行手册和受控测试数据集。RAG 命中的引用必须独立展示，不能混入模型回答后丢失来源。
 
+### API Caller 设置
+
+`API Caller 设置` 是工具中心内的管理员配置页，不作为普通操作员工具展示。页面用于维护域名级 allowlist，避免开发人员每新增一个接口都需要重复配置。
+
+配置项包括：
+
+- 目标系统名称，例如 `queFork`、`EasyPostman Adapter`。
+- 允许域名，按 `scheme + host + port` 记录。
+- 环境标签，例如 `dev`、`sit`、`uat`、`sandbox`。
+- 是否启用。
+- 允许的 HTTP method 集合。
+- 默认超时。
+- 最大请求体大小。
+- 最大响应体大小。
+- 是否允许跟随重定向。
+- 备注和 owner。
+
+交互要求：
+
+- 新增或修改 allowlist 时必须展示配置摘要。
+- 禁止把生产域名配置为启用状态；如确需后续支持，必须通过独立设计和安全评审。
+- 禁止使用通配全域名，例如 `*`、`*.com`、`*.internal`。
+- 禁止默认允许 IP 字面量、`localhost` 和 metadata 地址。
+- 配置保存后立即进入审计记录，并影响后续请求校验。
+- 普通操作员只能在 API Caller 发送请求时看到域名是否被允许，不能编辑 allowlist。
+
 ## 域名级出站边界
 
 管理员配置允许调用的域名，配置粒度为 `scheme + host + port`。生产域名不配置进 allowlist，因此首版天然不可调用生产。
@@ -149,6 +177,18 @@
 - IP 字面量、`localhost`、metadata 地址等高风险目标默认拒绝，除非管理员显式配置为允许域名。
 
 审计记录服务端解析出的域名、环境标签、URL hash、method、操作员、状态码、耗时和 traceId。
+
+域名 allowlist 配置本身也必须审计，至少记录：
+
+- 配置 ID。
+- 目标系统名称。
+- 允许域名。
+- 环境标签。
+- 允许 method 集合。
+- 启用状态。
+- 变更人。
+- 变更前后摘要 hash。
+- 变更原因。
 
 ## 凭据治理
 
@@ -264,6 +304,7 @@ AI 边界：
 新增版本化契约建议分为以下几组：
 
 - `ToolCenterCatalog`：工具定义、启用状态、AI 能力开关和权限状态。
+- `ApiCallerDomainAllowlist`：管理员维护的目标系统、允许域名、环境标签、方法策略、超时和大小限制。
 - `ApiCallerCollection`：集合、目录、请求模板、变量和断言。
 - `ApiCallerCredential`：临时凭据引用和凭据别名。
 - `ApiCallerExecution`：单次请求执行信封。
@@ -317,6 +358,9 @@ M09 工具中心前端
 
 审计事件至少覆盖：
 
+- `ALLOWLIST_CREATED`
+- `ALLOWLIST_UPDATED`
+- `ALLOWLIST_DISABLED`
 - `REQUESTED`
 - `COMPLETED`
 - `FAILED`
@@ -367,6 +411,9 @@ AI 辅助审计至少记录：
 
 ### API Caller
 
+- 管理员可以新增、编辑和禁用域名级 allowlist。
+- 普通操作员看不到 `API Caller 设置` 管理入口。
+- 生产域名、通配域名、metadata 地址、localhost 和未显式允许的 IP 字面量配置被拒绝。
 - 允许域名请求成功。
 - 未允许域名请求被拒绝。
 - 生产域名请求被拒绝。
