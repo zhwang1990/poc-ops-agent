@@ -24,7 +24,6 @@ import {
 import { DataTable } from "../../components/data-display/DataTable.jsx";
 import { StatusPill } from "../../components/data-display/StatusPill.jsx";
 import { WorkspacePageFrame } from "../../components/layout/WorkspacePageFrame.jsx";
-import { useWorkspaceLayout } from "../../components/layout/WorkspaceLayoutContext.jsx";
 import { WorkspaceStatusBar } from "../../components/layout/WorkspaceStatusBar.jsx";
 import { Dialog } from "../../components/primitives/Dialog.jsx";
 import {
@@ -192,7 +191,7 @@ export function SqlWorkbenchPage() {
     /** @type {PendingDmlRiskConfirmation | null} */ (null),
   );
   const [isDmlRiskCommitPending, setIsDmlRiskCommitPending] = useState(false);
-  const { isWorkspaceExpanded, setWorkspaceExpanded } = useWorkspaceLayout();
+  const [isWorkspaceExpanded, setIsWorkspaceExpanded] = useState(false);
   const [editorResultSplit, setEditorResultSplit] = useState(DEFAULT_EDITOR_RESULT_SPLIT);
 
   const activeSession =
@@ -1343,7 +1342,7 @@ export function SqlWorkbenchPage() {
             className={styles.primaryButton}
             onClick={() => {
               const nextExpanded = !isWorkspaceExpanded;
-              setWorkspaceExpanded(nextExpanded);
+              setIsWorkspaceExpanded(nextExpanded);
               if (nextExpanded) {
                 setIsObjectDrawerOpen(false);
               }
