@@ -216,8 +216,9 @@
 }
 
 .infoPanel {
-  grid-template-rows: auto auto minmax(0, auto);
-  overflow-y: auto;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  padding: 10px 10px 9px;
 }
 
 .drawerHeader {
@@ -983,13 +984,27 @@
 .schemaTree {
   display: grid;
   min-height: 0;
-  align-content: start;
+  align-content: stretch;
   gap: 6px;
-  grid-auto-rows: max-content;
+  grid-template-rows: auto max-content minmax(0, 1fr);
   padding: 9px;
   border: 1px solid rgba(34, 126, 166, 0.12);
   border-radius: 8px;
   background: var(--sql-panel-soft);
+}
+
+.schemaSection {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+  grid-auto-rows: max-content;
+}
+
+.schemaOptions {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+  grid-auto-rows: max-content;
 }
 
 .schemaTree span {
@@ -1037,9 +1052,12 @@
 
 .metadataList {
   display: grid;
+  height: 100%;
+  min-height: 0;
   min-width: 0;
-  max-height: clamp(180px, 44vh, 460px);
-  gap: 4px;
+  max-height: none;
+  align-content: start;
+  gap: 2px;
   overflow-y: auto;
   padding-right: 2px;
   overscroll-behavior: contain;
@@ -1048,8 +1066,8 @@
 .metadataObject {
   display: grid;
   min-width: 0;
-  gap: 7px;
-  padding: 9px 0;
+  gap: 4px;
+  padding: 5px 0;
   border-top: 1px solid rgba(34, 126, 166, 0.14);
 }
 
@@ -1059,10 +1077,14 @@
   grid-template-columns: 16px minmax(0, 1fr) auto;
   gap: 8px;
   align-items: center;
-  padding: 5px 6px;
+  padding: 3px 5px;
   border: 1px solid transparent;
   background: rgba(34, 126, 166, 0.06);
   cursor: pointer;
+}
+
+.schemaTree .metadataObjectHeader {
+  padding: 3px 5px;
 }
 
 .metadataObjectHeader:hover {
@@ -1090,6 +1112,7 @@
   color: var(--sql-ink);
   font-size: 12px;
   font-weight: 900;
+  padding: 3px 8px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1170,7 +1193,6 @@
   font-weight: 760;
 }
 
-.validationPanel,
 .executionFacts,
 .aiPanel,
 .resultPanel,
@@ -1182,7 +1204,6 @@
   padding: 10px;
 }
 
-.validationPanel,
 .executionFacts,
 .aiPanel {
   border: 1px solid rgba(34, 126, 166, 0.1);
@@ -1191,13 +1212,14 @@
 }
 
 .aiPanel {
+  height: 100%;
   max-width: 100%;
   min-width: 0;
+  min-height: 0;
   overflow-x: auto;
   overflow-y: auto;
 }
 
-.validationPanel > p,
 .aiPanel > p,
 .resultPanel > p,
 .noticePanel p {

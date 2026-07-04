@@ -222,9 +222,6 @@ export function SqlWorkbenchPage() {
   const currentResultPage =
     resultPageQuery.data ?? activeResultTab?.resultPage ?? activeSession.resultPage;
   const currentResultError = activeResultTab?.errorMessage ?? activeSession.errorMessage;
-  const validationPanelError =
-    validateMutation.error ??
-    (activeSession.validation || !currentResultError ? null : new Error(currentResultError));
   const isReadyConnection = activeConnection?.status === "READY";
   const hasSqlText = activeSession.sql.trim().length > 0;
   const canValidate =
@@ -1460,12 +1457,9 @@ export function SqlWorkbenchPage() {
             assistantErrorMessage={activeSession.assistantErrorMessage}
             assistantPending={assistantMutation.isPending}
             canUseAssistant={canUseAssistant}
-            error={validationPanelError}
             execution={currentExecution}
-            isPending={validateMutation.isPending}
             onApplyAssistantSuggestion={updateSql}
             onRequestAssistant={requestAssistant}
-            report={activeSession.validation}
           />
         ) : null}
       </section>
@@ -1579,17 +1573,21 @@ function ObjectBrowser({
         ))}
       </div>
       <div className={styles.schemaTree}>
-        <span>Schema</span>
-        {activeConnection.allowedSchemas.map((schema) => (
-          <button
-            className={schema === activeSchema ? styles.activeSchema : ""}
-            key={schema}
-            onClick={() => onSelectSchema(schema)}
-            type="button"
-          >
-            {schema}
-          </button>
-        ))}
+        <div className={styles.schemaSection}>
+          <span>Schema</span>
+          <div className={styles.schemaOptions}>
+            {activeConnection.allowedSchemas.map((schema) => (
+              <button
+                className={schema === activeSchema ? styles.activeSchema : ""}
+                key={schema}
+                onClick={() => onSelectSchema(schema)}
+                type="button"
+              >
+                {schema}
+              </button>
+            ))}
+          </div>
+        </div>
         <span>Objects</span>
         <MetadataObjects
           activeSchema={activeSchema}
@@ -1775,12 +1773,9 @@ function SessionTabs({ activeSessionId, onAddSession, onSelectSession, sessions 
  *   assistantErrorMessage: string | null,
  *   assistantPending: boolean,
  *   canUseAssistant: boolean,
- *   error: Error | null,
  *   execution: SqlQueryRunResult | null,
- *   isPending: boolean,
  *   onApplyAssistantSuggestion: (sql: string) => void,
  *   onRequestAssistant: (action: SqlAssistantAction) => void,
- *   report: SqlValidationReport | null,
  * }} props
  */
 function InfoPanel({
@@ -1788,16 +1783,12 @@ function InfoPanel({
   assistantErrorMessage,
   assistantPending,
   canUseAssistant,
-  error,
   execution,
-  isPending,
   onApplyAssistantSuggestion,
   onRequestAssistant,
-  report,
 }) {
   return (
     <aside aria-label="SQL 信息面板" className={styles.infoPanel}>
-      <ValidationReport error={error} isPending={isPending} report={report} />
       <ExecutionFacts execution={execution} />
       <AiSqlAssistantPanel
         assistant={assistant}
@@ -1915,57 +1906,6 @@ function AiAssistantLoadingStatus() {
         <span />
       </span>
     </div>
-  );
-}
-
-/**
- * @param {{
- *   error: Error | null,
- *   isPending: boolean,
- *   report: SqlValidationReport | null,
- * }} props
- */
-function ValidationReport({ error, isPending, report }) {
-  if (isPending) {
-    return (
-      <section className={styles.validationPanel} role="status">
-        <PanelHeading detail="等待控制面返回强类型报告" icon={FileSearch} title="服务端校验" />
-        <p>正在提交 SQL 校验请求。</p>
-      </section>
-    );
-  }
-
-  if (error) {
-    return (
-      <section className={styles.validationPanel} role="alert">
-        <PanelHeading detail="请求被控制面拒绝或校验失败" icon={AlertTriangle} title="服务端校验" />
-        <ErrorMessageContent message={error.message} />
-      </section>
-    );
-  }
-
-  if (!report) {
-    return (
-      <section className={styles.validationPanel}>
-        <PanelHeading detail="选择校验动作后展示服务端报告" icon={FileSearch} title="服务端校验" />
-      </section>
-    );
-  }
-
-  return (
-    <section className={styles.validationPanel}>
-      <PanelHeading detail={report.sqlHash} icon={FileSearch} title="服务端校验" />
-      <div className={styles.reportGrid}>
-        <ReportItem label="语句类型" value={report.statementType} />
-        <ReportItem label="校验等级" value={report.validationLevel} />
-        <ReportItem label="SQL 哈希" value={report.sqlHash} />
-        <ReportItem label="校验哈希" value={report.validationHash ?? report.sqlHash} />
-        <ReportItem label="引用对象" value={formatValues(report.referencedObjects)} />
-        <ReportItem label="风险" value={formatValues(report.risks)} />
-        <ReportItem label="拒绝原因" value={formatValues(report.rejectionReasons)} />
-        <ReportItem label="未验证项" value={formatValues(report.unverifiedItems)} />
-      </div>
-    </section>
   );
 }
 
