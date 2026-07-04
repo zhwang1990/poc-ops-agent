@@ -5,6 +5,7 @@ import {
   askSqlAssistant,
   deleteSqlConnection,
   listSqlConnections,
+  readSqlMetadata,
   probeSqlConnection,
   readSqlResultPage,
   runReadOnlySqlQuery,
@@ -107,5 +108,19 @@ export function useSqlResultPage(resultId, pageToken = null) {
     enabled: Boolean(resultId),
     queryKey: ["sql-workbench", "results", resultId, pageToken ?? ""],
     queryFn: () => readSqlResultPage({ resultId: String(resultId), pageToken }),
+  });
+}
+
+/**
+ * @param {string | null | undefined} connectionId
+ * @param {string | null | undefined} schema
+ * @param {boolean} enabled
+ */
+export function useSqlMetadata(connectionId, schema, enabled) {
+  return useQuery({
+    enabled: Boolean(enabled && connectionId && schema),
+    queryKey: ["sql-workbench", "metadata", connectionId ?? "", schema ?? ""],
+    queryFn: () => readSqlMetadata({ connectionId: String(connectionId), schema: String(schema) }),
+    staleTime: 60_000,
   });
 }

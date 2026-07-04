@@ -4,6 +4,8 @@ import com.company.opsagent.contracts.sqlworkbench.SqlConnectionCreateRequest;
 import com.company.opsagent.contracts.sqlworkbench.SqlConnectionProbeResult;
 import com.company.opsagent.contracts.sqlworkbench.SqlConnectionSummary;
 import com.company.opsagent.contracts.sqlworkbench.SqlConnectionUpdateRequest;
+import com.company.opsagent.contracts.sqlworkbench.SqlDatabaseMetadata;
+import com.company.opsagent.contracts.sqlworkbench.SqlDmlCommitRequest;
 import com.company.opsagent.contracts.sqlworkbench.SqlAssistantRequest;
 import com.company.opsagent.contracts.sqlworkbench.SqlAssistantResponse;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryExecutionResult;
@@ -30,6 +32,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
@@ -67,6 +70,11 @@ public class SqlWorkbenchController {
       "diagnosticContext",
       "idempotencyKey");
 
+  private static final Set<String> DML_COMMIT_FIELDS = Set.of(
+      "contractVersion",
+      "query",
+      "confirmation");
+
   private final SqlWorkbenchService sqlWorkbenchService;
   private final ObjectMapper objectMapper;
 
@@ -102,6 +110,13 @@ public class SqlWorkbenchController {
     return blocking(() -> sqlWorkbenchService.probeConnection(connectionId));
   }
 
+  @GetMapping("/connections/{connectionId}/metadata")
+  public Mono<SqlDatabaseMetadata> metadata(
+      @PathVariable("connectionId") String connectionId,
+      @RequestParam("schema") String schema) {
+    return blocking(() -> sqlWorkbenchService.readMetadata(connectionId, schema));
+  }
+
   @PostMapping("/queries/validate")
   public Mono<SqlValidationReport> validate(@RequestBody SqlQueryRequest request) {
     return blocking(() -> sqlWorkbenchService.validate(request));
@@ -120,6 +135,19 @@ public class SqlWorkbenchController {
         PolicyEnforcementWebFilter.EXECUTION_CONTEXT_ATTRIBUTE);
     return blocking(() -> sqlWorkbenchService.runReadOnlyQuery(
         request,
+        new OperatorContext(context.subject(), context.roles()),
+        new PolicyDecisionReference(context.requestId() + ":" + context.action(), context.policyVersion(), "ALLOW"),
+        new TraceContext(context.traceId(), context.requestId())));
+  }
+
+  @PostMapping("/queries/commit")
+  public Mono<SqlQueryExecutionResult> commit(
+      @RequestBody JsonNode request,
+      ServerWebExchange exchange) {
+    ExecutionContext context = exchange.getRequiredAttribute(
+        PolicyEnforcementWebFilter.EXECUTION_CONTEXT_ATTRIBUTE);
+    return blocking(() -> sqlWorkbenchService.commitControlledDml(
+        parseDmlCommitRequest(request),
         new OperatorContext(context.subject(), context.roles()),
         new PolicyDecisionReference(context.requestId() + ":" + context.action(), context.policyVersion(), "ALLOW"),
         new TraceContext(context.traceId(), context.requestId())));
@@ -189,6 +217,24 @@ public class SqlWorkbenchController {
       return objectMapper.treeToValue(request, SqlAssistantRequest.class);
     } catch (JsonProcessingException exception) {
       throw new IllegalArgumentException("SQL assistant request is invalid", exception);
+    }
+  }
+
+  private SqlDmlCommitRequest parseDmlCommitRequest(JsonNode request) {
+    if (request == null || !request.isObject()) {
+      throw new IllegalArgumentException("SQL DML commit request must be a JSON object");
+    }
+    Iterator<String> fieldNames = request.fieldNames();
+    while (fieldNames.hasNext()) {
+      String fieldName = fieldNames.next();
+      if (!DML_COMMIT_FIELDS.contains(fieldName)) {
+        throw new IllegalArgumentException("unsupported SQL DML commit field: " + fieldName);
+      }
+    }
+    try {
+      return objectMapper.treeToValue(request, SqlDmlCommitRequest.class);
+    } catch (JsonProcessingException exception) {
+      throw new IllegalArgumentException("SQL DML commit request is invalid", exception);
     }
   }
 }

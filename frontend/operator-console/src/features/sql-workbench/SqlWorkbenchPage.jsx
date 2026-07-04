@@ -11,22 +11,29 @@ import {
   Plus,
   ShieldCheck,
   Sparkles,
+  Table2,
   X,
 } from "lucide-react";
 
 import { ApiError } from "../../api/client.js";
+import {
+  commitControlledSqlDml,
+  runReadOnlySqlQuery,
+  validateSqlQuery,
+} from "../../api/sql-api.js";
 import { DataTable } from "../../components/data-display/DataTable.jsx";
 import { StatusPill } from "../../components/data-display/StatusPill.jsx";
 import { WorkspacePageFrame } from "../../components/layout/WorkspacePageFrame.jsx";
+import { useWorkspaceLayout } from "../../components/layout/WorkspaceLayoutContext.jsx";
 import { WorkspaceStatusBar } from "../../components/layout/WorkspaceStatusBar.jsx";
 import { Dialog } from "../../components/primitives/Dialog.jsx";
 import {
   useCreateSqlConnection,
   useDeleteSqlConnection,
-  useRunReadOnlySqlQuery,
   useRunSqlCompare,
   useSqlAssistant,
   useSqlConnections,
+  useSqlMetadata,
   useSqlResultPage,
   useUpdateSqlConnection,
   useValidateSqlQuery,
@@ -39,8 +46,8 @@ import {
   createCompareReport,
   createCompareState,
   createNaturalLanguageState,
-  findSqlEditorStatements,
   isLikelyReadOnlySql,
+  isLikelyControlledDmlSql,
   validateCompareInput,
 } from "./sql-workbench-utils.js";
 import styles from "./SqlWorkbenchPage.module.css";
@@ -48,20 +55,46 @@ import styles from "./SqlWorkbenchPage.module.css";
 const DEFAULT_SQL = "";
 
 const EMPTY_SESSION_SQL = "";
+const METADATA_OBJECT_PAGE_SIZE = 30;
+const METADATA_SCROLL_LOAD_OFFSET = 120;
+
+let sqlResultTabCounter = 0;
 
 /**
  * @typedef {import("../../schemas/sql-schemas.js").SqlConnectionSummary} SqlConnectionSummary
  * @typedef {import("../../schemas/sql-schemas.js").SqlValidationReport} SqlValidationReport
+ * @typedef {import("../../schemas/sql-schemas.js").SqlDmlCommitRequest["query"]} SqlDmlCommitQuery
  * @typedef {import("../../schemas/sql-schemas.js").SqlQueryRunResult} SqlQueryRunResult
  * @typedef {import("../../schemas/sql-schemas.js").SqlResultPage} SqlResultPage
+ * @typedef {import("../../schemas/sql-schemas.js").SqlMetadataResponse} SqlMetadataResponse
  * @typedef {import("../../schemas/sql-schemas.js").SqlAssistantResponse} SqlAssistantResponse
  * @typedef {import("./sql-workbench-utils.js").SqlCompareState} SqlCompareState
  * @typedef {import("./sql-workbench-utils.js").SqlNaturalLanguageState} SqlNaturalLanguageState
  * @typedef {import("./sql-workbench-utils.js").SqlSessionMode} SqlSessionMode
+ * @typedef {import("./sql-workbench-utils.js").SqlTransactionMode} SqlTransactionMode
  * @typedef {"EXPLAIN_SQL" | "OPTIMIZE_SQL" | "ANALYZE_ERROR" | "GENERATE_SELECT" | "COMPARE_SUMMARY"} SqlAssistantAction
+ * @typedef {{
+ *   errorMessage: string | null,
+ *   execution: SqlQueryRunResult | null,
+ *   id: string,
+ *   isPending: boolean,
+ *   label: string,
+ *   resultPageIndex: number,
+ *   resultPage: SqlResultPage | null,
+ *   resultPageToken: string | null,
+ *   resultPageTokens: Array<string | null>,
+ *   sql: string,
+ * }} SqlResultTab
+ * @typedef {{
+ *   report: SqlValidationReport,
+ *   request: SqlDmlCommitQuery,
+ *   resultTabId: string,
+ *   sessionId: string,
+ * }} PendingDmlRiskConfirmation
  * @typedef {{
  *   assistant: SqlAssistantResponse | null,
  *   assistantErrorMessage: string | null,
+ *   activeResultTabId: string | null,
  *   compare: SqlCompareState,
  *   connectionId: string,
  *   errorMessage: string | null,
@@ -74,8 +107,10 @@ const EMPTY_SESSION_SQL = "";
  *   resultPage: SqlResultPage | null,
  *   resultPageToken: string | null,
  *   resultPageTokens: Array<string | null>,
+ *   resultTabs: SqlResultTab[],
  *   schema: string,
  *   sql: string,
+ *   transactionMode: SqlTransactionMode,
  *   validation: SqlValidationReport | null,
  * }} SqlWorkbenchSession
  */
@@ -115,7 +150,7 @@ const PLATFORM_FORM_DEFAULTS = {
 
 const DEFAULT_CONNECTION_FORM = {
   displayName: "",
-  targetEnvironment: "development",
+  targetEnvironment: "dev",
   platformType: "DB2_FOR_I",
   host: "",
   port: "446",
@@ -132,7 +167,6 @@ export function SqlWorkbenchPage() {
   const updateConnectionMutation = useUpdateSqlConnection();
   const deleteConnectionMutation = useDeleteSqlConnection();
   const validateMutation = useValidateSqlQuery();
-  const runMutation = useRunReadOnlySqlQuery();
   const compareMutation = useRunSqlCompare();
   const assistantMutation = useSqlAssistant();
   const [connectionOverrides, setConnectionOverrides] = useState(
@@ -154,11 +188,17 @@ export function SqlWorkbenchPage() {
   const [activeSessionId, setActiveSessionId] = useState("sql-session-1");
   const [isObjectDrawerOpen, setIsObjectDrawerOpen] = useState(false);
   const [isConnectionDialogOpen, setIsConnectionDialogOpen] = useState(false);
-  const [isWorkspaceExpanded, setIsWorkspaceExpanded] = useState(false);
+  const [pendingDmlRiskConfirmation, setPendingDmlRiskConfirmation] = useState(
+    /** @type {PendingDmlRiskConfirmation | null} */ (null),
+  );
+  const [isDmlRiskCommitPending, setIsDmlRiskCommitPending] = useState(false);
+  const { isWorkspaceExpanded, setWorkspaceExpanded } = useWorkspaceLayout();
   const [editorResultSplit, setEditorResultSplit] = useState(DEFAULT_EDITOR_RESULT_SPLIT);
 
   const activeSession =
     sessions.find((session) => session.id === activeSessionId) ?? sessions[0];
+  const activeResultTab = resolveActiveResultTab(activeSession);
+  const activeResultTabId = activeResultTab?.id ?? null;
   const activeConnection = resolveActiveConnection(connections, activeSession);
   const hasConnections = connections.length > 0;
   const activeSchema =
@@ -169,36 +209,36 @@ export function SqlWorkbenchPage() {
         ""
       : "";
   const activeLimits = activeConnection ? buildLimits(activeConnection) : DEFAULT_LIMITS;
-  const resultPageQuery = useSqlResultPage(
-    activeSession.execution?.resultId,
-    activeSession.resultPageToken,
+  const metadataQuery = useSqlMetadata(
+    activeConnection?.connectionId,
+    activeSchema,
+    isObjectDrawerOpen && !isWorkspaceExpanded,
   );
-  const currentResultPage = resultPageQuery.data ?? activeSession.resultPage;
+
+  const resultPageQuery = useSqlResultPage(
+    activeResultTab?.execution?.resultId,
+    activeResultTab?.resultPageToken,
+  );
+  const currentExecution = activeResultTab?.execution ?? activeSession.execution;
+  const currentResultPage =
+    resultPageQuery.data ?? activeResultTab?.resultPage ?? activeSession.resultPage;
+  const currentResultError = activeResultTab?.errorMessage ?? activeSession.errorMessage;
+  const validationPanelError =
+    validateMutation.error ??
+    (activeSession.validation || !currentResultError ? null : new Error(currentResultError));
   const isReadyConnection = activeConnection?.status === "READY";
   const hasSqlText = activeSession.sql.trim().length > 0;
-  const activeSqlStatements = useMemo(
-    () => findSqlEditorStatements(activeSession.sql),
-    [activeSession.sql],
-  );
-  const hasMultipleSqlStatements = activeSqlStatements.length > 1;
-  const isRunnableSelectSql = isLikelyReadOnlySql(activeSession.sql);
   const canValidate =
     isReadyConnection &&
     activeConnection?.capabilities.includes("VALIDATE") === true;
-  const canPreflightDml =
-    isReadyConnection &&
-    activeConnection?.capabilities.includes("PREFLIGHT_DML") === true;
-  const canExecuteSelect =
-    isReadyConnection &&
-    activeConnection?.capabilities.includes("RUN_READ_ONLY") === true &&
-    hasSqlText &&
-    isRunnableSelectSql &&
-    !hasMultipleSqlStatements &&
-    !runMutation.isPending;
   const canRunSqlStatement =
     isReadyConnection &&
-    activeConnection?.capabilities.includes("RUN_READ_ONLY") === true &&
-    !runMutation.isPending;
+    activeConnection?.capabilities.includes("RUN_READ_ONLY") === true;
+  const canCommitDmlStatement =
+    isReadyConnection &&
+    activeConnection?.capabilities.includes("COMMIT_DML") === true &&
+    activeSession.transactionMode === "manual" &&
+    isLikelyControlledDmlSql(activeSession.sql.trim());
   const canUseAssistant =
     canValidate &&
     hasSqlText &&
@@ -214,10 +254,14 @@ export function SqlWorkbenchPage() {
     if (!resultPageQuery.data) {
       return;
     }
-    updateSession(activeSession.id, {
-      resultPage: resultPageQuery.data,
-    });
-  }, [activeSession.id, resultPageQuery.data]);
+    if (activeResultTabId) {
+      updateResultTab(activeSession.id, activeResultTabId, {
+        resultPage: resultPageQuery.data,
+      });
+      return;
+    }
+    updateSession(activeSession.id, { resultPage: resultPageQuery.data });
+  }, [activeResultTabId, activeSession.id, resultPageQuery.data]);
 
   /**
    * @param {string} sessionId
@@ -232,10 +276,56 @@ export function SqlWorkbenchPage() {
   }
 
   /**
+   * @param {string} sessionId
+   * @param {string} tabId
+   * @param {Partial<SqlResultTab>} patch
+   */
+  function updateResultTab(sessionId, tabId, patch) {
+    setSessions((currentSessions) =>
+      currentSessions.map((session) => {
+        if (session.id !== sessionId) {
+          return session;
+        }
+        return {
+          ...session,
+          resultTabs: session.resultTabs.map((tab) =>
+            tab.id === tabId ? { ...tab, ...patch } : tab,
+          ),
+        };
+      }),
+    );
+  }
+
+  /**
+   * @param {string} sessionId
+   * @param {SqlResultTab} tab
+   */
+  function appendResultTab(sessionId, tab) {
+    setSessions((currentSessions) =>
+      currentSessions.map((session) =>
+        session.id === sessionId
+          ? {
+              ...session,
+              activeResultTabId: tab.id,
+              errorMessage: null,
+              execution: null,
+              resultPage: null,
+              resultPageIndex: 0,
+              resultPageToken: null,
+              resultPageTokens: [null],
+              resultTabs: [...session.resultTabs, tab],
+            }
+          : session,
+      ),
+    );
+  }
+
+  /**
    * @param {string} sql
    */
   function updateSql(sql) {
     updateSession(activeSession.id, {
+      activeResultTabId: null,
       sql,
       validation: null,
       execution: null,
@@ -243,6 +333,7 @@ export function SqlWorkbenchPage() {
       resultPageIndex: 0,
       resultPageToken: null,
       resultPageTokens: [null],
+      resultTabs: [],
       errorMessage: null,
       assistant: null,
       assistantErrorMessage: null,
@@ -643,22 +734,6 @@ export function SqlWorkbenchPage() {
   }
 
   /**
-   * @param {"VALIDATE" | "PREFLIGHT_DML"} action
-   */
-  function submitValidation(action) {
-    if (!activeSession || !activeConnection) {
-      return;
-    }
-    submitValidationForSql({
-      action,
-      connection: activeConnection,
-      schema: activeSchema,
-      sessionId: activeSession.id,
-      sql: activeSession.sql,
-    });
-  }
-
-  /**
    * @param {{
    *   action: "VALIDATE" | "PREFLIGHT_DML",
    *   connection: SqlConnectionSummary,
@@ -718,13 +793,6 @@ export function SqlWorkbenchPage() {
     );
   }
 
-  function runSelect() {
-    if (!activeConnection || !canExecuteSelect) {
-      return;
-    }
-    runReadOnlySql(activeSession.sql);
-  }
-
   /**
    * @param {string} sqlText
    */
@@ -746,85 +814,230 @@ export function SqlWorkbenchPage() {
       sql,
       "RUN_READ_ONLY",
     );
+    const resultTab = createResultTab(activeSession.resultTabs.length + 1, sql);
+    appendResultTab(sessionId, resultTab);
 
-    runMutation.mutate(
-      request,
+    void runReadOnlySqlQuery(request)
+      .then((execution) => {
+        updateResultTab(sessionId, resultTab.id, {
+          execution,
+          errorMessage: execution.errorMessage ?? null,
+          isPending: false,
+          resultPage: null,
+          resultPageIndex: 0,
+          resultPageToken: null,
+          resultPageTokens: [null],
+        });
+        maybeRequestExecutionErrorAnalysis({
+          connection,
+          execution,
+          limits: request.limits,
+          schema,
+          sessionId,
+          sql,
+        });
+      })
+      .catch((error) => {
+        const errorMessage = error instanceof Error ? error.message : "SELECT 执行请求失败";
+        updateResultTab(sessionId, resultTab.id, {
+          errorMessage,
+          execution: null,
+          isPending: false,
+          resultPage: null,
+          resultPageIndex: 0,
+          resultPageToken: null,
+          resultPageTokens: [null],
+        });
+        updateSession(sessionId, {
+          errorMessage,
+          assistant: null,
+          assistantErrorMessage: null,
+        });
+        if (shouldFetchValidationDiagnostics(error)) {
+          validateMutation.mutate(
+            {
+              ...request,
+              idempotencyKey: createSqlIdempotencyKey("RUN_READ_ONLY_DIAGNOSTIC"),
+            },
+            {
+              onSuccess: (report) => {
+                const diagnosticMessage = buildReadOnlyValidationDiagnosticMessage(report);
+                updateResultTab(sessionId, resultTab.id, {
+                  errorMessage: diagnosticMessage,
+                  execution: null,
+                  isPending: false,
+                  resultPage: null,
+                  resultPageIndex: 0,
+                  resultPageToken: null,
+                  resultPageTokens: [null],
+                });
+                updateSession(sessionId, {
+                  validation: report,
+                  errorMessage: diagnosticMessage,
+                  assistant: null,
+                  assistantErrorMessage: null,
+                });
+                maybeRequestSyntaxErrorAnalysis({
+                  connection,
+                  errorMessage: diagnosticMessage,
+                  limits: request.limits,
+                  report,
+                  schema,
+                  sessionId,
+                  sql,
+                });
+              },
+              onError: (validationError) => {
+                const validationErrorMessage =
+                  validationError instanceof Error
+                    ? validationError.message
+                    : "服务端校验报告补充失败";
+                updateResultTab(sessionId, resultTab.id, {
+                  errorMessage: `${errorMessage}\nvalidationDiagnosticError=${validationErrorMessage}`,
+                  isPending: false,
+                });
+                updateSession(sessionId, {
+                  errorMessage: `${errorMessage}\nvalidationDiagnosticError=${validationErrorMessage}`,
+                });
+              },
+            },
+          );
+        }
+      });
+  }
+
+  async function commitControlledDml() {
+    if (!activeConnection || !canCommitDmlStatement) {
+      return;
+    }
+    const sql = activeSession.sql.trim();
+    const sessionId = activeSession.id;
+    const schema = activeSchema;
+    const connection = activeConnection;
+    const request = /** @type {SqlDmlCommitQuery} */ (
+      buildSqlQueryRequest(
+        connection,
+        schema,
+        "COMMIT_DML",
+        sql,
+        "COMMIT_DML",
+      )
+    );
+    const resultTab = createResultTab(activeSession.resultTabs.length + 1, sql);
+    appendResultTab(sessionId, resultTab);
+
+    try {
+      const report = await validateSqlQuery(request);
+      updateSession(sessionId, {
+        validation: report,
+        errorMessage: null,
+        assistant: null,
+        assistantErrorMessage: null,
+      });
+      if (report.validationLevel === "REJECTED") {
+        throw new Error(buildDmlValidationDiagnosticMessage(report));
+      }
+      let confirmation = null;
+      if (report.risks.length > 0) {
+        setPendingDmlRiskConfirmation({
+          report,
+          request,
+          resultTabId: resultTab.id,
+          sessionId,
+        });
+        return;
+      }
+      const execution = await commitControlledSqlDml({
+        contractVersion: "1.0",
+        query: request,
+        confirmation,
+      });
+      updateResultTab(sessionId, resultTab.id, {
+        execution,
+        errorMessage: execution.errorMessage ?? null,
+        isPending: false,
+        resultPage: null,
+        resultPageIndex: 0,
+        resultPageToken: null,
+        resultPageTokens: [null],
+      });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "DML 提交请求失败";
+      updateResultTab(sessionId, resultTab.id, {
+        errorMessage,
+        execution: null,
+        isPending: false,
+        resultPage: null,
+        resultPageIndex: 0,
+        resultPageToken: null,
+        resultPageTokens: [null],
+      });
+      updateSession(sessionId, {
+        errorMessage,
+        assistant: null,
+        assistantErrorMessage: null,
+      });
+    }
+  }
+
+  async function confirmDmlRiskCommit() {
+    if (!pendingDmlRiskConfirmation || isDmlRiskCommitPending) {
+      return;
+    }
+    const { report, request, resultTabId, sessionId } = pendingDmlRiskConfirmation;
+    setIsDmlRiskCommitPending(true);
+    try {
+      const execution = await commitControlledSqlDml({
+        contractVersion: "1.0",
+        query: request,
+        confirmation: buildDmlRiskConfirmation(report),
+      });
+      updateResultTab(sessionId, resultTabId, {
+        execution,
+        errorMessage: execution.errorMessage ?? null,
+        isPending: false,
+        resultPage: null,
+        resultPageIndex: 0,
+        resultPageToken: null,
+        resultPageTokens: [null],
+      });
+      setPendingDmlRiskConfirmation(null);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "DML 提交请求失败";
+      updateResultTab(sessionId, resultTabId, {
+        errorMessage,
+        execution: null,
+        isPending: false,
+        resultPage: null,
+        resultPageIndex: 0,
+        resultPageToken: null,
+        resultPageTokens: [null],
+      });
+      updateSession(sessionId, {
+        errorMessage,
+        assistant: null,
+        assistantErrorMessage: null,
+      });
+      setPendingDmlRiskConfirmation(null);
+    } finally {
+      setIsDmlRiskCommitPending(false);
+    }
+  }
+
+  function cancelDmlRiskConfirmation() {
+    if (!pendingDmlRiskConfirmation || isDmlRiskCommitPending) {
+      return;
+    }
+    updateResultTab(
+      pendingDmlRiskConfirmation.sessionId,
+      pendingDmlRiskConfirmation.resultTabId,
       {
-        onSuccess: (execution) => {
-          updateSession(sessionId, {
-            execution,
-            resultPage: null,
-            resultPageIndex: 0,
-            resultPageToken: null,
-            resultPageTokens: [null],
-            errorMessage: execution.errorMessage ?? null,
-          });
-          maybeRequestExecutionErrorAnalysis({
-            connection,
-            execution,
-            limits: request.limits,
-            schema,
-            sessionId,
-            sql,
-          });
-        },
-        onError: (error) => {
-          const errorMessage = error instanceof Error ? error.message : "SELECT 执行请求失败";
-          updateSession(sessionId, {
-            execution: null,
-            resultPage: null,
-            resultPageIndex: 0,
-            resultPageToken: null,
-            resultPageTokens: [null],
-            errorMessage,
-            assistant: null,
-            assistantErrorMessage: null,
-          });
-          if (shouldFetchValidationDiagnostics(error)) {
-            validateMutation.mutate(
-              {
-                ...request,
-                idempotencyKey: createSqlIdempotencyKey("RUN_READ_ONLY_DIAGNOSTIC"),
-              },
-              {
-                onSuccess: (report) => {
-                  const diagnosticMessage = buildReadOnlyValidationDiagnosticMessage(report);
-                  updateSession(sessionId, {
-                    validation: report,
-                    execution: null,
-                    resultPage: null,
-                    resultPageIndex: 0,
-                    resultPageToken: null,
-                    resultPageTokens: [null],
-                    errorMessage: diagnosticMessage,
-                    assistant: null,
-                    assistantErrorMessage: null,
-                  });
-                  maybeRequestSyntaxErrorAnalysis({
-                    connection,
-                    errorMessage: diagnosticMessage,
-                    limits: request.limits,
-                    report,
-                    schema,
-                    sessionId,
-                    sql,
-                  });
-                },
-                onError: (validationError) => {
-                  const validationErrorMessage =
-                    validationError instanceof Error
-                      ? validationError.message
-                      : "服务端校验报告补充失败";
-                  updateSession(sessionId, {
-                    errorMessage: `${errorMessage}\nvalidationDiagnosticError=${validationErrorMessage}`,
-                  });
-                },
-              },
-            );
-          }
-        },
+        errorMessage: "DML 提交已取消，未向服务端提交执行请求。",
+        execution: null,
+        isPending: false,
       },
     );
+    setPendingDmlRiskConfirmation(null);
   }
 
   /**
@@ -948,13 +1161,13 @@ export function SqlWorkbenchPage() {
   }
 
   function readNextResultPage() {
-    if (!currentResultPage?.nextCursor) {
+    if (!activeResultTab || !currentResultPage?.nextCursor) {
       return;
     }
-    const nextIndex = activeSession.resultPageIndex + 1;
-    const nextTokens = [...activeSession.resultPageTokens];
+    const nextIndex = activeResultTab.resultPageIndex + 1;
+    const nextTokens = [...activeResultTab.resultPageTokens];
     nextTokens[nextIndex] = currentResultPage.nextCursor;
-    updateSession(activeSession.id, {
+    updateResultTab(activeSession.id, activeResultTab.id, {
       resultPageIndex: nextIndex,
       resultPageToken: currentResultPage.nextCursor,
       resultPageTokens: nextTokens,
@@ -962,14 +1175,28 @@ export function SqlWorkbenchPage() {
   }
 
   function readPreviousResultPage() {
-    if (activeSession.resultPageIndex <= 0) {
+    if (!activeResultTab || activeResultTab.resultPageIndex <= 0) {
       return;
     }
-    const previousIndex = activeSession.resultPageIndex - 1;
-    updateSession(activeSession.id, {
+    const previousIndex = activeResultTab.resultPageIndex - 1;
+    updateResultTab(activeSession.id, activeResultTab.id, {
       resultPageIndex: previousIndex,
-      resultPageToken: activeSession.resultPageTokens[previousIndex] ?? null,
+      resultPageToken: activeResultTab.resultPageTokens[previousIndex] ?? null,
     });
+  }
+
+  /**
+   * @param {string} tabId
+   */
+  function selectResultTab(tabId) {
+    updateSession(activeSession.id, { activeResultTabId: tabId });
+  }
+
+  /**
+   * @param {SqlTransactionMode} transactionMode
+   */
+  function updateTransactionMode(transactionMode) {
+    updateSession(activeSession.id, { transactionMode });
   }
 
   /**
@@ -1116,7 +1343,7 @@ export function SqlWorkbenchPage() {
             className={styles.primaryButton}
             onClick={() => {
               const nextExpanded = !isWorkspaceExpanded;
-              setIsWorkspaceExpanded(nextExpanded);
+              setWorkspaceExpanded(nextExpanded);
               if (nextExpanded) {
                 setIsObjectDrawerOpen(false);
               }
@@ -1128,7 +1355,7 @@ export function SqlWorkbenchPage() {
             ) : (
               <Maximize2 aria-hidden="true" size={15} />
             )}
-            {isWorkspaceExpanded ? "退出展开" : "展开工作区"}
+            {isWorkspaceExpanded ? "退出 SQL 展开" : "展开 SQL 工作区"}
           </button>
         </div>
       </section>
@@ -1143,6 +1370,9 @@ export function SqlWorkbenchPage() {
             activeConnection={activeConnection}
             activeSchema={activeSchema}
             connections={connections}
+            metadata={metadataQuery.data ?? null}
+            metadataError={metadataQuery.error instanceof Error ? metadataQuery.error.message : null}
+            metadataPending={metadataQuery.isLoading || metadataQuery.isFetching}
             onClose={() => setIsObjectDrawerOpen(false)}
             onSelectConnection={selectConnection}
             onSelectSchema={selectSchema}
@@ -1166,12 +1396,9 @@ export function SqlWorkbenchPage() {
 
           <SqlEditorPanel
             activeSchema={activeSchema}
-            canExecuteSelect={canExecuteSelect}
-            canPreflightDml={canPreflightDml}
+            canCommitDmlStatement={canCommitDmlStatement}
             canRunSqlStatement={canRunSqlStatement}
-            canValidate={canValidate}
             comparePending={compareMutation.isPending}
-            hasMultipleSqlStatements={hasMultipleSqlStatements}
             naturalLanguagePending={assistantMutation.isPending}
             onExportSql={exportSqlFile}
             onGenerateNaturalLanguageSql={generateNaturalLanguageSql}
@@ -1179,13 +1406,12 @@ export function SqlWorkbenchPage() {
             onNaturalLanguageChange={updateNaturalLanguageState}
             onCompareChange={updateCompareState}
             onModeChange={updateSessionMode}
+            onCommitDml={commitControlledDml}
             onRunCompare={runCompare}
-            onRunSelect={runSelect}
             onRunStatement={runReadOnlySql}
             onSqlChange={updateSql}
-            onValidate={submitValidation}
+            onTransactionModeChange={updateTransactionMode}
             session={activeSession}
-            validatePending={validateMutation.isPending}
           />
 
           <div
@@ -1209,9 +1435,9 @@ export function SqlWorkbenchPage() {
             assistantErrorMessage={activeSession.assistantErrorMessage}
             assistantPending={assistantMutation.isPending}
             canUseAssistant={canUseAssistant}
-            errorMessage={activeSession.errorMessage}
-            execution={activeSession.execution}
-            isLoading={runMutation.isPending || resultPageQuery.isFetching}
+            errorMessage={currentResultError}
+            execution={currentExecution}
+            isLoading={Boolean(activeResultTab?.isPending) || resultPageQuery.isFetching}
             naturalLanguage={activeSession.naturalLanguage}
             naturalLanguagePending={assistantMutation.isPending}
             onApplyAssistantSuggestion={updateSql}
@@ -1219,8 +1445,11 @@ export function SqlWorkbenchPage() {
             onNextPage={() => readNextResultPage()}
             onPreviousPage={() => readPreviousResultPage()}
             onRequestAssistant={requestAssistant}
-            pageIndex={activeSession.resultPageIndex}
+            onSelectResultTab={selectResultTab}
+            pageIndex={activeResultTab?.resultPageIndex ?? activeSession.resultPageIndex}
             resultPage={currentResultPage}
+            resultTabs={activeSession.resultTabs}
+            selectedResultTabId={activeResultTabId}
             sessionMode={activeSession.mode}
             showInlineAssistant={isWorkspaceExpanded}
           />
@@ -1232,8 +1461,8 @@ export function SqlWorkbenchPage() {
             assistantErrorMessage={activeSession.assistantErrorMessage}
             assistantPending={assistantMutation.isPending}
             canUseAssistant={canUseAssistant}
-            error={validateMutation.error ?? (activeSession.validation ? null : runMutation.error)}
-            execution={activeSession.execution}
+            error={validationPanelError}
+            execution={currentExecution}
             isPending={validateMutation.isPending}
             onApplyAssistantSuggestion={updateSql}
             onRequestAssistant={requestAssistant}
@@ -1273,6 +1502,13 @@ export function SqlWorkbenchPage() {
         open={isConnectionDialogOpen}
         updatePending={updateConnectionMutation.isPending}
       />
+      <DmlRiskConfirmationDialog
+        isPending={isDmlRiskCommitPending}
+        onCancel={cancelDmlRiskConfirmation}
+        onConfirm={confirmDmlRiskCommit}
+        open={Boolean(pendingDmlRiskConfirmation)}
+        report={pendingDmlRiskConfirmation?.report ?? null}
+      />
     </SqlWorkbenchFrame>
   );
 }
@@ -1296,6 +1532,9 @@ function SqlWorkbenchFrame({ children, expanded = false }) {
  *   activeConnection: SqlConnectionSummary,
  *   activeSchema: string,
  *   connections: SqlConnectionSummary[],
+ *   metadata: SqlMetadataResponse | null,
+ *   metadataError: string | null,
+ *   metadataPending: boolean,
  *   onClose: () => void,
  *   onSelectConnection: (connectionId: string) => void,
  *   onSelectSchema: (schema: string) => void,
@@ -1305,6 +1544,9 @@ function ObjectBrowser({
   activeConnection,
   activeSchema,
   connections,
+  metadata,
+  metadataError,
+  metadataPending,
   onClose,
   onSelectConnection,
   onSelectSchema,
@@ -1349,13 +1591,153 @@ function ObjectBrowser({
             {schema}
           </button>
         ))}
-        <span>Tables</span>
-        <strong>对象目录尚未接入真实元数据</strong>
-        <span>Columns</span>
-        <strong>完成对象目录接口后展示真实字段</strong>
+        <span>Objects</span>
+        <MetadataObjects
+          activeSchema={activeSchema}
+          error={metadataError}
+          key={`${activeConnection.connectionId}:${activeSchema}:${metadata?.refreshedAt ?? ""}`}
+          metadata={metadata}
+          pending={metadataPending}
+        />
       </div>
     </aside>
   );
+}
+
+/**
+ * @param {{
+ *   activeSchema: string,
+ *   error: string | null,
+ *   metadata: SqlMetadataResponse | null,
+ *   pending: boolean,
+ * }} props
+ */
+function MetadataObjects({ activeSchema, error, metadata, pending }) {
+  const objects = metadata?.objects ?? [];
+  const [visibleObjectCount, setVisibleObjectCount] = useState(METADATA_OBJECT_PAGE_SIZE);
+  const [expandedObjectKeys, setExpandedObjectKeys] = useState(() => new Set());
+  const visibleObjects = objects.slice(0, Math.min(visibleObjectCount, objects.length));
+
+  /**
+   * @param {import("react").UIEvent<HTMLDivElement>} event
+   */
+  function handleMetadataScroll(event) {
+    if (visibleObjectCount >= objects.length) {
+      return;
+    }
+    const element = event.currentTarget;
+    const distanceToBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
+    if (distanceToBottom <= METADATA_SCROLL_LOAD_OFFSET) {
+      setVisibleObjectCount((current) => Math.min(objects.length, current + METADATA_OBJECT_PAGE_SIZE));
+    }
+  }
+
+  /**
+   * @param {string} objectKey
+   */
+  function toggleObject(objectKey) {
+    setExpandedObjectKeys((current) => {
+      const next = new Set(current);
+      if (next.has(objectKey)) {
+        next.delete(objectKey);
+      } else {
+        next.add(objectKey);
+      }
+      return next;
+    });
+  }
+  if (pending) {
+    return <div className={styles.metadataState}>正在读取元数据</div>;
+  }
+  if (error) {
+    return <div className={styles.metadataState}>元数据读取失败</div>;
+  }
+  if (!metadata || objects.length === 0) {
+    return <div className={styles.metadataState}>当前 Schema 暂无可展示对象</div>;
+  }
+
+  return (
+    <div
+      aria-label="Database metadata objects"
+      className={styles.metadataList}
+      onScroll={handleMetadataScroll}
+      role="list"
+    >
+      {visibleObjects.map((object) => {
+        const objectKey = `${object.schema}.${object.name}`;
+        const isExpanded = expandedObjectKeys.has(objectKey);
+        return (
+          <section className={styles.metadataObject} key={objectKey} role="listitem">
+            <button
+              aria-expanded={isExpanded}
+              aria-label={`${object.name} ${object.type}`}
+              className={styles.metadataObjectHeader}
+              onClick={() => toggleObject(objectKey)}
+              type="button"
+            >
+              <ChevronRight
+                aria-hidden="true"
+                className={`${styles.metadataChevron} ${isExpanded ? styles.metadataChevronOpen : ""}`}
+                size={14}
+              />
+              <strong>{object.name}</strong>
+              <span
+                aria-hidden="true"
+                className={styles.metadataObjectTypeIcon}
+                title={object.type}
+              >
+                <MetadataObjectTypeIcon objectType={object.type} />
+              </span>
+            </button>
+            {isExpanded ? (
+              <>
+          <div aria-label={`${object.name} 字段`} className={styles.metadataColumns}>
+            {object.columns.map((column) => (
+              <div className={styles.metadataColumn} key={`${object.name}.${column.name}`}>
+                <strong>{column.name}</strong>
+                <span>
+                  {column.type}
+                  {column.nullable ? " · 可空" : " · 必填"}
+                </span>
+              </div>
+            ))}
+          </div>
+          {object.indexes.length > 0 ? (
+            <div className={styles.metadataIndexes}>
+              <span>Indexes</span>
+              {object.indexes.map((index) => (
+                <strong key={`${object.name}.${index.name}`}>
+                  {index.name}
+                  {index.unique ? " · unique" : ""}
+                </strong>
+              ))}
+            </div>
+          ) : null}
+              </>
+            ) : null}
+          </section>
+        );
+      })}
+      {visibleObjects.length < objects.length ? (
+        <div className={styles.metadataState}>
+          已显示 {visibleObjects.length} / {objects.length}，继续滚动加载
+        </div>
+      ) : null}
+      {metadata.truncated ? (
+        <div className={styles.metadataState}>{activeSchema} 对象较多，已截断显示</div>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * @param {{objectType: string}} props
+ */
+function MetadataObjectTypeIcon({ objectType }) {
+  if (objectType === "TABLE") {
+    return <Table2 size={14} strokeWidth={2.4} />;
+  }
+  return <Database size={14} strokeWidth={2.4} />;
 }
 
 /**
@@ -1481,9 +1863,6 @@ function AiSqlAssistantPanel({
           <span>{errorMessage}</span>
         </div>
       ) : null}
-      {!assistant && !errorMessage && !isPending ? (
-        <p>助手只生成解释、优化和错误分析建议；建议应用后必须重新校验。</p>
-      ) : null}
       {assistant ? (
         <div className={styles.aiResponse}>
           <strong>{assistant.status}</strong>
@@ -1570,7 +1949,6 @@ function ValidationReport({ error, isPending, report }) {
     return (
       <section className={styles.validationPanel}>
         <PanelHeading detail="选择校验动作后展示服务端报告" icon={FileSearch} title="服务端校验" />
-        <p>服务端 AST、对象引用、风险和拒绝原因会显示在这里。</p>
       </section>
     );
   }
@@ -1604,8 +1982,6 @@ function ExecutionFacts({ execution }) {
         <ReportItem label="执行请求" value={execution?.executionRequestId ?? "pending"} />
         <ReportItem label="workflow" value={execution?.workflowId ?? "pending"} />
         <ReportItem label="resultId" value={execution?.resultId ?? "无"} />
-        <ReportItem label="错误码" value={execution?.errorCode ?? "无"} />
-        <ReportItem label="错误信息" value={execution?.errorMessage ?? "无"} />
       </div>
     </section>
   );
@@ -1627,8 +2003,11 @@ function ExecutionFacts({ execution }) {
  *   onNextPage: () => void,
  *   onPreviousPage: () => void,
  *   onRequestAssistant: (action: SqlAssistantAction) => void,
+ *   onSelectResultTab: (tabId: string) => void,
  *   pageIndex: number,
  *   resultPage: SqlResultPage | null | undefined,
+ *   resultTabs: SqlResultTab[],
+ *   selectedResultTabId: string | null,
  *   sessionMode: SqlSessionMode,
  *   showInlineAssistant: boolean,
  * }} props
@@ -1648,8 +2027,11 @@ function ResultPanel({
   onNextPage,
   onPreviousPage,
   onRequestAssistant,
+  onSelectResultTab,
   pageIndex,
   resultPage,
+  resultTabs,
+  selectedResultTabId,
   sessionMode,
   showInlineAssistant,
 }) {
@@ -1688,6 +2070,22 @@ function ResultPanel({
         icon={FileSearch}
         title="查询结果"
       />
+      {resultTabs.length > 0 ? (
+        <div aria-label="SQL 执行结果" className={styles.resultTabs} role="tablist">
+          {resultTabs.map((tab) => (
+            <button
+              aria-selected={tab.id === selectedResultTabId}
+              className={tab.id === selectedResultTabId ? styles.activeResultTab : ""}
+              key={tab.id}
+              onClick={() => onSelectResultTab(tab.id)}
+              role="tab"
+              type="button"
+            >
+              {tab.label} · {formatResultTabStatus(tab)}
+            </button>
+          ))}
+        </div>
+      ) : null}
       {isLoading ? <QueryLoadingStatus execution={execution} /> : null}
       {visibleErrorMessage ? <ErrorSummary message={visibleErrorMessage} /> : null}
       {resultPage && columns.length > 0 ? (
@@ -1725,7 +2123,17 @@ function ResultPanel({
           </div>
         </>
       ) : null}
-      {execution?.status === "SUCCEEDED" && !resultPage && !isLoading ? (
+      {execution?.status === "SUCCEEDED" &&
+      !resultPage &&
+      !isLoading &&
+      execution.affectedRows !== undefined &&
+      execution.affectedRows !== null ? (
+        <p>{`DML 提交完成，影响 ${execution.affectedRows} 行。`}</p>
+      ) : null}
+      {execution?.status === "SUCCEEDED" &&
+      !resultPage &&
+      !isLoading &&
+      (execution.affectedRows === undefined || execution.affectedRows === null) ? (
         <p>执行完成，等待结果页返回。</p>
       ) : null}
       {showInlineAssistant ? (
@@ -1739,6 +2147,84 @@ function ResultPanel({
         />
       ) : null}
     </section>
+  );
+}
+
+/**
+ * @param {{
+ *   isPending: boolean,
+ *   onCancel: () => void,
+ *   onConfirm: () => void,
+ *   open: boolean,
+ *   report: SqlValidationReport | null,
+ * }} props
+ */
+function DmlRiskConfirmationDialog({
+  isPending,
+  onCancel,
+  onConfirm,
+  open,
+  report,
+}) {
+  return (
+    <Dialog
+      closeLabel="关闭 DML 风险确认"
+      description="无 WHERE 条件的 UPDATE 或 DELETE 会影响更大范围，必须二次确认。"
+      icon={<AlertTriangle aria-hidden="true" size={18} strokeWidth={2.35} />}
+      onClose={isPending ? () => {} : onCancel}
+      open={open && Boolean(report)}
+      size="compact"
+      title="确认 DML 风险"
+    >
+      {report ? (
+        <div className={styles.dmlRiskDialog}>
+          <p className={styles.dmlRiskLead}>
+            当前 DML 已通过服务端受控校验，但包含高风险项。确认后控制面会携带确认码提交给受限 Worker 执行短事务。
+          </p>
+          <dl className={styles.dmlRiskFacts}>
+            <div>
+              <dt>风险</dt>
+              <dd className={styles.dmlRiskTags}>
+                {report.risks.map((risk) => (
+                  <strong key={risk}>{risk}</strong>
+                ))}
+              </dd>
+            </div>
+            <div>
+              <dt>对象</dt>
+              <dd>{formatValues(report.referencedObjects)}</dd>
+            </div>
+            <div>
+              <dt>SQL Hash</dt>
+              <dd>{report.sqlHash}</dd>
+            </div>
+          </dl>
+          {report.unverifiedItems.length > 0 ? (
+            <p className={styles.dmlRiskNote}>
+              未验证项：{formatValues(report.unverifiedItems)}
+            </p>
+          ) : null}
+          <div className={styles.dmlRiskActions}>
+            <button
+              className={styles.secondaryButton}
+              disabled={isPending}
+              onClick={onCancel}
+              type="button"
+            >
+              取消
+            </button>
+            <button
+              className={styles.dangerButton}
+              disabled={isPending}
+              onClick={onConfirm}
+              type="button"
+            >
+              {isPending ? "提交中" : "确认提交"}
+            </button>
+          </div>
+        </div>
+      ) : null}
+    </Dialog>
   );
 }
 
@@ -1966,8 +2452,10 @@ function ConnectionManagerDialog({
                   onChange={(event) => updateField("targetEnvironment", event.target.value)}
                   value={form.targetEnvironment}
                 >
-                  <option value="development">development</option>
-                  <option value="test">test</option>
+                  <option value="dev">dev</option>
+                  <option value="sit">sit</option>
+                  <option value="uat">uat</option>
+                  <option value="production">production</option>
                 </select>
               </label>
               <label>
@@ -2056,7 +2544,12 @@ function ConnectionManagerDialog({
                 <span>capabilities</span>
                 <strong>VALIDATE</strong>
                 <strong>RUN_READ_ONLY</strong>
-                <strong>PREFLIGHT_DML</strong>
+                {form.targetEnvironment === "production" ? null : (
+                  <>
+                    <strong>PREFLIGHT_DML</strong>
+                    <strong>COMMIT_DML</strong>
+                  </>
+                )}
               </div>
             </div>
           </section>
@@ -2307,7 +2800,7 @@ function connectionToForm(connection) {
     ];
   return {
     displayName: connection.displayName,
-    targetEnvironment: connection.targetEnvironment,
+    targetEnvironment: normalizeSqlTargetEnvironment(connection.targetEnvironment),
     platformType: connection.platformType,
     host: connection.host ?? platformDefaults?.host ?? "",
     port: String(connection.port ?? platformDefaults?.port ?? ""),
@@ -2326,16 +2819,24 @@ function connectionToForm(connection) {
  * @returns {import("../../schemas/sql-schemas.js").SqlConnectionCreateRequest}
  */
 function buildConnectionRequest(form) {
+  /** @type {import("../../schemas/sql-schemas.js").SqlConnectionCreateRequest["capabilities"]} */
+  const capabilities =
+    form.targetEnvironment === "production"
+      ? ["VALIDATE", "RUN_READ_ONLY"]
+      : ["VALIDATE", "RUN_READ_ONLY", "PREFLIGHT_DML", "COMMIT_DML"];
   return {
     contractVersion: "1.0",
     displayName: form.displayName.trim(),
-    targetEnvironment: /** @type {"development" | "test"} */ (form.targetEnvironment),
+    targetEnvironment:
+      /** @type {"dev" | "sit" | "uat" | "production" | "development" | "test"} */ (
+        form.targetEnvironment
+      ),
     platformType: /** @type {"DB2_FOR_I" | "H2" | "MYSQL"} */ (form.platformType),
     host: form.host.trim(),
     port: Number(form.port),
     defaultSchema: form.defaultSchema.trim(),
     allowedSchemas: splitCsv(form.allowedSchemas),
-    capabilities: ["VALIDATE", "RUN_READ_ONLY", "PREFLIGHT_DML"],
+    capabilities,
     credentialAlias: form.credentialAlias.trim(),
     maxRowsDefault: Number(form.maxRowsDefault),
     timeoutSecondsDefault: Number(form.timeoutSecondsDefault),
@@ -2387,6 +2888,7 @@ function mergeConnections(baseConnections, overrides, deletedConnectionIds) {
  */
 function buildConnectionSessionPatch(connection, fallbackSchema, fallbackConnectionId) {
   return {
+    activeResultTabId: null,
     connectionId: connection?.connectionId ?? fallbackConnectionId,
     schema:
       connection?.defaultSchema ??
@@ -2398,6 +2900,8 @@ function buildConnectionSessionPatch(connection, fallbackSchema, fallbackConnect
     resultPageIndex: 0,
     resultPageToken: null,
     resultPageTokens: [null],
+    resultTabs: [],
+    transactionMode: "auto",
     errorMessage: null,
     assistant: null,
     assistantErrorMessage: null,
@@ -2413,6 +2917,7 @@ function createSession(index, sql) {
   return {
     assistant: null,
     assistantErrorMessage: null,
+    activeResultTabId: null,
     compare: createCompareState(),
     connectionId: "",
     errorMessage: null,
@@ -2425,10 +2930,58 @@ function createSession(index, sql) {
     resultPageIndex: 0,
     resultPageToken: null,
     resultPageTokens: [null],
+    resultTabs: [],
     schema: "",
     sql,
+    transactionMode: "auto",
     validation: null,
   };
+}
+
+/**
+ * @param {number} index
+ * @param {string} sql
+ * @returns {SqlResultTab}
+ */
+function createResultTab(index, sql) {
+  sqlResultTabCounter += 1;
+  return {
+    errorMessage: null,
+    execution: null,
+    id: `sql-result-tab-${Date.now()}-${sqlResultTabCounter}`,
+    isPending: true,
+    label: `结果 ${index}`,
+    resultPage: null,
+    resultPageIndex: 0,
+    resultPageToken: null,
+    resultPageTokens: [null],
+    sql,
+  };
+}
+
+/**
+ * @param {SqlWorkbenchSession} session
+ * @returns {SqlResultTab | null}
+ */
+function resolveActiveResultTab(session) {
+  return (
+    session.resultTabs.find((tab) => tab.id === session.activeResultTabId) ??
+    session.resultTabs.at(-1) ??
+    null
+  );
+}
+
+/**
+ * @param {SqlResultTab} tab
+ */
+function formatResultTabStatus(tab) {
+  if (tab.isPending) {
+    return "执行中";
+  }
+  if (tab.execution?.status) {
+    return tab.execution.status;
+  }
+  return tab.errorMessage ? "失败" : "等待";
 }
 
 /**
@@ -2458,7 +3011,7 @@ function buildLimits(connection) {
 /**
  * @param {SqlConnectionSummary} connection
  * @param {string} schema
- * @param {"VALIDATE" | "PREFLIGHT_DML" | "RUN_READ_ONLY"} action
+ * @param {"VALIDATE" | "PREFLIGHT_DML" | "RUN_READ_ONLY" | "COMMIT_DML"} action
  * @param {string} sql
  * @param {string} idempotencyAction
  */
@@ -2532,6 +3085,33 @@ function buildReadOnlyValidationDiagnosticMessage(report) {
     `sqlHash=${report.sqlHash}`,
     "nextStep=先修正 SQL 语法或点击校验查看完整报告；AI SQL 助手只提供参考，不能授权执行。",
   ].join("\n");
+}
+
+/**
+ * @param {SqlValidationReport} report
+ */
+function buildDmlValidationDiagnosticMessage(report) {
+  return [
+    "DML 提交未通过服务端受控校验，未向 Worker 提交执行请求。",
+    `statementType=${report.statementType}`,
+    `validationLevel=${report.validationLevel}`,
+    `rejectionReasons=${formatValues(report.rejectionReasons)}`,
+    `risks=${formatValues(report.risks)}`,
+    `referencedObjects=${formatValues(report.referencedObjects)}`,
+    `sqlHash=${report.sqlHash}`,
+  ].join("\n");
+}
+
+/**
+ * @param {SqlValidationReport} report
+ */
+function buildDmlRiskConfirmation(report) {
+  return {
+    contractVersion: "1.0",
+    sqlHash: report.sqlHash,
+    confirmedRisks: report.risks,
+    confirmationCode: "CONFIRM_SQL_DML_RISK",
+  };
 }
 
 /**
@@ -2617,4 +3197,17 @@ function splitCsv(value) {
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+/**
+ * @param {string} targetEnvironment
+ */
+function normalizeSqlTargetEnvironment(targetEnvironment) {
+  if (targetEnvironment === "development") {
+    return "dev";
+  }
+  if (targetEnvironment === "test") {
+    return "sit";
+  }
+  return targetEnvironment;
 }

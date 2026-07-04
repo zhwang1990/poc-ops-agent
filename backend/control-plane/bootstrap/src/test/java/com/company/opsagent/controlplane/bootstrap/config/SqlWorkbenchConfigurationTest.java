@@ -27,14 +27,14 @@ class SqlWorkbenchConfigurationTest {
     SqlConnectionSummary connection = catalog.find("h2-local-test").orElseThrow();
 
     assertEquals("H2 Local Test", connection.displayName());
-    assertEquals("test", connection.targetEnvironment());
+    assertEquals("sit", connection.targetEnvironment());
     assertEquals("H2", connection.platformType());
     assertEquals("localhost", connection.host());
     assertEquals(9092, connection.port());
     assertEquals("PUBLIC", connection.defaultSchema());
     assertEquals(List.of("PUBLIC"), connection.allowedSchemas());
     assertEquals(
-        List.of(SqlQueryAction.VALIDATE, SqlQueryAction.RUN_READ_ONLY, SqlQueryAction.PREFLIGHT_DML),
+        List.of(SqlQueryAction.VALIDATE, SqlQueryAction.RUN_READ_ONLY, SqlQueryAction.PREFLIGHT_DML, SqlQueryAction.COMMIT_DML),
         connection.capabilities());
     assertEquals("h2-local-readonly", connection.credentialAlias());
     assertEquals("READY", connection.status());

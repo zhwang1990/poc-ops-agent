@@ -1,5 +1,6 @@
 package com.company.opsagent.executionworker.sqlworkbench;
 
+import com.company.opsagent.contracts.sqlworkbench.SqlTargetEnvironments;
 import java.util.Set;
 
 /**
@@ -40,10 +41,7 @@ public record WorkerSqlConnectionDescriptor(
 
   public WorkerSqlConnectionDescriptor {
     connectionId = requiredText(connectionId, "connectionId");
-    targetEnvironment = requiredText(targetEnvironment, "targetEnvironment").toLowerCase();
-    if (!"development".equals(targetEnvironment) && !"test".equals(targetEnvironment)) {
-      throw new IllegalArgumentException("targetEnvironment must be development or test");
-    }
+    targetEnvironment = SqlTargetEnvironments.normalize(targetEnvironment);
     platformType = requiredText(platformType, "platformType").toUpperCase();
     if (!SUPPORTED_PLATFORM_TYPES.contains(platformType)) {
       throw new IllegalArgumentException("platformType must be one of DB2_FOR_I, H2, MYSQL");

@@ -9,4 +9,8 @@ import com.company.opsagent.contracts.sqlworkbench.SqlQueryExecutionRequest;
 public interface SqlQueryExecutor {
 
   String execute(SqlQueryExecutionRequest request);
+
+  default int executeDml(SqlQueryExecutionRequest request) {
+    throw new UnsupportedOperationException("SQL DML execution is not configured");
+  }
 }

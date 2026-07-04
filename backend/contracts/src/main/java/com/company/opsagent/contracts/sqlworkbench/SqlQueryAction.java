@@ -7,5 +7,6 @@ public enum SqlQueryAction {
   VALIDATE,
   EXPLAIN,
   RUN_READ_ONLY,
-  PREFLIGHT_DML
+  PREFLIGHT_DML,
+  COMMIT_DML
 }

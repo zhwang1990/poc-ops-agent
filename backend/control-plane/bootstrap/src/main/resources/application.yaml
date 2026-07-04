@@ -88,11 +88,16 @@ ops-agent:
       internal.sql-workbench.connections.probe:
         - ROLE_ops-reader
         - ROLE_ops-admin
+      internal.sql-workbench.metadata.read:
+        - ROLE_ops-reader
+        - ROLE_ops-admin
       internal.sql-workbench.queries.validate:
         - ROLE_ops-reader
         - ROLE_ops-admin
       internal.sql-workbench.queries.run:
         - ROLE_ops-reader
+        - ROLE_ops-admin
+      internal.sql-workbench.dml.commit:
         - ROLE_ops-admin
       internal.sql-workbench.assistant.use:
         - ROLE_ops-reader

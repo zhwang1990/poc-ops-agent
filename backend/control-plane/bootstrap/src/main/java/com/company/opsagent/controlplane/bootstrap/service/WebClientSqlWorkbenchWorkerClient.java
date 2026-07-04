@@ -2,6 +2,7 @@ package com.company.opsagent.controlplane.bootstrap.service;
 
 import com.company.opsagent.contracts.sqlworkbench.SqlConnectionProbeResult;
 import com.company.opsagent.contracts.sqlworkbench.SqlConnectionSummary;
+import com.company.opsagent.contracts.sqlworkbench.SqlDatabaseMetadata;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryExecutionRequest;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryExecutionResult;
 import com.company.opsagent.contracts.sqlworkbench.SqlResultPage;
@@ -79,6 +80,22 @@ public class WebClientSqlWorkbenchWorkerClient implements SqlWorkbenchWorkerClie
         .block(DEFAULT_WORKER_CALL_TIMEOUT);
   }
 
+  @Override
+  public SqlDatabaseMetadata readMetadata(SqlConnectionSummary connection, String schema) {
+    return webClient.post()
+        .uri(uriBuilder -> uriBuilder
+            .path("/internal/executions/sql-query/connections/{connectionId}/metadata")
+            .queryParam("schema", schema)
+            .build(connection.connectionId()))
+        .headers(headers -> signSqlMetadataRead(headers, connection, schema))
+        .bodyValue(connection)
+        .retrieve()
+        .onStatus(HttpStatusCode::is4xxClientError, response -> sqlWorkerRejected(response.statusCode()))
+        .onStatus(HttpStatusCode::is5xxServerError, response -> sqlWorkerFailed())
+        .bodyToMono(SqlDatabaseMetadata.class)
+        .block(DEFAULT_WORKER_CALL_TIMEOUT);
+  }
+
   private void signSqlExecution(HttpHeaders headers, SqlQueryExecutionRequest request) {
     WorkerProperties.TransportAuth transportAuth = workerProperties.getTransportAuth();
     if (!transportAuth.isEnabled()) {
@@ -116,6 +133,20 @@ public class WebClientSqlWorkbenchWorkerClient implements SqlWorkbenchWorkerClie
     String keyId = requireText(transportAuth.getKeyId(), "worker transport key id");
     String sharedSecret = requireText(transportAuth.getSharedSecret(), "worker transport shared secret");
     String payload = WorkerRequestSignature.canonicalSqlResultReadPayload(keyId, timestamp, resultId);
+    headers.set(WorkerTransportHeaders.KEY_ID, keyId);
+    headers.set(WorkerTransportHeaders.TIMESTAMP, timestamp);
+    headers.set(WorkerTransportHeaders.SIGNATURE, WorkerRequestSignature.sign(sharedSecret, payload));
+  }
+
+  private void signSqlMetadataRead(HttpHeaders headers, SqlConnectionSummary connection, String schema) {
+    WorkerProperties.TransportAuth transportAuth = workerProperties.getTransportAuth();
+    if (!transportAuth.isEnabled()) {
+      return;
+    }
+    String timestamp = OffsetDateTime.now(clock).toString();
+    String keyId = requireText(transportAuth.getKeyId(), "worker transport key id");
+    String sharedSecret = requireText(transportAuth.getSharedSecret(), "worker transport shared secret");
+    String payload = WorkerRequestSignature.canonicalSqlMetadataPayload(keyId, timestamp, connection, schema);
     headers.set(WorkerTransportHeaders.KEY_ID, keyId);
     headers.set(WorkerTransportHeaders.TIMESTAMP, timestamp);
     headers.set(WorkerTransportHeaders.SIGNATURE, WorkerRequestSignature.sign(sharedSecret, payload));

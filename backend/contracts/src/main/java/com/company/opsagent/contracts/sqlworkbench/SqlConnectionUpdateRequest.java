@@ -27,14 +27,15 @@ public record SqlConnectionUpdateRequest(
   private static final Set<SqlQueryAction> P1_UPDATE_CAPABILITIES = EnumSet.of(
       SqlQueryAction.VALIDATE,
       SqlQueryAction.RUN_READ_ONLY,
-      SqlQueryAction.PREFLIGHT_DML);
+      SqlQueryAction.PREFLIGHT_DML,
+      SqlQueryAction.COMMIT_DML);
 
   public SqlConnectionUpdateRequest {
     if (!"1.0".equals(contractVersion)) {
       throw new IllegalArgumentException("contractVersion must be 1.0");
     }
     displayName = requiredText(displayName, "displayName");
-    targetEnvironment = normalizeEnvironment(targetEnvironment);
+    targetEnvironment = SqlTargetEnvironments.normalize(targetEnvironment);
     platformType = SqlPlatformTypes.normalize(platformType);
     host = validateHost(host);
     if (port < 1 || port > 65535) {
@@ -48,7 +49,11 @@ public record SqlConnectionUpdateRequest(
     }
     capabilities = requiredList(capabilities, "capabilities");
     if (!P1_UPDATE_CAPABILITIES.containsAll(capabilities)) {
-      throw new IllegalArgumentException("capabilities contain actions outside SQL workbench P1");
+      throw new IllegalArgumentException("capabilities contain actions outside SQL workbench");
+    }
+    if (SqlTargetEnvironments.isProduction(targetEnvironment)
+        && capabilities.stream().anyMatch(SqlConnectionUpdateRequest::isDmlCapability)) {
+      throw new IllegalArgumentException("production SQL connections only allow query capabilities");
     }
     credentialAlias = requiredText(credentialAlias, "credentialAlias");
     if (maxRowsDefault < 1 || maxRowsDefault > 10_000) {
@@ -59,12 +64,8 @@ public record SqlConnectionUpdateRequest(
     }
   }
 
-  private static String normalizeEnvironment(String targetEnvironment) {
-    String normalized = requiredText(targetEnvironment, "targetEnvironment").toLowerCase();
-    if (!"development".equals(normalized) && !"test".equals(normalized)) {
-      throw new IllegalArgumentException("targetEnvironment must be development or test");
-    }
-    return normalized;
+  private static boolean isDmlCapability(SqlQueryAction action) {
+    return action == SqlQueryAction.PREFLIGHT_DML || action == SqlQueryAction.COMMIT_DML;
   }
 
   private static String validateHost(String host) {

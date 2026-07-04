@@ -6,6 +6,8 @@ import com.company.opsagent.contracts.sqlworkbench.SqlConnectionProbeResult;
 import com.company.opsagent.contracts.sqlworkbench.SqlConnectionUpdateRequest;
 import com.company.opsagent.contracts.sqlworkbench.SqlAssistantRequest;
 import com.company.opsagent.contracts.sqlworkbench.SqlAssistantResponse;
+import com.company.opsagent.contracts.sqlworkbench.SqlDatabaseMetadata;
+import com.company.opsagent.contracts.sqlworkbench.SqlDmlCommitRequest;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryExecutionResult;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryRequest;
 import com.company.opsagent.contracts.sqlworkbench.SqlResultPage;
@@ -40,5 +42,13 @@ public interface SqlWorkbenchService {
       PolicyDecisionReference policyDecision,
       TraceContext trace);
 
+  SqlQueryExecutionResult commitControlledDml(
+      SqlDmlCommitRequest request,
+      OperatorContext operator,
+      PolicyDecisionReference policyDecision,
+      TraceContext trace);
+
   SqlResultPage readResultPage(String resultId);
+
+  SqlDatabaseMetadata readMetadata(String connectionId, String schema);
 }

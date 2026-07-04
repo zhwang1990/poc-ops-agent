@@ -89,32 +89,26 @@ test("发布中心页面在桌面视口中展示非生产发布配置", async ({
   await attachVisualEvidence(page, testInfo, "release");
 });
 
-test("SQL 工作台执行受控 SELECT 且 DML 只进入预检", async ({ page }) => {
+test("SQL 工作台通过行级按钮执行受控 SELECT 且隐藏顶部校验执行入口", async ({ page }) => {
   await page.goto("/sql");
 
   await expect(page.getByRole("heading", { name: "SQL 工作台" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "执行 SELECT" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "校验" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "执行 SELECT" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "DML 预检" })).toHaveCount(0);
+
   await page.getByLabel("SQL 文本").fill("SELECT order_id, status FROM ORDERS.ORDERS");
+  await expect(page.getByRole("button", { name: "执行此 SQL" })).toBeEnabled();
 
-  await page.getByRole("button", { name: "校验" }).click();
-
-  await expect(page.getByText("VALIDATED")).toBeVisible();
-  await expect(page.getByText("sha256:readonly").first()).toBeVisible();
-  await expect(page.getByRole("button", { name: "执行 SELECT" })).toBeEnabled();
-
-  await page.getByRole("button", { name: "执行 SELECT" }).click();
+  await page.getByRole("button", { name: "执行此 SQL" }).click();
   await expect(page.getByText("OD-10500")).toBeVisible();
   await expect(page.getByText("result-001").first()).toBeVisible();
 
   await page.getByLabel("SQL 文本").fill("UPDATE ORDERS.ORDERS SET status = 'X'");
-  await page.getByRole("button", { name: "DML 预检" }).click();
-
-  await expect(page.getByText("REJECTED")).toBeVisible();
-  await expect(page.getByText("DML execution is not allowed in P1")).toBeVisible();
-  await expect(page.getByRole("button", { name: "执行 SELECT" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "执行此 SQL" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "分析错误" })).toBeEnabled();
-  await expect(page.getByRole("button", { name: "校验" })).toBeEnabled();
-  await expect(page.getByRole("button", { name: "DML 预检" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "校验" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "DML 预检" })).toHaveCount(0);
 });
 
 /**
@@ -178,7 +172,7 @@ async function mockConsoleApi(page) {
           status: "READY",
           defaultSchema: "ORDERS",
           allowedSchemas: ["ORDERS"],
-          capabilities: ["VALIDATE", "RUN_READ_ONLY", "PREFLIGHT_DML"],
+          capabilities: ["VALIDATE", "RUN_READ_ONLY", "PREFLIGHT_DML", "COMMIT_DML"],
           maxRowsDefault: 500,
           timeoutSecondsDefault: 30,
         },
@@ -191,7 +185,7 @@ async function mockConsoleApi(page) {
           status: "READY",
           defaultSchema: "ORDERS",
           allowedSchemas: ["ORDERS"],
-          capabilities: ["VALIDATE", "RUN_READ_ONLY", "PREFLIGHT_DML"],
+          capabilities: ["VALIDATE", "RUN_READ_ONLY", "PREFLIGHT_DML", "COMMIT_DML"],
           maxRowsDefault: 500,
           timeoutSecondsDefault: 30,
         },

@@ -47,7 +47,7 @@
 ### P2
 
 - 定义：`P2` 是当前项目阶段，目标是交付“受控变更试点”。
-- 场景：判断某个需求是否应该现在做时，先看它是否属于非生产、低风险、可回滚的受控变更，例如 SQL 工作台开发环境受控 CRUD 或发布中心非生产 WAR 发布、启停、回滚和只读日志分析。
+- 场景：判断某个需求是否应该现在做时，先看它是否属于非生产、低风险、可回滚的受控变更，例如 SQL 工作台 `dev`、`sit`、`uat` 受控 CRUD 或发布中心非生产 WAR 发布、启停、回滚和只读日志分析。
 - 常见边界或误区：P2 不是“开放写操作”。所有副作用动作仍必须经过服务端策略、审批或二次确认、持久化工作流、幂等、审计、Worker 隔离、失败恢复和回滚设计；生产写执行和任意脚本执行仍禁止。
 - 相关位置：`AGENTS.md`、`docs/planning/project-plan.md`、`docs/adr/0009-sql-workbench-controlled-development-crud.md`、`docs/adr/0010-release-center-non-production-controlled-change.md`
 

@@ -58,10 +58,12 @@ public class CalciteSqlValidationService implements SqlValidationService {
       }
     } else {
       if (request.action() == SqlQueryAction.RUN_READ_ONLY || request.action() == SqlQueryAction.EXPLAIN) {
-        rejectionReasons.add("DML execution is prohibited in P1");
+        rejectionReasons.add("DML execution is prohibited for read-only actions");
       }
-      if (request.action() != SqlQueryAction.PREFLIGHT_DML && request.action() != SqlQueryAction.VALIDATE) {
-        rejectionReasons.add("DML is only accepted for validation or preflight");
+      if (request.action() != SqlQueryAction.PREFLIGHT_DML
+          && request.action() != SqlQueryAction.COMMIT_DML
+          && request.action() != SqlQueryAction.VALIDATE) {
+        rejectionReasons.add("DML is only accepted for validation, preflight, or controlled commit");
       }
       inspectDml(statement, statementType, risks, unverifiedItems);
     }

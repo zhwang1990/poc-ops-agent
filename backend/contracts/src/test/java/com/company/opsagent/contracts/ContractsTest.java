@@ -21,6 +21,10 @@ import com.company.opsagent.contracts.sqlworkbench.SqlAssistantResponse;
 import com.company.opsagent.contracts.sqlworkbench.SqlAssistantStatus;
 import com.company.opsagent.contracts.sqlworkbench.SqlAssistantSuggestion;
 import com.company.opsagent.contracts.sqlworkbench.SqlConnectionCreateRequest;
+import com.company.opsagent.contracts.sqlworkbench.SqlDatabaseMetadata;
+import com.company.opsagent.contracts.sqlworkbench.SqlMetadataColumn;
+import com.company.opsagent.contracts.sqlworkbench.SqlMetadataIndex;
+import com.company.opsagent.contracts.sqlworkbench.SqlMetadataObject;
 import com.company.opsagent.contracts.sqlworkbench.SqlConnectionUpdateRequest;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryAction;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryLimits;
@@ -177,14 +181,30 @@ class ContractsTest {
   }
 
   @Test
-  void rejectsProductionSqlWorkbenchRequests() {
-    assertThrows(IllegalArgumentException.class, () -> new SqlQueryRequest(
+  void acceptsProductionSqlWorkbenchReadOnlyRequests() {
+    SqlQueryRequest request = new SqlQueryRequest(
         "1.0",
         "as400-production",
         "production",
         "ORDERS",
         SqlQueryAction.RUN_READ_ONLY,
         "select * from orders",
+        List.of(),
+        new SqlQueryLimits(100, 1_000_000, 30),
+        "sql-query-1");
+
+    assertEquals("production", request.targetEnvironment());
+  }
+
+  @Test
+  void rejectsProductionSqlWorkbenchDmlRequests() {
+    assertThrows(IllegalArgumentException.class, () -> new SqlQueryRequest(
+        "1.0",
+        "as400-production",
+        "production",
+        "ORDERS",
+        SqlQueryAction.COMMIT_DML,
+        "update orders set status = 'READY' where order_id = 1",
         List.of(),
         new SqlQueryLimits(100, 1_000_000, 30),
         "sql-query-1"));
@@ -222,7 +242,9 @@ class ContractsTest {
     assertThrows(IllegalArgumentException.class, () -> connectionCreateRequest(
         "production",
         "as400-prod-readonly",
-        List.of("ORDERS")));
+        List.of("ORDERS"),
+        "DB2_FOR_I",
+        List.of(SqlQueryAction.VALIDATE, SqlQueryAction.RUN_READ_ONLY, SqlQueryAction.COMMIT_DML)));
     assertThrows(IllegalArgumentException.class, () -> connectionCreateRequest(
         "development",
         " ",
@@ -231,6 +253,31 @@ class ContractsTest {
         "development",
         "as400-dev-readonly",
         List.of()));
+  }
+
+  @Test
+  void productionSqlConnectionsOnlyExposeQueryCapabilities() {
+    SqlConnectionCreateRequest request = connectionCreateRequest(
+        "production",
+        "as400-prod-readonly",
+        List.of("ORDERS"),
+        "DB2_FOR_I",
+        List.of(SqlQueryAction.VALIDATE, SqlQueryAction.RUN_READ_ONLY));
+
+    assertEquals("production", request.targetEnvironment());
+    assertEquals(List.of(SqlQueryAction.VALIDATE, SqlQueryAction.RUN_READ_ONLY), request.capabilities());
+  }
+
+  @Test
+  void normalizesLegacySqlWorkbenchEnvironments() {
+    assertEquals("dev", connectionCreateRequest(
+        "development",
+        "as400-dev-readonly",
+        List.of("ORDERS")).targetEnvironment());
+    assertEquals("sit", connectionCreateRequest(
+        "test",
+        "as400-sit-readonly",
+        List.of("ORDERS")).targetEnvironment());
   }
 
   @Test
@@ -257,13 +304,13 @@ class ContractsTest {
         446,
         "REPORTING",
         List.of("REPORTING"),
-        List.of(SqlQueryAction.VALIDATE, SqlQueryAction.RUN_READ_ONLY, SqlQueryAction.PREFLIGHT_DML),
+        List.of(SqlQueryAction.VALIDATE, SqlQueryAction.RUN_READ_ONLY, SqlQueryAction.PREFLIGHT_DML, SqlQueryAction.COMMIT_DML),
         "as400-reporting-readonly",
         250,
         45);
 
     assertEquals("AS/400 Reporting", request.displayName());
-    assertEquals("test", request.targetEnvironment());
+    assertEquals("sit", request.targetEnvironment());
     assertEquals("REPORTING", request.defaultSchema());
     assertEquals(250, request.maxRowsDefault());
   }
@@ -278,6 +325,9 @@ class ContractsTest {
     assertTrue(!schema.path("properties").has("password"));
     assertTrue(!schema.path("properties").has("username"));
     assertTrue(!schema.path("properties").has("jdbcUrl"));
+    assertTrue(schema.path("allOf").toString().contains("\"VALIDATE\""));
+    assertTrue(schema.path("allOf").toString().contains("\"RUN_READ_ONLY\""));
+    assertFalse(schema.path("allOf").toString().contains("\"COMMIT_DML\""));
     List<String> platformTypes = StreamSupport.stream(
             schema.path("properties").path("platformType").path("enum").spliterator(),
             false)
@@ -296,6 +346,9 @@ class ContractsTest {
     assertTrue(!schema.path("properties").has("password"));
     assertTrue(!schema.path("properties").has("username"));
     assertTrue(!schema.path("properties").has("jdbcUrl"));
+    assertTrue(schema.path("allOf").toString().contains("\"VALIDATE\""));
+    assertTrue(schema.path("allOf").toString().contains("\"RUN_READ_ONLY\""));
+    assertFalse(schema.path("allOf").toString().contains("\"COMMIT_DML\""));
   }
 
   @Test
@@ -314,6 +367,46 @@ class ContractsTest {
     assertTrue(!responseSchema.path("properties").has("apiKey"));
     assertTrue(!responseSchema.path("properties").has("providerResponseBody"));
     assertTrue(!responseSchema.path("properties").has("rows"));
+  }
+
+  @Test
+  void sqlMetadataResponseSchemaRejectsSecretsAndRowData() throws Exception {
+    JsonNode schema = new ObjectMapper()
+        .readTree(Path.of("sqlworkbench/sql-metadata-response-v1.schema.json").toFile());
+
+    assertEquals(false, schema.path("additionalProperties").asBoolean());
+    assertNoSchemaPropertyNamed(schema, Set.of(
+        "apiKey",
+        "credential",
+        "credentials",
+        "jdbcUrl",
+        "password",
+        "rows",
+        "secret",
+        "token",
+        "username"));
+    assertTrue(enumValues(schema.path("properties").path("objects").path("items"), "type")
+        .containsAll(List.of("TABLE", "VIEW", "SYSTEM_TABLE")));
+  }
+
+  @Test
+  void acceptsSqlMetadataResponseContract() {
+    SqlDatabaseMetadata metadata = new SqlDatabaseMetadata(
+        "1.0",
+        "h2-local-test",
+        "PUBLIC",
+        List.of(new SqlMetadataObject(
+            "PUBLIC",
+            "ORDERS",
+            "TABLE",
+            List.of(new SqlMetadataColumn("ORDER_ID", "INTEGER", false, 1, false)),
+            List.of(new SqlMetadataIndex("PRIMARY_KEY_8", true, List.of("ORDER_ID"))))),
+        false,
+        OffsetDateTime.now());
+
+    assertEquals("PUBLIC", metadata.schema());
+    assertEquals("ORDERS", metadata.objects().getFirst().name());
+    assertEquals("ORDER_ID", metadata.objects().getFirst().columns().getFirst().name());
   }
 
   @Test
@@ -578,6 +671,20 @@ class ContractsTest {
       String credentialAlias,
       List<String> allowedSchemas,
       String platformType) {
+    return connectionCreateRequest(
+        targetEnvironment,
+        credentialAlias,
+        allowedSchemas,
+        platformType,
+        List.of(SqlQueryAction.VALIDATE, SqlQueryAction.RUN_READ_ONLY, SqlQueryAction.PREFLIGHT_DML));
+  }
+
+  private SqlConnectionCreateRequest connectionCreateRequest(
+      String targetEnvironment,
+      String credentialAlias,
+      List<String> allowedSchemas,
+      String platformType,
+      List<SqlQueryAction> capabilities) {
     return new SqlConnectionCreateRequest(
         "1.0",
         "AS/400 Development",
@@ -587,7 +694,7 @@ class ContractsTest {
         446,
         "ORDERS",
         allowedSchemas,
-        List.of(SqlQueryAction.VALIDATE, SqlQueryAction.RUN_READ_ONLY, SqlQueryAction.PREFLIGHT_DML),
+        capabilities,
         credentialAlias,
         500,
         30);

@@ -1,6 +1,7 @@
 package com.company.opsagent.executionworker.sqlworkbench;
 
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryExecutionRequest;
+import com.company.opsagent.contracts.sqlworkbench.SqlConnectionSummary;
 import java.util.Arrays;
 import javax.sql.DataSource;
 
@@ -28,6 +29,16 @@ public final class ConfiguredSqlDataSourceRegistry implements SqlDataSourceRegis
   @Override
   public DataSource resolve(SqlQueryExecutionRequest request) {
     WorkerSqlConnectionDescriptor descriptor = egressPolicy.validate(request);
+    return createDataSource(descriptor);
+  }
+
+  @Override
+  public DataSource resolve(SqlConnectionSummary connection) {
+    WorkerSqlConnectionDescriptor descriptor = egressPolicy.validate(connection);
+    return createDataSource(descriptor);
+  }
+
+  private DataSource createDataSource(WorkerSqlConnectionDescriptor descriptor) {
     return switch (descriptor.platformType()) {
       case "H2" -> h2DataSourceFactory.create(descriptor);
       case "DB2_FOR_I" -> createJt400DataSource(descriptor);

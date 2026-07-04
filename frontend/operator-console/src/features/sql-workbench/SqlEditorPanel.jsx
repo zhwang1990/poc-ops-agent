@@ -1,4 +1,10 @@
-import { Download, Play, Search, ShieldCheck, Upload } from "lucide-react";
+import {
+  Download,
+  GitCommitHorizontal,
+  ToggleLeft,
+  ToggleRight,
+  Upload,
+} from "lucide-react";
 
 import { SqlComparePanel } from "./SqlComparePanel.jsx";
 import { SqlCodeEditor } from "./SqlCodeEditor.jsx";
@@ -13,6 +19,7 @@ const SESSION_MODE_OPTIONS = [
 
 /**
  * @typedef {import("./sql-workbench-utils.js").SqlSessionMode} SqlSessionMode
+ * @typedef {import("./sql-workbench-utils.js").SqlTransactionMode} SqlTransactionMode
  * @typedef {import("./sql-workbench-utils.js").SqlWorkbenchSession} SqlWorkbenchSession
  * @typedef {import("./sql-workbench-utils.js").SqlCompareState} SqlCompareState
  * @typedef {import("./sql-workbench-utils.js").SqlNaturalLanguageState} SqlNaturalLanguageState
@@ -21,12 +28,9 @@ const SESSION_MODE_OPTIONS = [
 /**
  * @param {{
  *   activeSchema: string,
- *   canExecuteSelect: boolean,
- *   canPreflightDml: boolean,
+ *   canCommitDmlStatement: boolean,
  *   canRunSqlStatement: boolean,
- *   canValidate: boolean,
  *   comparePending: boolean,
- *   hasMultipleSqlStatements: boolean,
  *   naturalLanguagePending: boolean,
  *   onExportSql: () => void,
  *   onGenerateNaturalLanguageSql: () => void,
@@ -34,23 +38,19 @@ const SESSION_MODE_OPTIONS = [
  *   onNaturalLanguageChange: (patch: Partial<SqlNaturalLanguageState>) => void,
  *   onCompareChange: (patch: Partial<SqlCompareState>) => void,
  *   onModeChange: (mode: SqlSessionMode) => void,
+ *   onCommitDml: () => void,
  *   onRunCompare: () => void,
- *   onRunSelect: () => void,
  *   onRunStatement: (sqlText: string) => void,
  *   onSqlChange: (sqlText: string) => void,
- *   onValidate: (action: "VALIDATE" | "PREFLIGHT_DML") => void,
+ *   onTransactionModeChange: (mode: SqlTransactionMode) => void,
  *   session: SqlWorkbenchSession,
- *   validatePending: boolean,
  * }} props
  */
 export function SqlEditorPanel({
   activeSchema,
-  canExecuteSelect,
-  canPreflightDml,
+  canCommitDmlStatement,
   canRunSqlStatement,
-  canValidate,
   comparePending,
-  hasMultipleSqlStatements,
   naturalLanguagePending,
   onExportSql,
   onGenerateNaturalLanguageSql,
@@ -58,15 +58,15 @@ export function SqlEditorPanel({
   onNaturalLanguageChange,
   onCompareChange,
   onModeChange,
+  onCommitDml,
   onRunCompare,
-  onRunSelect,
   onRunStatement,
   onSqlChange,
-  onValidate,
+  onTransactionModeChange,
   session,
-  validatePending,
 }) {
   const currentMode = session.mode ?? "sql";
+  const isTransactionMode = session.transactionMode === "manual";
 
   /**
    * @param {import("react").ChangeEvent<HTMLInputElement>} event
@@ -81,93 +81,96 @@ export function SqlEditorPanel({
 
   return (
     <section className={styles.editorCard}>
-      <div
-        aria-label="SQL 会话模式"
-        className={styles.sessionModeTabs}
-        role="tablist"
-      >
-        {SESSION_MODE_OPTIONS.map((mode) => (
-          <button
-            aria-selected={currentMode === mode.value}
-            className={currentMode === mode.value ? styles.activeModeTab : ""}
-            key={mode.value}
-            onClick={() => onModeChange(/** @type {SqlSessionMode} */ (mode.value))}
-            role="tab"
-            type="button"
-          >
-            {mode.label}
-          </button>
-        ))}
+      <div className={styles.editorHeader}>
+        <div
+          aria-label="SQL 会话模式"
+          className={styles.sessionModeTabs}
+          role="tablist"
+        >
+          {SESSION_MODE_OPTIONS.map((mode) => (
+            <button
+              aria-selected={currentMode === mode.value}
+              className={currentMode === mode.value ? styles.activeModeTab : ""}
+              key={mode.value}
+              onClick={() => onModeChange(/** @type {SqlSessionMode} */ (mode.value))}
+              role="tab"
+              type="button"
+            >
+              {mode.label}
+            </button>
+          ))}
+        </div>
+
+        {currentMode === "sql" ? (
+          <div className={styles.editorToolbar}>
+            <div aria-label="SQL 事务控制" className={styles.editorTransactionActions} role="group">
+              <button
+                aria-pressed={isTransactionMode}
+                className={isTransactionMode ? styles.activeTransactionMode : ""}
+                onClick={() => onTransactionModeChange(isTransactionMode ? "auto" : "manual")}
+                type="button"
+              >
+                {isTransactionMode ? (
+                  <ToggleRight aria-hidden="true" size={15} />
+                ) : (
+                  <ToggleLeft aria-hidden="true" size={15} />
+                )}
+                事务模式
+              </button>
+              <button
+                className={styles.manualCommitButton}
+                disabled={!canCommitDmlStatement}
+                onClick={onCommitDml}
+                title={
+                  canCommitDmlStatement
+                    ? "提交当前受控 DML"
+                    : "切换事务模式并输入 dev/sit/uat 环境的 INSERT、UPDATE 或 DELETE"
+                }
+                type="button"
+              >
+                <GitCommitHorizontal aria-hidden="true" size={15} />
+                手动提交
+              </button>
+            </div>
+            <div aria-label="SQL 文件操作" className={styles.editorFileActions} role="group">
+              <label className={styles.secondaryButton}>
+                <Upload aria-hidden="true" size={15} />
+                导入 .sql
+                <input
+                  accept=".sql,text/plain,application/sql"
+                  aria-label="导入 .sql"
+                  className={styles.fileInput}
+                  onChange={handleImportChange}
+                  type="file"
+                />
+              </label>
+              <button
+                className={styles.secondaryButton}
+                disabled={session.sql.trim().length === 0}
+                onClick={onExportSql}
+                type="button"
+              >
+                <Download aria-hidden="true" size={15} />
+                导出 .sql
+              </button>
+              <button disabled type="button">
+                停止
+              </button>
+            </div>
+          </div>
+        ) : null}
       </div>
 
       {currentMode === "sql" ? (
-        <>
-          <div className={styles.editorToolbar}>
-            <label className={styles.secondaryButton}>
-              <Upload aria-hidden="true" size={15} />
-              导入 .sql
-              <input
-                accept=".sql,text/plain,application/sql"
-                aria-label="导入 .sql"
-                className={styles.fileInput}
-                onChange={handleImportChange}
-                type="file"
-              />
-            </label>
-            <button
-              className={styles.secondaryButton}
-              disabled={session.sql.trim().length === 0}
-              onClick={onExportSql}
-              type="button"
-            >
-              <Download aria-hidden="true" size={15} />
-              导出 .sql
-            </button>
-            <button
-              disabled={!canValidate || validatePending}
-              onClick={() => onValidate("VALIDATE")}
-              type="button"
-            >
-              <Search aria-hidden="true" size={15} />
-              校验
-            </button>
-            <button
-              className={styles.runButton}
-              disabled={!canExecuteSelect}
-              onClick={onRunSelect}
-              title={
-                hasMultipleSqlStatements
-                  ? "检测到多条 SQL，请使用左侧绿色按钮执行单条语句"
-                  : undefined
-              }
-              type="button"
-            >
-              <Play aria-hidden="true" size={15} />
-              执行 SELECT
-            </button>
-            <button
-              className={styles.preflightButton}
-              disabled={!canPreflightDml || validatePending}
-              onClick={() => onValidate("PREFLIGHT_DML")}
-              type="button"
-            >
-              <ShieldCheck aria-hidden="true" size={15} />
-              DML 预检
-            </button>
-            <button disabled type="button">
-              停止
-            </button>
-          </div>
-          <section className={styles.sqlEditor} aria-label={`${session.label}.sql`}>
-            <span>{session.label}.sql</span>
-            <SqlCodeEditor
-              canRunStatements={canRunSqlStatement}
-              onChange={onSqlChange}
-              onRunStatement={onRunStatement}
-              value={session.sql}
-            />
-          </section>
-        </>
+        <section className={styles.sqlEditor} aria-label={`${session.label}.sql`}>
+          <span>{session.label}.sql</span>
+          <SqlCodeEditor
+            canRunStatements={canRunSqlStatement}
+            onChange={onSqlChange}
+            onRunStatement={onRunStatement}
+            value={session.sql}
+          />
+        </section>
       ) : null}
 
       {currentMode === "natural-language" ? (

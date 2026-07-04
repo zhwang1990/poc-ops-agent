@@ -2,6 +2,7 @@ package com.company.opsagent.executionworker.sqlworkbench;
 
 import com.company.opsagent.contracts.sqlworkbench.SqlConnectionSummary;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryExecutionRequest;
+import com.company.opsagent.contracts.sqlworkbench.SqlTargetEnvironments;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -32,7 +33,7 @@ public final class WorkerSqlEgressPolicy {
     if (!descriptor.enabled()) {
       throw rejected("SQL_CONNECTION_DISABLED", "SQL connection is disabled for this worker");
     }
-    if (!descriptor.targetEnvironment().equalsIgnoreCase(request.query().targetEnvironment())) {
+    if (!SqlTargetEnvironments.same(descriptor.targetEnvironment(), request.query().targetEnvironment())) {
       throw rejected("SQL_ENVIRONMENT_MISMATCH", "SQL connection does not match the requested environment");
     }
     if (!allowedTargets.contains(descriptor.target())) {
@@ -49,7 +50,7 @@ public final class WorkerSqlEgressPolicy {
     if (!descriptor.enabled()) {
       throw rejected("SQL_CONNECTION_DISABLED", "SQL connection is disabled for this worker");
     }
-    if (!descriptor.targetEnvironment().equalsIgnoreCase(connection.targetEnvironment())) {
+    if (!SqlTargetEnvironments.same(descriptor.targetEnvironment(), connection.targetEnvironment())) {
       throw rejected("SQL_ENVIRONMENT_MISMATCH", "SQL connection does not match the requested environment");
     }
     if (!descriptor.host().equalsIgnoreCase(connection.host()) || descriptor.port() != connection.port()) {

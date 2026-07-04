@@ -24,8 +24,10 @@ import {
 } from "./release-center-schemas.js";
 import {
   sqlConnectionListSchema,
+  sqlDmlCommitRequestSchema,
   sqlAssistantRequestSchema,
   sqlAssistantResponseSchema,
+  sqlMetadataResponseSchema,
   sqlQueryRequestSchema,
   sqlValidationReportSchema,
 } from "./sql-schemas.js";
@@ -99,7 +101,7 @@ describe("SQL schemas", () => {
           targetEnvironment: "development",
           platformType: "DB2_FOR_I",
           allowedSchemas: ["ORDERS"],
-          capabilities: ["VALIDATE", "RUN_READ_ONLY", "PREFLIGHT_DML"],
+          capabilities: ["VALIDATE", "RUN_READ_ONLY", "PREFLIGHT_DML", "COMMIT_DML"],
         },
       ]),
     ).toHaveLength(1);
@@ -115,7 +117,7 @@ describe("SQL schemas", () => {
           targetEnvironment: "development",
           platformType: "H2",
           allowedSchemas: ["PUBLIC"],
-          capabilities: ["VALIDATE", "RUN_READ_ONLY", "PREFLIGHT_DML"],
+          capabilities: ["VALIDATE", "RUN_READ_ONLY", "PREFLIGHT_DML", "COMMIT_DML"],
         },
         {
           contractVersion: "1.0",
@@ -124,7 +126,7 @@ describe("SQL schemas", () => {
           targetEnvironment: "test",
           platformType: "MYSQL",
           allowedSchemas: ["orders"],
-          capabilities: ["VALIDATE", "RUN_READ_ONLY", "PREFLIGHT_DML"],
+          capabilities: ["VALIDATE", "RUN_READ_ONLY", "PREFLIGHT_DML", "COMMIT_DML"],
         },
       ]),
     ).toHaveLength(2);
@@ -146,7 +148,21 @@ describe("SQL schemas", () => {
     ).toThrow();
   });
 
-  test("rejects any production connection instead of silently filtering it", () => {
+  test("accepts production SQL connections only with query capabilities", () => {
+    expect(
+      sqlConnectionListSchema.parse([
+        {
+          contractVersion: "1.0",
+          connectionId: "as400-production",
+          displayName: "AS/400 Production",
+          targetEnvironment: "production",
+          platformType: "DB2_FOR_I",
+          allowedSchemas: ["ORDERS"],
+          capabilities: ["VALIDATE", "RUN_READ_ONLY"],
+        },
+      ]),
+    ).toHaveLength(1);
+
     expect(() =>
       sqlConnectionListSchema.parse([
         {
@@ -156,7 +172,7 @@ describe("SQL schemas", () => {
           targetEnvironment: "production",
           platformType: "DB2_FOR_I",
           allowedSchemas: ["ORDERS"],
-          capabilities: ["VALIDATE"],
+          capabilities: ["VALIDATE", "RUN_READ_ONLY", "COMMIT_DML"],
         },
       ]),
     ).toThrow();
@@ -166,11 +182,32 @@ describe("SQL schemas", () => {
     expect(sqlValidationReportSchema.parse(validationReport)).toEqual(validationReport);
   });
 
-  test("rejects production SQL requests", () => {
+  test("accepts production read-only SQL requests and rejects production DML", () => {
+    expect(
+      sqlQueryRequestSchema.parse({
+        ...sqlRequest,
+        targetEnvironment: "production",
+        action: "RUN_READ_ONLY",
+      }).targetEnvironment,
+    ).toBe("production");
+
     expect(() =>
       sqlQueryRequestSchema.parse({
         ...sqlRequest,
         targetEnvironment: "production",
+        action: "COMMIT_DML",
+      }),
+    ).toThrow();
+
+    expect(() =>
+      sqlDmlCommitRequestSchema.parse({
+        contractVersion: "1.0",
+        query: {
+          ...sqlRequest,
+          targetEnvironment: "production",
+          action: "COMMIT_DML",
+        },
+        confirmation: null,
       }),
     ).toThrow();
   });
@@ -187,6 +224,27 @@ describe("SQL schemas", () => {
       sqlAssistantRequestSchema.parse({
         ...sqlAssistantRequest,
         password: "secret",
+      }),
+    ).toThrow();
+  });
+
+  test("accepts database metadata responses and rejects secret fields", () => {
+    expect(sqlMetadataResponseSchema.parse(sqlMetadataResponse).objects[0].columns[0].name).toBe("ORDER_ID");
+    expect(() =>
+      sqlMetadataResponseSchema.parse({
+        ...sqlMetadataResponse,
+        password: "secret",
+      }),
+    ).toThrow();
+    expect(() =>
+      sqlMetadataResponseSchema.parse({
+        ...sqlMetadataResponse,
+        objects: [
+          {
+            ...sqlMetadataResponse.objects[0],
+            rows: [["OD-10500"]],
+          },
+        ],
       }),
     ).toThrow();
   });
@@ -631,6 +689,44 @@ const sqlAssistantResponse = {
   ],
   safetyNotes: ["Validate before execution."],
   validationRequired: true,
+};
+
+const sqlMetadataResponse = {
+  contractVersion: "1.0",
+  connectionId: "as400-development",
+  schema: "ORDERS",
+  objects: [
+    {
+      schema: "ORDERS",
+      name: "ORDERS",
+      type: "TABLE",
+      columns: [
+        {
+          name: "ORDER_ID",
+          type: "INTEGER",
+          nullable: false,
+          ordinalPosition: 1,
+          masked: false,
+        },
+        {
+          name: "STATUS",
+          type: "VARCHAR",
+          nullable: false,
+          ordinalPosition: 2,
+          masked: false,
+        },
+      ],
+      indexes: [
+        {
+          name: "PRIMARY_KEY_ORDERS",
+          unique: true,
+          columns: ["ORDER_ID"],
+        },
+      ],
+    },
+  ],
+  truncated: false,
+  refreshedAt: "2026-06-27T10:15:31Z",
 };
 
 const modelProviderSummary = {

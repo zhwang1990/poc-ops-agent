@@ -122,6 +122,7 @@
 .connectionManagerCreateButton,
 .connectionManagerButton,
 .resultPager button,
+.resultTabs button,
 .schemaTree button,
 .aiPanel button,
 .formActions button,
@@ -143,6 +144,7 @@
 .secondaryButton,
 .editorToolbar button,
 .resultPager button,
+.resultTabs button,
 .aiPanel button,
 .formActions button,
 .deleteActions button,
@@ -175,6 +177,7 @@
 .secondaryButton:disabled,
 .editorToolbar button:disabled,
 .resultPager button:disabled,
+.resultTabs button:disabled,
 .aiPanel button:disabled,
 .formActions button:disabled,
 .deleteActions button:disabled,
@@ -205,6 +208,11 @@
   gap: 10px;
   overflow: hidden;
   padding: 10px;
+}
+
+.objectDrawer {
+  grid-template-rows: auto auto minmax(0, 1fr);
+  min-height: 0;
 }
 
 .infoPanel {
@@ -263,8 +271,19 @@
 
 .editorCard {
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   overflow: hidden;
+}
+
+.editorHeader {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  gap: 10px;
+  align-items: flex-start;
+  overflow-x: auto;
+  padding: 7px;
+  border-bottom: 1px solid rgba(34, 126, 166, 0.12);
 }
 
 .sessionModeTabs {
@@ -272,7 +291,7 @@
   min-width: 0;
   gap: 6px;
   overflow-x: auto;
-  padding: 7px 7px 0;
+  padding: 0;
 }
 
 .sessionModeTabs button {
@@ -290,10 +309,36 @@
 }
 
 .editorToolbar {
-  min-height: 46px;
+  align-items: flex-start;
   overflow-x: auto;
-  padding: 7px;
-  border-bottom: 1px solid rgba(34, 126, 166, 0.12);
+  justify-content: flex-end;
+}
+
+.editorFileActions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.editorTransactionActions {
+  display: flex;
+  min-width: 0;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.editorTransactionActions .activeTransactionMode {
+  border-color: rgba(22, 135, 90, 0.28);
+  background: rgba(22, 135, 90, 0.08);
+  color: var(--sql-green);
+}
+
+.editorTransactionActions .manualCommitButton {
+  border-color: rgba(189, 123, 29, 0.28);
+  background: rgba(189, 123, 29, 0.08);
+  color: var(--sql-gold);
 }
 
 .editorToolbar .runButton {
@@ -937,7 +982,10 @@
 
 .schemaTree {
   display: grid;
+  min-height: 0;
+  align-content: start;
   gap: 6px;
+  grid-auto-rows: max-content;
   padding: 9px;
   border: 1px solid rgba(34, 126, 166, 0.12);
   border-radius: 8px;
@@ -978,6 +1026,150 @@
   color: var(--sql-green);
 }
 
+.metadataState {
+  min-width: 0;
+  padding: 8px;
+  color: var(--sql-muted);
+  font-size: 11px;
+  font-weight: 760;
+  line-height: 1.45;
+}
+
+.metadataList {
+  display: grid;
+  min-width: 0;
+  max-height: clamp(180px, 44vh, 460px);
+  gap: 4px;
+  overflow-y: auto;
+  padding-right: 2px;
+  overscroll-behavior: contain;
+}
+
+.metadataObject {
+  display: grid;
+  min-width: 0;
+  gap: 7px;
+  padding: 9px 0;
+  border-top: 1px solid rgba(34, 126, 166, 0.14);
+}
+
+.metadataObjectHeader {
+  display: grid;
+  width: 100%;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 5px 6px;
+  border: 1px solid transparent;
+  background: rgba(34, 126, 166, 0.06);
+  cursor: pointer;
+}
+
+.metadataObjectHeader:hover {
+  border-color: rgba(34, 126, 166, 0.18);
+  background: rgba(34, 126, 166, 0.1);
+}
+
+.metadataObjectHeader:focus-visible {
+  outline: 2px solid rgba(34, 126, 166, 0.35);
+  outline-offset: 2px;
+}
+
+.metadataChevron {
+  color: var(--sql-blue);
+  transition: transform 160ms ease-out;
+}
+
+.metadataChevronOpen {
+  transform: rotate(90deg);
+}
+
+.metadataObjectHeader strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--sql-ink);
+  font-size: 12px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.metadataObjectTypeIcon {
+  display: grid;
+  width: 26px;
+  height: 24px;
+  min-width: 0;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(34, 126, 166, 0.18);
+  border-radius: 999px;
+  background: oklch(0.99 0.004 230);
+  color: var(--sql-blue);
+}
+
+.metadataObjectTypeIcon svg {
+  display: block;
+}
+
+.metadataObjectHeader span {
+  min-width: 0;
+}
+
+.metadataColumns {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.metadataColumn {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+  padding: 4px 0 4px 8px;
+}
+
+.metadataColumn strong,
+.metadataColumn span,
+.metadataIndexes strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.metadataColumn strong {
+  color: var(--sql-ink);
+  font-size: 11px;
+  font-weight: 860;
+}
+
+.metadataColumn span {
+  color: var(--sql-muted);
+  font-size: 10px;
+  font-weight: 720;
+}
+
+.metadataIndexes {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+  padding-top: 2px;
+}
+
+.metadataIndexes span {
+  color: var(--sql-muted);
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.metadataIndexes strong {
+  color: var(--sql-blue);
+  font-size: 10px;
+  font-weight: 760;
+}
+
 .validationPanel,
 .executionFacts,
 .aiPanel,
@@ -996,6 +1188,13 @@
   border: 1px solid rgba(34, 126, 166, 0.1);
   border-radius: 8px;
   background: var(--sql-panel-soft);
+}
+
+.aiPanel {
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: auto;
 }
 
 .validationPanel > p,
@@ -1052,6 +1251,31 @@
   gap: 5px;
   overflow: auto;
   padding: 10px 10px 6px;
+}
+
+.resultTabs {
+  display: flex;
+  min-width: 0;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 1px 0 3px;
+}
+
+.resultTabs button {
+  height: 28px;
+  flex: 0 0 auto;
+  padding: 0 9px;
+  border-color: rgba(34, 126, 166, 0.18);
+  background: oklch(0.99 0.004 230);
+  color: var(--sql-muted);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.resultTabs .activeResultTab {
+  border-color: rgba(22, 135, 90, 0.28);
+  background: rgba(22, 135, 90, 0.08);
+  color: var(--sql-green);
 }
 
 .queryLoadingStatus,
@@ -1305,12 +1529,17 @@
 }
 
 .aiActions {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
+  flex-wrap: nowrap;
   gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 2px;
 }
 
 .aiActions button {
+  flex: 0 0 auto;
   width: auto;
   padding: 0 6px;
 }
@@ -1583,16 +1812,22 @@
 
 .formCapabilities {
   grid-column: span 2;
-  grid-template-columns: minmax(96px, max-content) repeat(3, max-content);
-  align-items: end;
+  grid-template-columns: repeat(4, max-content);
+  align-content: start;
+  align-items: start;
   gap: 7px;
-  min-height: 38px;
+  min-height: 0;
+}
+
+.formCapabilities > span {
+  grid-column: 1 / -1;
 }
 
 .formCapabilities strong {
   display: inline-flex;
   height: 26px;
   align-items: center;
+  justify-self: start;
   padding: 0 8px;
   border: 1px solid rgba(34, 126, 166, 0.14);
   border-radius: 999px;
@@ -1646,6 +1881,74 @@
   border-color: rgba(211, 17, 69, 0.24);
   background: rgba(211, 17, 69, 0.08);
   color: var(--sql-red);
+}
+
+.dmlRiskDialog {
+  display: grid;
+  gap: 12px;
+}
+
+.dmlRiskLead,
+.dmlRiskNote {
+  margin: 0;
+  color: var(--sql-muted);
+  font-size: 12px;
+  font-weight: 760;
+  line-height: 1.5;
+}
+
+.dmlRiskFacts {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.dmlRiskFacts div {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+
+.dmlRiskFacts dt {
+  color: var(--sql-muted);
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1.35;
+}
+
+.dmlRiskFacts dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--sql-ink);
+  font-size: 11px;
+  font-weight: 820;
+  line-height: 1.35;
+}
+
+.dmlRiskTags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.dmlRiskTags strong {
+  padding: 3px 7px;
+  border: 1px solid rgba(211, 17, 69, 0.18);
+  border-radius: 999px;
+  background: rgba(211, 17, 69, 0.07);
+  color: var(--sql-red);
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.dmlRiskActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 2px;
 }
 
 @keyframes sqlLoadingSpin {

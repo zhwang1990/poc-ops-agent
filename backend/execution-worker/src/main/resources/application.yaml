@@ -19,7 +19,7 @@ ops-agent:
           port: 9092
       connections:
         - connection-id: h2-local-test
-          target-environment: test
+          target-environment: sit
           platform-type: H2
           host: localhost
           port: 9092

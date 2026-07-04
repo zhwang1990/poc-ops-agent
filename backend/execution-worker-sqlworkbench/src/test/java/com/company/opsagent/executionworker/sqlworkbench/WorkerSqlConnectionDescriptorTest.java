@@ -24,23 +24,25 @@ class WorkerSqlConnectionDescriptorTest {
         true);
 
     assertEquals("as400-dev-readonly", descriptor.connectionId());
-    assertEquals("development", descriptor.targetEnvironment());
+    assertEquals("dev", descriptor.targetEnvironment());
     assertEquals("as400-dev.internal", descriptor.host());
     assertEquals(446, descriptor.port());
   }
 
   /**
-   * 验证 P1 Worker 本地连接目录不允许生产环境目标。
+   * 验证 Worker 本地连接目录允许生产连接元数据，执行层仍只允许只读查询。
    */
   @Test
-  void rejectsProductionConnectionDescriptor() {
-    assertThrows(IllegalArgumentException.class, () -> new WorkerSqlConnectionDescriptor(
+  void acceptsProductionConnectionDescriptorForReadOnlyQueries() {
+    var descriptor = new WorkerSqlConnectionDescriptor(
         "as400-prod-readonly",
         "production",
         "as400-prod.internal",
         446,
         "as400-prod-readonly",
-        true));
+        true);
+
+    assertEquals("production", descriptor.targetEnvironment());
   }
 
   /**

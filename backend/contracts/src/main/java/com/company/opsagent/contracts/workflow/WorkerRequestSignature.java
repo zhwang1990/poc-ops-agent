@@ -154,6 +154,37 @@ public final class WorkerRequestSignature {
   }
 
   /**
+   * 构造 SQL 工作台数据库元数据读取请求的 canonical payload。
+   */
+  public static String canonicalSqlMetadataPayload(
+      String keyId,
+      String timestamp,
+      SqlConnectionSummary connection,
+      String schema) {
+    requireText(keyId, "keyId");
+    requireText(timestamp, "timestamp");
+    if (connection == null) {
+      throw new IllegalArgumentException("connection is required");
+    }
+    schema = requireCanonicalText(schema, "schema");
+    return String.join("\n",
+        SIGNATURE_VERSION,
+        "sql-metadata-read-v1",
+        keyId,
+        timestamp,
+        connection.contractVersion(),
+        connection.connectionId(),
+        connection.targetEnvironment(),
+        connection.platformType(),
+        connection.host(),
+        String.valueOf(connection.port()),
+        connection.defaultSchema(),
+        String.join(",", connection.allowedSchemas()),
+        connection.credentialAlias(),
+        schema);
+  }
+
+  /**
    * 使用 HMAC-SHA256 对 canonical payload 签名，返回 Base64 字符串。
    */
   public static String sign(String sharedSecret, String canonicalPayload) {

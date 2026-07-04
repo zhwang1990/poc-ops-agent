@@ -13,11 +13,17 @@ import com.company.opsagent.contracts.sqlworkbench.SqlAssistantRequest;
 import com.company.opsagent.contracts.sqlworkbench.SqlAssistantResponse;
 import com.company.opsagent.contracts.sqlworkbench.SqlAssistantStatus;
 import com.company.opsagent.contracts.sqlworkbench.SqlAssistantSuggestion;
+import com.company.opsagent.contracts.sqlworkbench.SqlDmlCommitRequest;
+import com.company.opsagent.contracts.sqlworkbench.SqlDmlConfirmation;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryAction;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryExecutionRequest;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryExecutionResult;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryLimits;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryRequest;
+import com.company.opsagent.contracts.sqlworkbench.SqlDatabaseMetadata;
+import com.company.opsagent.contracts.sqlworkbench.SqlMetadataColumn;
+import com.company.opsagent.contracts.sqlworkbench.SqlMetadataIndex;
+import com.company.opsagent.contracts.sqlworkbench.SqlMetadataObject;
 import com.company.opsagent.contracts.sqlworkbench.SqlResultColumn;
 import com.company.opsagent.contracts.sqlworkbench.SqlResultPage;
 import com.company.opsagent.contracts.sqlworkbench.SqlValidationLevel;
@@ -45,7 +51,11 @@ class DefaultSqlWorkbenchServiceTest {
           "development",
           "DB2_FOR_I",
           List.of("ORDERS"),
-          List.of(SqlQueryAction.VALIDATE, SqlQueryAction.RUN_READ_ONLY, SqlQueryAction.PREFLIGHT_DML)))),
+          List.of(
+              SqlQueryAction.VALIDATE,
+              SqlQueryAction.RUN_READ_ONLY,
+              SqlQueryAction.PREFLIGHT_DML,
+              SqlQueryAction.COMMIT_DML)))),
       new CalciteSqlValidationService(),
       workerClient,
       assistantClient,
@@ -91,7 +101,7 @@ class DefaultSqlWorkbenchServiceTest {
         446,
         "ORDERS",
         List.of("ORDERS"),
-        List.of(SqlQueryAction.VALIDATE, SqlQueryAction.RUN_READ_ONLY, SqlQueryAction.PREFLIGHT_DML),
+        List.of(SqlQueryAction.VALIDATE, SqlQueryAction.RUN_READ_ONLY, SqlQueryAction.PREFLIGHT_DML, SqlQueryAction.COMMIT_DML),
         "as400-dev-readonly",
         500,
         30));
@@ -113,7 +123,7 @@ class DefaultSqlWorkbenchServiceTest {
         9092,
         "PUBLIC",
         List.of("PUBLIC"),
-        List.of(SqlQueryAction.VALIDATE, SqlQueryAction.RUN_READ_ONLY, SqlQueryAction.PREFLIGHT_DML),
+        List.of(SqlQueryAction.VALIDATE, SqlQueryAction.RUN_READ_ONLY, SqlQueryAction.PREFLIGHT_DML, SqlQueryAction.COMMIT_DML),
         "h2-local-readonly",
         500,
         30));
@@ -154,14 +164,14 @@ class DefaultSqlWorkbenchServiceTest {
             3306,
             "REPORTING",
             List.of("REPORTING"),
-            List.of(SqlQueryAction.VALIDATE, SqlQueryAction.RUN_READ_ONLY, SqlQueryAction.PREFLIGHT_DML),
+            List.of(SqlQueryAction.VALIDATE, SqlQueryAction.RUN_READ_ONLY, SqlQueryAction.PREFLIGHT_DML, SqlQueryAction.COMMIT_DML),
             "mysql-reporting-readonly",
             250,
             45));
 
     assertEquals("as400-development", updated.connectionId());
     assertEquals("AS/400 Reporting", updated.displayName());
-    assertEquals("test", updated.targetEnvironment());
+    assertEquals("sit", updated.targetEnvironment());
     assertEquals("MYSQL", updated.platformType());
     assertEquals("mysql-reporting.internal", updated.host());
     assertEquals("REPORTING", updated.defaultSchema());
@@ -207,7 +217,7 @@ class DefaultSqlWorkbenchServiceTest {
     assertTrue(exception.getMessage().contains("SELECT 执行未通过服务端只读校验"));
     assertTrue(exception.getMessage().contains("statementType=UPDATE"));
     assertTrue(exception.getMessage().contains("validationLevel=REJECTED"));
-    assertTrue(exception.getMessage().contains("rejectionReasons=DML execution is prohibited in P1"));
+    assertTrue(exception.getMessage().contains("rejectionReasons=DML execution is prohibited for read-only actions"));
     assertTrue(exception.getMessage().contains("sqlHash=sha256:"));
     assertEquals(0, workerClient.executeCount);
   }
@@ -231,11 +241,99 @@ class DefaultSqlWorkbenchServiceTest {
   }
 
   @Test
+  void commitControlledDmlSubmitsAuthorizedExecutionEnvelope() {
+    SqlQueryRequest request = request(
+        "ORDERS",
+        SqlQueryAction.COMMIT_DML,
+        "update ORDERS.ORDERS set status = 'READY' where order_id = 42");
+    String expectedHash = service.validate(request).sqlHash();
+
+    SqlQueryExecutionResult result = service.commitControlledDml(
+        new SqlDmlCommitRequest("1.0", request, null),
+        operator(),
+        policy(),
+        trace());
+
+    assertEquals("SUCCEEDED", result.status());
+    assertEquals(3, result.affectedRows());
+    assertEquals(1, workerClient.executeCount);
+    SqlQueryExecutionRequest submitted = workerClient.lastExecutionRequest;
+    assertEquals(SqlQueryAction.COMMIT_DML, submitted.query().action());
+    assertEquals(expectedHash, submitted.validationHash());
+    assertEquals("operator-1", submitted.operator().operatorId());
+    assertEquals("decision-1", submitted.policyDecision().decisionId());
+  }
+
+  @Test
+  void commitControlledDmlRequiresSecondConfirmationForUpdateWithoutWhere() {
+    SqlQueryRequest request = request(
+        "ORDERS",
+        SqlQueryAction.COMMIT_DML,
+        "update ORDERS.ORDERS set status = 'READY'");
+
+    IllegalArgumentException exception = assertThrows(
+        IllegalArgumentException.class,
+        () -> service.commitControlledDml(
+            new SqlDmlCommitRequest("1.0", request, null),
+            operator(),
+            policy(),
+            trace()));
+
+    assertTrue(exception.getMessage().contains("DML 提交需要操作人二次确认"));
+    assertTrue(exception.getMessage().contains("UPDATE_WITHOUT_WHERE"));
+    assertEquals(0, workerClient.executeCount);
+  }
+
+  @Test
+  void commitControlledDmlAcceptsMatchingSecondConfirmationForUpdateWithoutWhere() {
+    SqlQueryRequest request = request(
+        "ORDERS",
+        SqlQueryAction.COMMIT_DML,
+        "update ORDERS.ORDERS set status = 'READY'");
+    String sqlHash = service.validate(request).sqlHash();
+
+    SqlQueryExecutionResult result = service.commitControlledDml(
+        new SqlDmlCommitRequest(
+            "1.0",
+            request,
+            new SqlDmlConfirmation(
+                "1.0",
+                sqlHash,
+                List.of("UPDATE_WITHOUT_WHERE"),
+                SqlDmlConfirmation.RISK_CONFIRMATION_CODE)),
+        operator(),
+        policy(),
+        trace());
+
+    assertEquals("SUCCEEDED", result.status());
+    assertEquals(3, result.affectedRows());
+    assertEquals(1, workerClient.executeCount);
+    assertEquals(SqlQueryAction.COMMIT_DML, workerClient.lastExecutionRequest.query().action());
+  }
+
+  @Test
   void readsResultPageThroughWorkerClient() {
     SqlResultPage page = service.readResultPage("result-1");
 
     assertEquals("result-1", page.resultId());
     assertEquals(1, workerClient.readCount);
+  }
+
+  @Test
+  void readsDatabaseMetadataOnlyForAllowedSchemaThroughWorkerClient() {
+    SqlDatabaseMetadata metadata = service.readMetadata("as400-development", "ORDERS");
+
+    assertEquals("ORDERS", metadata.schema());
+    assertEquals("ORDERS", metadata.objects().getFirst().name());
+    assertEquals(1, workerClient.metadataCount);
+    assertEquals("as400-development", workerClient.lastMetadataConnection.connectionId());
+    assertEquals("ORDERS", workerClient.lastMetadataSchema);
+  }
+
+  @Test
+  void rejectsDatabaseMetadataForSchemaOutsideAllowList() {
+    assertThrows(IllegalArgumentException.class, () -> service.readMetadata("as400-development", "FINANCE"));
+    assertEquals(0, workerClient.metadataCount);
   }
 
   @Test
@@ -364,8 +462,11 @@ class DefaultSqlWorkbenchServiceTest {
     private int executeCount;
     private int readCount;
     private int probeCount;
+    private int metadataCount;
     private String probeStatus = "READY";
     private SqlConnectionSummary lastProbeConnection;
+    private SqlConnectionSummary lastMetadataConnection;
+    private String lastMetadataSchema;
     private SqlQueryExecutionRequest lastExecutionRequest;
 
     @Override
@@ -391,9 +492,10 @@ class DefaultSqlWorkbenchServiceTest {
           request.executionRequestId(),
           request.workflowId(),
           "SUCCEEDED",
-          "result-1",
+          request.query().action() == SqlQueryAction.RUN_READ_ONLY ? "result-1" : null,
           null,
-          null);
+          null,
+          request.query().action() == SqlQueryAction.COMMIT_DML ? 3 : null);
     }
 
     @Override
@@ -407,6 +509,25 @@ class DefaultSqlWorkbenchServiceTest {
           null,
           false,
           OffsetDateTime.now(CLOCK).plusMinutes(15));
+    }
+
+    @Override
+    public SqlDatabaseMetadata readMetadata(SqlConnectionSummary connection, String schema) {
+      metadataCount++;
+      lastMetadataConnection = connection;
+      lastMetadataSchema = schema;
+      return new SqlDatabaseMetadata(
+          "1.0",
+          connection.connectionId(),
+          schema,
+          List.of(new SqlMetadataObject(
+              schema,
+              "ORDERS",
+              "TABLE",
+              List.of(new SqlMetadataColumn("ORDER_ID", "INTEGER", false, 1, false)),
+              List.of(new SqlMetadataIndex("PRIMARY_KEY_ORDERS", true, List.of("ORDER_ID"))))),
+          false,
+          OffsetDateTime.now(CLOCK));
     }
   }
 }

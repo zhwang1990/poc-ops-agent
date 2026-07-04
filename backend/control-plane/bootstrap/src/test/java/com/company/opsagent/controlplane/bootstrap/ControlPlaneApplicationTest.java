@@ -74,6 +74,8 @@ import org.springframework.test.web.reactive.server.WebTestClient;
     "ops-agent.policy.required-roles-by-action.internal.sql-workbench.connections.create[0]=ROLE_ops-admin",
     "ops-agent.policy.required-roles-by-action.internal.sql-workbench.connections.probe[0]=ROLE_ops-reader",
     "ops-agent.policy.required-roles-by-action.internal.sql-workbench.connections.probe[1]=ROLE_ops-admin",
+    "ops-agent.policy.required-roles-by-action.internal.sql-workbench.metadata.read[0]=ROLE_ops-reader",
+    "ops-agent.policy.required-roles-by-action.internal.sql-workbench.metadata.read[1]=ROLE_ops-admin",
     "ops-agent.policy.required-roles-by-action.internal.sql-workbench.queries.validate[0]=ROLE_ops-reader",
     "ops-agent.policy.required-roles-by-action.internal.sql-workbench.queries.validate[1]=ROLE_ops-admin",
     "ops-agent.policy.required-roles-by-action.internal.sql-workbench.queries.run[0]=ROLE_ops-reader",
@@ -501,6 +503,21 @@ class ControlPlaneApplicationTest {
 
     AuditEvent event = auditTrail.latest().orElseThrow();
     Assertions.assertEquals("internal.sql-workbench.connections.probe", event.action());
+  }
+
+  @Test
+  void authorizesSqlMetadataReadBeforeFailingClosedOnWorkerUnavailable() {
+    auditTrail.clear();
+    createSqlConnection("SQL Dev Metadata", "sql-dev-metadata", "ORDERS");
+
+    webTestClient.get()
+        .uri("/internal/sql-workbench/connections/sql-dev-metadata/metadata?schema=ORDERS")
+        .headers(headers -> headers.setBearerAuth(token("alice", List.of("ops-reader"), "ops-agent-internal")))
+        .exchange()
+        .expectStatus().is5xxServerError();
+
+    AuditEvent event = auditTrail.latest().orElseThrow();
+    Assertions.assertEquals("internal.sql-workbench.metadata.read", event.action());
   }
 
   @Test

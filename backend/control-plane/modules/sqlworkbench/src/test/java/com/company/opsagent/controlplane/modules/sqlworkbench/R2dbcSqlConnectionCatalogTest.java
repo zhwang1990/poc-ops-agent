@@ -33,7 +33,7 @@ class R2dbcSqlConnectionCatalogTest {
         9092,
         "PUBLIC",
         List.of("PUBLIC"),
-        List.of(SqlQueryAction.VALIDATE, SqlQueryAction.RUN_READ_ONLY, SqlQueryAction.PREFLIGHT_DML),
+        List.of(SqlQueryAction.VALIDATE, SqlQueryAction.RUN_READ_ONLY, SqlQueryAction.PREFLIGHT_DML, SqlQueryAction.COMMIT_DML),
         "h2-local-readonly",
         500,
         30));
@@ -75,14 +75,14 @@ class R2dbcSqlConnectionCatalogTest {
     SqlConnectionSummary connection = catalog.find("h2-local-test").orElseThrow();
 
     assertEquals("H2 Local Test", connection.displayName());
-    assertEquals("test", connection.targetEnvironment());
+    assertEquals("sit", connection.targetEnvironment());
     assertEquals("H2", connection.platformType());
     assertEquals("localhost", connection.host());
     assertEquals(9092, connection.port());
     assertEquals("PUBLIC", connection.defaultSchema());
     assertEquals(List.of("PUBLIC"), connection.allowedSchemas());
     assertEquals(
-        List.of(SqlQueryAction.VALIDATE, SqlQueryAction.RUN_READ_ONLY, SqlQueryAction.PREFLIGHT_DML),
+        List.of(SqlQueryAction.VALIDATE, SqlQueryAction.RUN_READ_ONLY, SqlQueryAction.PREFLIGHT_DML, SqlQueryAction.COMMIT_DML),
         connection.capabilities());
     assertEquals("h2-local-readonly", connection.credentialAlias());
     assertEquals("READY", connection.status());
@@ -109,11 +109,17 @@ class R2dbcSqlConnectionCatalogTest {
         100,
         10));
 
-    initialize(connectionFactory, new ClassPathResource("sql/migrations/V002__local_h2_sql_connection_seed.sql"));
+    initialize(
+        connectionFactory,
+        new ClassPathResource("sql/migrations/V002__local_h2_sql_connection_seed.sql"),
+        new ClassPathResource("sql/migrations/V003__local_h2_sql_connection_controlled_crud.sql"));
 
     assertEquals(1, catalog.list().size());
     SqlConnectionSummary connection = catalog.find("h2-local-test").orElseThrow();
-    assertEquals(List.of(SqlQueryAction.VALIDATE), connection.capabilities());
+    assertEquals("sit", connection.targetEnvironment());
+    assertEquals(
+        List.of(SqlQueryAction.VALIDATE, SqlQueryAction.RUN_READ_ONLY, SqlQueryAction.PREFLIGHT_DML, SqlQueryAction.COMMIT_DML),
+        connection.capabilities());
     assertEquals(100, connection.maxRowsDefault());
   }
 
@@ -128,7 +134,8 @@ class R2dbcSqlConnectionCatalogTest {
     initialize(
         connectionFactory,
         new ClassPathResource("sql/migrations/V001__sql_connection_catalog_schema.sql"),
-        new ClassPathResource("sql/migrations/V002__local_h2_sql_connection_seed.sql"));
+        new ClassPathResource("sql/migrations/V002__local_h2_sql_connection_seed.sql"),
+        new ClassPathResource("sql/migrations/V003__local_h2_sql_connection_controlled_crud.sql"));
     return catalog(connectionFactory);
   }
 

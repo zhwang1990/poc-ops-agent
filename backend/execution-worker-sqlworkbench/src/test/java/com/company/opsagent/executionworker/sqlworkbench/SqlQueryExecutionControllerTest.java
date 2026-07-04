@@ -5,6 +5,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryAction;
 import com.company.opsagent.contracts.sqlworkbench.SqlConnectionSummary;
+import com.company.opsagent.contracts.sqlworkbench.SqlDatabaseMetadata;
+import com.company.opsagent.contracts.sqlworkbench.SqlMetadataColumn;
+import com.company.opsagent.contracts.sqlworkbench.SqlMetadataObject;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryExecutionRequest;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryLimits;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryRequest;
@@ -82,6 +85,24 @@ class SqlQueryExecutionControllerTest {
     assertEquals("as400-development", result.connectionId());
   }
 
+  @Test
+  void readsMetadataOnlyWithValidSignature() {
+    var connection = connection();
+    var controller = controller(new InMemorySqlResultStore(CLOCK));
+
+    assertThrows(
+        ResponseStatusException.class,
+        () -> controller.readMetadata(new HttpHeaders(), connection.connectionId(), "ORDERS", connection).block());
+
+    var metadata = controller.readMetadata(
+        signedMetadataHeaders(connection, "ORDERS"),
+        connection.connectionId(),
+        "ORDERS",
+        connection).block();
+    assertEquals("ORDERS", metadata.schema());
+    assertEquals("ORDERS", metadata.objects().getFirst().name());
+  }
+
   private SqlQueryExecutionController controller() {
     return controller(new InMemorySqlResultStore(CLOCK));
   }
@@ -91,7 +112,7 @@ class SqlQueryExecutionControllerTest {
         new CalciteSqlReadOnlyGuard(),
         request -> "result-1",
         CLOCK);
-    return new SqlQueryExecutionController(worker, store, authenticator(), probeWorker());
+    return new SqlQueryExecutionController(worker, store, authenticator(), probeWorker(), metadataReader());
   }
 
   private SqlConnectionProbeWorker probeWorker() {
@@ -118,6 +139,21 @@ class SqlQueryExecutionControllerTest {
     return new SqlWorkerTransportAuthenticator(properties, CLOCK);
   }
 
+  private SqlMetadataReader metadataReader() {
+    return (connection, schema) -> new SqlDatabaseMetadata(
+        "1.0",
+        connection.connectionId(),
+        schema,
+        List.of(new SqlMetadataObject(
+            schema,
+            "ORDERS",
+            "TABLE",
+            List.of(new SqlMetadataColumn("ORDER_ID", "INTEGER", false, 1, false)),
+            List.of())),
+        false,
+        OffsetDateTime.now(CLOCK));
+  }
+
   private HttpHeaders signedExecutionHeaders(SqlQueryExecutionRequest request) {
     HttpHeaders headers = baseHeaders();
     String timestamp = OffsetDateTime.now(CLOCK).toString();
@@ -140,6 +176,15 @@ class SqlQueryExecutionControllerTest {
     HttpHeaders headers = baseHeaders();
     String timestamp = OffsetDateTime.now(CLOCK).toString();
     String payload = WorkerRequestSignature.canonicalSqlConnectionProbePayload(KEY_ID, timestamp, connection);
+    headers.set(WorkerTransportHeaders.TIMESTAMP, timestamp);
+    headers.set(WorkerTransportHeaders.SIGNATURE, WorkerRequestSignature.sign(SHARED_SECRET, payload));
+    return headers;
+  }
+
+  private HttpHeaders signedMetadataHeaders(SqlConnectionSummary connection, String schema) {
+    HttpHeaders headers = baseHeaders();
+    String timestamp = OffsetDateTime.now(CLOCK).toString();
+    String payload = WorkerRequestSignature.canonicalSqlMetadataPayload(KEY_ID, timestamp, connection, schema);
     headers.set(WorkerTransportHeaders.TIMESTAMP, timestamp);
     headers.set(WorkerTransportHeaders.SIGNATURE, WorkerRequestSignature.sign(SHARED_SECRET, payload));
     return headers;

@@ -12,7 +12,19 @@ public record SqlQueryExecutionResult(
     String status,
     String resultId,
     String errorCode,
-    String errorMessage) {
+    String errorMessage,
+    Integer affectedRows) {
+
+  public SqlQueryExecutionResult(
+      String contractVersion,
+      String executionRequestId,
+      String workflowId,
+      String status,
+      String resultId,
+      String errorCode,
+      String errorMessage) {
+    this(contractVersion, executionRequestId, workflowId, status, resultId, errorCode, errorMessage, null);
+  }
 
   public SqlQueryExecutionResult {
     if (!"1.0".equals(contractVersion)) {

@@ -3,6 +3,7 @@ package com.company.opsagent.executionworker.sqlworkbench;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryExecutionRequest;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryExecutionResult;
 import com.company.opsagent.contracts.sqlworkbench.SqlResultPage;
+import com.company.opsagent.contracts.sqlworkbench.SqlDatabaseMetadata;
 import com.company.opsagent.contracts.sqlworkbench.SqlConnectionProbeResult;
 import com.company.opsagent.contracts.sqlworkbench.SqlConnectionSummary;
 import org.springframework.http.HttpHeaders;
@@ -13,6 +14,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Mono;
@@ -29,16 +31,19 @@ public class SqlQueryExecutionController {
   private final SqlResultStore resultStore;
   private final SqlWorkerTransportAuthenticator authenticator;
   private final SqlConnectionProbeWorker probeWorker;
+  private final SqlMetadataReader metadataReader;
 
   public SqlQueryExecutionController(
       RestrictedSqlQueryExecutionWorker worker,
       SqlResultStore resultStore,
       SqlWorkerTransportAuthenticator authenticator,
-      SqlConnectionProbeWorker probeWorker) {
+      SqlConnectionProbeWorker probeWorker,
+      SqlMetadataReader metadataReader) {
     this.worker = worker;
     this.resultStore = resultStore;
     this.authenticator = authenticator;
     this.probeWorker = probeWorker;
+    this.metadataReader = metadataReader;
   }
 
   @PostMapping
@@ -73,6 +78,21 @@ public class SqlQueryExecutionController {
       }
       authenticator.authenticateSqlConnectionProbe(headers, connection);
       return probeWorker.probe(connection);
+    }).subscribeOn(Schedulers.boundedElastic());
+  }
+
+  @PostMapping("/connections/{connectionId}/metadata")
+  public Mono<SqlDatabaseMetadata> readMetadata(
+      @RequestHeader HttpHeaders headers,
+      @PathVariable("connectionId") String connectionId,
+      @RequestParam("schema") String schema,
+      @RequestBody SqlConnectionSummary connection) {
+    return Mono.fromCallable(() -> {
+      if (!connectionId.equals(connection.connectionId())) {
+        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "SQL connection id does not match path");
+      }
+      authenticator.authenticateSqlMetadataRead(headers, connection, schema);
+      return metadataReader.read(connection, schema);
     }).subscribeOn(Schedulers.boundedElastic());
   }
 }

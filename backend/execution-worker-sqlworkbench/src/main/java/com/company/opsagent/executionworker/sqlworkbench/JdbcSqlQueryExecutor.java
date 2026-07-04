@@ -66,6 +66,35 @@ public class JdbcSqlQueryExecutor implements SqlQueryExecutor {
     }
   }
 
+  @Override
+  public int executeDml(SqlQueryExecutionRequest request) {
+    try (Connection connection = dataSourceRegistry.resolve(request).getConnection()) {
+      connection.setReadOnly(false);
+      connection.setAutoCommit(false);
+      connection.setSchema(request.query().schema());
+      try (var statement = connection.prepareStatement(request.query().sql())) {
+        statement.setQueryTimeout(request.query().limits().timeoutSeconds());
+        bindParameters(statement, request.query().parameters());
+        int affectedRows = statement.executeUpdate();
+        connection.commit();
+        return affectedRows;
+      } catch (SQLException exception) {
+        rollbackQuietly(connection);
+        throw exception;
+      }
+    } catch (SQLException exception) {
+      throw new IllegalStateException("controlled JDBC DML failed", exception);
+    }
+  }
+
+  private void rollbackQuietly(Connection connection) {
+    try {
+      connection.rollback();
+    } catch (SQLException ignored) {
+      // Preserve the original DML failure as the stable error cause.
+    }
+  }
+
   private void bindParameters(PreparedStatement statement, List<SqlTypedParameter> parameters) throws SQLException {
     for (int index = 0; index < parameters.size(); index++) {
       SqlTypedParameter parameter = parameters.get(index);

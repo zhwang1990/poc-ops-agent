@@ -1,6 +1,7 @@
 package com.company.opsagent.executionworker.sqlworkbench;
 
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryExecutionRequest;
+import com.company.opsagent.contracts.sqlworkbench.SqlConnectionSummary;
 import javax.sql.DataSource;
 
 /**
@@ -10,4 +11,8 @@ import javax.sql.DataSource;
 public interface SqlDataSourceRegistry {
 
   DataSource resolve(SqlQueryExecutionRequest request);
+
+  default DataSource resolve(SqlConnectionSummary connection) {
+    throw new UnsupportedOperationException("SQL connection metadata resolution is not supported");
+  }
 }

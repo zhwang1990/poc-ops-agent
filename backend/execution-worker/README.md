@@ -36,15 +36,16 @@
 - 脚本参数不得携带密码、密钥或 token；敏感材料只能通过凭据别名、短期凭据或等价受控边界提供。
 - Worker 会把脚本 stdout/stderr 写入受限工作目录中的执行日志，并同步产出脱敏后的 `LOG` 事件；控制面只转发强类型 `RELEASE_NODE_LOG` 事件给操作台实时展示，不能让前端直接读取 Worker 文件系统。
 
-## SQL 工作台只读边界
+## SQL 工作台执行边界
 
 - SQL 工作台 Worker 侧代码位于 `backend/execution-worker-sqlworkbench`，由 `execution-worker` 作为运行时依赖加载；这不新增部署服务或模块编号。
-- SQL 查询入口会在 Worker 内再次使用 AST 校验，只接受单条 `SELECT`。
+- SQL 查询入口会在 Worker 内再次使用 AST 校验。`RUN_READ_ONLY` 只接受单条 `SELECT`；`COMMIT_DML` 只接受 `dev`、`sit`、`uat` 的单条 `INSERT`、`UPDATE` 或 `DELETE`。
 - Worker 在解析 JDBC `DataSource` 前会先执行本地 SQL 出口 allowlist；部署安全基线要求环境配置为空或显式替换，未显式批准的连接会被拒绝。
 - 仓库内置 `application.yaml` 仅为本地 SQL 工作台 smoke 预置 `h2-local-test` 的 `localhost:9092` 绑定，不代表生产默认配置。
-- SQL 连接目录只允许 `development` 和 `test` 环境，并且只保存连接元数据和凭据别名，不保存真实密码或密钥。
+- SQL 连接目录采用 `dev`、`sit`、`uat`、`production` 环境，并兼容旧输入 `development`、`test` 的归一化；目录只保存连接元数据和凭据别名，不保存真实密码或密钥。
 - JTOpen 仅用于 Db2 for i JDBC 适配，不允许控制面或浏览器直接连接 AS/400。
-- 当前默认执行器未配置真实连接和 KeyStore；只有通过 allowlist 的开发或测试连接才会继续进入后续连接解析。
+- 当前默认执行器未配置真实连接和 KeyStore；只有通过 allowlist 的连接才会继续进入后续连接解析，生产连接只能用于只读查询。
+- 无 `WHERE` 的 `UPDATE` / `DELETE` 必须由控制面校验报告触发操作员二次确认后，才允许进入 Worker 短事务执行。
 - P1 真实联调允许管理员启动时人工解锁 Java KeyStore；P2 若继续推进真实目标系统联调，必须将无人值守安全解锁纳入启用门禁。
 - SQL 出口 allowlist 是应用层保护，不替代防火墙、私有网络、mTLS、短期目标系统凭据或 Windows 隔离。
 
@@ -61,4 +62,4 @@
 执行 Worker 现在拆分为两个 Maven 构建模块：
 
 - `execution-worker`：通用 Worker 启动、传输认证、HTTP 边界和配置型只读 Skill 适配器。
-- `execution-worker-sqlworkbench`：SQL 工作台 Worker 侧只读拒绝、SQL 出口 allowlist、JDBC 执行和短期结果存储适配器。
+- `execution-worker-sqlworkbench`：SQL 工作台 Worker 侧只读拒绝、受控 DML 拒绝、SQL 出口 allowlist、JDBC 执行和短期结果存储适配器。

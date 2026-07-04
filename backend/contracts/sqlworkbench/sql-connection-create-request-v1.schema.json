@@ -21,7 +21,7 @@
   "properties": {
     "contractVersion": { "const": "1.0" },
     "displayName": { "type": "string", "minLength": 1, "maxLength": 200 },
-    "targetEnvironment": { "enum": ["development", "test"] },
+    "targetEnvironment": { "enum": ["dev", "sit", "uat", "production", "development", "test"] },
     "platformType": { "enum": ["DB2_FOR_I", "H2", "MYSQL"] },
     "host": { "type": "string", "minLength": 1, "maxLength": 255 },
     "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
@@ -35,11 +35,28 @@
     "capabilities": {
       "type": "array",
       "minItems": 1,
-      "items": { "enum": ["VALIDATE", "RUN_READ_ONLY", "PREFLIGHT_DML"] },
+      "items": { "enum": ["VALIDATE", "RUN_READ_ONLY", "PREFLIGHT_DML", "COMMIT_DML"] },
       "uniqueItems": true
     },
     "credentialAlias": { "type": "string", "minLength": 1, "maxLength": 200 },
     "maxRowsDefault": { "type": "integer", "minimum": 1, "maximum": 10000 },
     "timeoutSecondsDefault": { "type": "integer", "minimum": 1, "maximum": 300 }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "targetEnvironment": { "const": "production" }
+        },
+        "required": ["targetEnvironment"]
+      },
+      "then": {
+        "properties": {
+          "capabilities": {
+            "items": { "enum": ["VALIDATE", "RUN_READ_ONLY"] }
+          }
+        }
+      }
+    }
+  ]
 }

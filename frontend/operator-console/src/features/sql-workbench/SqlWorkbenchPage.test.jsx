@@ -1,13 +1,16 @@
+import { readFileSync } from "node:fs";
 import { http, HttpResponse } from "msw";
 import { EditorView } from "@codemirror/view";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import App from "../../app/App.jsx";
 import { AppProviders } from "../../app/providers.jsx";
 import { server } from "../../test/server.js";
+
+const sqlWorkbenchCss = readFileSync("src/features/sql-workbench/SqlWorkbenchPage.module.css", "utf8");
 
 /**
  * @param {string} path
@@ -59,6 +62,37 @@ function readSqlText() {
   return editor.textContent ?? "";
 }
 
+/**
+ * @param {ReturnType<typeof userEvent.setup>} user
+ * @param {number} index
+ */
+async function clickRunSqlButton(user, index = 0) {
+  const runButtons = await screen.findAllByRole("button", { name: "执行此 SQL" });
+  await user.click(runButtons[index]);
+}
+
+function expectDirectSqlToolbarActionsHidden() {
+  expect(screen.queryByRole("button", { name: "校验" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "执行 SELECT" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "DML 预检" })).not.toBeInTheDocument();
+}
+
+function expectExecutionFactsErrorFieldsHidden() {
+  expect(screen.getByText("执行事实")).toBeInTheDocument();
+  expect(screen.queryByText("错误码")).not.toBeInTheDocument();
+  expect(screen.queryByText("错误信息")).not.toBeInTheDocument();
+}
+
+/**
+ * @param {string} className
+ */
+function cssRule(className) {
+  return Array.from(
+    sqlWorkbenchCss.matchAll(new RegExp(`\\.${className}\\s*\\{([^}]*)\\}`, "gu")),
+    (match) => match[1],
+  ).join("\n");
+}
+
 beforeEach(() => {
   server.use(
     http.get("/auth/session", () =>
@@ -74,6 +108,74 @@ beforeEach(() => {
 });
 
 describe("SqlWorkbenchPage", () => {
+  test("keeps AI SQL assistant overflow scrollable inside the panel", () => {
+    const panelRule = cssRule("aiPanel");
+    const actionsRule = cssRule("aiActions");
+
+    expect(panelRule).toContain("max-width: 100%");
+    expect(panelRule).toContain("overflow-x: auto");
+    expect(actionsRule).toContain("overflow-x: auto");
+    expect(actionsRule).toContain("flex-wrap: nowrap");
+    expect(actionsRule).toContain("min-width: 0");
+  });
+
+  test("omits placeholder helper copy from validation and AI assistant panels", async () => {
+    server.use(
+      http.get("/internal/sql-workbench/connections", () =>
+        HttpResponse.json(sqlConnections),
+      ),
+    );
+
+    renderAt("/sql");
+
+    expect(await screen.findByText("服务端校验")).toBeInTheDocument();
+    expect(screen.getByText("AI SQL 助手")).toBeInTheDocument();
+    expect(screen.queryByText("服务端 AST、对象引用、风险和拒绝原因会显示在这里。")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("助手只生成解释、优化和错误分析建议；建议应用后必须重新校验。"),
+    ).not.toBeInTheDocument();
+  });
+
+  test("keeps SQL file actions aligned to the top of the editor toolbar", () => {
+    const headerRule = cssRule("editorHeader");
+    const tabsRule = cssRule("sessionModeTabs");
+    const toolbarRule = cssRule("editorToolbar");
+
+    expect(headerRule).toContain("grid-template-columns: minmax(0, 1fr) max-content");
+    expect(headerRule).toContain("align-items: flex-start");
+    expect(headerRule).toContain("border-bottom:");
+    expect(tabsRule).not.toContain("padding: 7px 7px 0");
+    expect(toolbarRule).toContain("align-items: flex-start");
+    expect(toolbarRule).toContain("justify-content: flex-end");
+    expect(toolbarRule).not.toContain("min-height: 46px");
+  });
+
+  test("stacks connection capability labels above capability chips", () => {
+    const capabilitiesRule = cssRule("formCapabilities");
+    const capabilityLabelRule = Array.from(
+      sqlWorkbenchCss.matchAll(/\.formCapabilities\s*>\s*span\s*\{([^}]*)\}/gu),
+      (match) => match[1],
+    ).join("\n");
+
+    expect(capabilitiesRule).toContain("grid-template-columns: repeat(4, max-content)");
+    expect(capabilitiesRule).toContain("align-items: start");
+    expect(capabilitiesRule).toContain("align-content: start");
+    expect(capabilitiesRule).not.toContain("align-items: end");
+    expect(capabilityLabelRule).toContain("grid-column: 1 / -1");
+  });
+
+  test("keeps the object browser schema area compact and object types icon-only", () => {
+    const drawerRule = cssRule("objectDrawer");
+    const schemaRule = cssRule("schemaTree");
+    const objectTypeIconRule = cssRule("metadataObjectTypeIcon");
+
+    expect(drawerRule).toContain("grid-template-rows: auto auto minmax(0, 1fr)");
+    expect(schemaRule).toContain("align-content: start");
+    expect(schemaRule).toContain("grid-auto-rows: max-content");
+    expect(objectTypeIconRule).toContain("width: 26px");
+    expect(objectTypeIconRule).toContain("place-items: center");
+  });
+
   test("shows an empty connection state without runtime mock data", async () => {
     server.use(
       http.get("/internal/sql-workbench/connections", () => HttpResponse.json([])),
@@ -85,8 +187,7 @@ describe("SqlWorkbenchPage", () => {
     expect(screen.getByText("无可用连接")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "管理连接" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "对象浏览器" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "校验" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "执行 SELECT" })).toBeDisabled();
+    expectDirectSqlToolbarActionsHidden();
     expect(screen.queryByText("as400-development")).not.toBeInTheDocument();
     expect(screen.queryByText("ORDERS.ORDERS")).not.toBeInTheDocument();
     expect(
@@ -103,6 +204,11 @@ describe("SqlWorkbenchPage", () => {
       http.post("/internal/sql-workbench/queries/validate", () =>
         HttpResponse.json(validatedSelectReport),
       ),
+      http.get("/internal/sql-workbench/connections/:connectionId/metadata", ({ params, request }) => {
+        expect(params.connectionId).toBe("as400-development");
+        expect(new URL(request.url).searchParams.get("schema")).toBe("ORDERS");
+        return HttpResponse.json(sqlMetadataResponse);
+      }),
     );
 
     renderAt("/sql");
@@ -118,21 +224,150 @@ describe("SqlWorkbenchPage", () => {
     expect(within(contextBar).getByText("ORDERS")).toBeInTheDocument();
     expect(within(contextBar).getByText("maxRows 500")).toBeInTheDocument();
     expect(within(contextBar).getByRole("button", { name: "管理连接" })).toBeEnabled();
-    expect(within(contextBar).getByRole("button", { name: "展开工作区" })).toBeEnabled();
+    expect(within(contextBar).getByRole("button", { name: "展开 SQL 工作区" })).toBeEnabled();
 
     expect(screen.queryByRole("complementary", { name: "SQL 连接目录" })).not.toBeInTheDocument();
     expect(screen.queryByLabelText("数据库对象浏览器")).not.toBeInTheDocument();
     expect(screen.queryByText("执行边界")).not.toBeInTheDocument();
     expect(screen.getByLabelText("SQL 信息面板")).toBeInTheDocument();
+    const fileActions = screen.getByRole("group", { name: "SQL 文件操作" });
+    expect(within(fileActions).getByText("导入 .sql")).toBeInTheDocument();
+    expect(within(fileActions).getByRole("button", { name: "导出 .sql" })).toBeInTheDocument();
+    expect(within(fileActions).getByRole("button", { name: "停止" })).toBeDisabled();
 
     await user.click(screen.getByRole("button", { name: "对象浏览器" }));
     expect(screen.getByLabelText("数据库对象浏览器")).toBeInTheDocument();
-    expect(screen.getByText("对象目录尚未接入真实元数据")).toBeInTheDocument();
+    const ordersObjectButton = await screen.findByRole("button", { name: "ORDERS TABLE" });
+    expect(ordersObjectButton).toHaveAttribute("aria-expanded", "false");
+    expect(ordersObjectButton).not.toHaveTextContent("TABLE");
+    expect(ordersObjectButton.querySelector("svg")).toBeInTheDocument();
+    expect(screen.queryByText("ORDER_ID")).not.toBeInTheDocument();
+    expect(screen.queryByText("STATUS")).not.toBeInTheDocument();
+    await user.click(ordersObjectButton);
+    expect(ordersObjectButton).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText("ORDER_ID")).toBeInTheDocument();
+    expect(screen.getByText("STATUS")).toBeInTheDocument();
+    expect(screen.getByText(/PRIMARY_KEY_ORDERS/u)).toBeInTheDocument();
+    expect(screen.queryByText("对象目录尚未接入真实元数据")).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "展开工作区" }));
+    await user.click(screen.getByRole("button", { name: "展开 SQL 工作区" }));
     expect(screen.queryByLabelText("数据库对象浏览器")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("SQL 信息面板")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "退出展开" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "退出 SQL 展开" })).toBeInTheDocument();
+  });
+
+  test("renders metadata objects in scroll pages with collapsed object details", async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.get("/internal/sql-workbench/connections", () =>
+        HttpResponse.json(sqlConnections),
+      ),
+      http.get("/internal/sql-workbench/connections/:connectionId/metadata", () =>
+        HttpResponse.json(buildSqlMetadataResponse(45)),
+      ),
+    );
+
+    const { container } = renderAt("/sql");
+
+    await screen.findByText("as400-development");
+    const objectBrowserButton = container.querySelector('[class*="connectionActions"] button');
+    if (!objectBrowserButton) {
+      throw new Error("Expected object browser button");
+    }
+    await user.click(objectBrowserButton);
+
+    const metadataList = await screen.findByLabelText("Database metadata objects");
+    expect(screen.getByRole("button", { name: "TABLE_001 TABLE" })).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByRole("button", { name: "TABLE_030 TABLE" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "TABLE_031 TABLE" })).not.toBeInTheDocument();
+    expect(screen.queryByText("COL_001")).not.toBeInTheDocument();
+
+    fireEvent.scroll(metadataList, { target: { scrollTop: 10000 } });
+
+    expect(await screen.findByRole("button", { name: "TABLE_045 TABLE" })).toBeInTheDocument();
+    expect(screen.queryByText("COL_045")).not.toBeInTheDocument();
+  });
+
+  test("requires second confirmation before committing UPDATE without WHERE", async () => {
+    const user = userEvent.setup();
+    const confirmSpy = vi.spyOn(window, "confirm").mockImplementation(() => {
+      throw new Error("Browser confirm should not be used for DML risk confirmation");
+    });
+    /** @type {unknown[]} */
+    const commitRequests = [];
+    server.use(
+      http.get("/internal/sql-workbench/connections", () =>
+        HttpResponse.json(sqlConnections),
+      ),
+      http.post("/internal/sql-workbench/queries/validate", () =>
+        HttpResponse.json({
+          contractVersion: "1.0",
+          statementType: "UPDATE",
+          validationLevel: "PARTIAL",
+          sqlHash: "sha256:update-without-where",
+          referencedObjects: ["ORDERS.ORDERS"],
+          risks: ["UPDATE_WITHOUT_WHERE"],
+          rejectionReasons: [],
+          unverifiedItems: ["impact count and masked sample require live read-only preflight"],
+        }),
+      ),
+      http.post("/internal/sql-workbench/queries/commit", async ({ request }) => {
+        commitRequests.push(await request.json());
+        return HttpResponse.json({
+          contractVersion: "1.0",
+          executionRequestId: "execution-dml-1",
+          workflowId: "workflow-dml-1",
+          status: "SUCCEEDED",
+          resultId: null,
+          errorCode: null,
+          errorMessage: null,
+          affectedRows: 4,
+        });
+      }),
+    );
+
+    renderAt("/sql");
+
+    await screen.findByText("已连接 · development");
+    await replaceSqlText(user, "update ORDERS.ORDERS set status = 'READY'");
+    const transactionControls = screen.getByRole("group", { name: "SQL 事务控制" });
+    const transactionModeButton = within(transactionControls).getByRole("button", {
+      name: "事务模式",
+    });
+    const manualCommitButton = within(transactionControls).getByRole("button", {
+      name: "手动提交",
+    });
+
+    expect(transactionModeButton).toHaveAttribute("aria-pressed", "false");
+    expect(manualCommitButton).toBeDisabled();
+
+    await user.click(transactionModeButton);
+    expect(transactionModeButton).toHaveAttribute("aria-pressed", "true");
+    expect(manualCommitButton).toBeEnabled();
+    await user.click(manualCommitButton);
+
+    const riskDialog = await screen.findByRole("dialog", { name: "确认 DML 风险" });
+    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(within(riskDialog).getByText("UPDATE_WITHOUT_WHERE")).toBeInTheDocument();
+    expect(within(riskDialog).getByText("sha256:update-without-where")).toBeInTheDocument();
+    expect(commitRequests).toHaveLength(0);
+
+    await user.click(within(riskDialog).getByRole("button", { name: "确认提交" }));
+
+    await waitFor(() => expect(commitRequests).toHaveLength(1));
+    expect(commitRequests[0]).toMatchObject({
+      contractVersion: "1.0",
+      query: {
+        action: "COMMIT_DML",
+        sql: "update ORDERS.ORDERS set status = 'READY'",
+      },
+      confirmation: {
+        sqlHash: "sha256:update-without-where",
+        confirmedRisks: ["UPDATE_WITHOUT_WHERE"],
+        confirmationCode: "CONFIRM_SQL_DML_RISK",
+      },
+    });
+    expect(await screen.findByText("DML 提交完成，影响 4 行。")).toBeInTheDocument();
   });
 
   test("shows SQL session modes as functional tabs", async () => {
@@ -418,7 +653,7 @@ describe("SqlWorkbenchPage", () => {
 
     await user.clear(within(dialog).getByLabelText("连接名称"));
     await user.type(within(dialog).getByLabelText("连接名称"), "H2 Lab");
-    await user.selectOptions(within(dialog).getByLabelText("目标环境"), "test");
+    await user.selectOptions(within(dialog).getByLabelText("目标环境"), "sit");
     await user.selectOptions(within(dialog).getByLabelText("平台类型"), "H2");
     expect(within(dialog).getByLabelText("端口")).toHaveValue("9092");
     expect(within(dialog).getByLabelText("默认 Schema")).toHaveValue("");
@@ -442,13 +677,13 @@ describe("SqlWorkbenchPage", () => {
     expect(requests[0]).toMatchObject({
       contractVersion: "1.0",
       displayName: "H2 Lab",
-      targetEnvironment: "test",
+      targetEnvironment: "sit",
       platformType: "H2",
       host: "localhost",
       port: 9092,
       defaultSchema: "PUBLIC",
       allowedSchemas: ["PUBLIC"],
-      capabilities: ["VALIDATE", "RUN_READ_ONLY", "PREFLIGHT_DML"],
+      capabilities: ["VALIDATE", "RUN_READ_ONLY", "PREFLIGHT_DML", "COMMIT_DML"],
       credentialAlias: "h2-lab-readonly",
       maxRowsDefault: 500,
       timeoutSecondsDefault: 30,
@@ -477,7 +712,7 @@ describe("SqlWorkbenchPage", () => {
         return HttpResponse.json({
           ...sqlConnections[0],
           displayName: "AS/400 Reporting",
-          targetEnvironment: "test",
+          targetEnvironment: "sit",
           defaultSchema: "REPORTING",
           allowedSchemas: ["REPORTING"],
           credentialAlias: "as400-reporting-readonly",
@@ -504,7 +739,7 @@ describe("SqlWorkbenchPage", () => {
 
     await user.clear(within(dialog).getByLabelText("连接名称"));
     await user.type(within(dialog).getByLabelText("连接名称"), "AS/400 Reporting");
-    await user.selectOptions(within(dialog).getByLabelText("目标环境"), "test");
+    await user.selectOptions(within(dialog).getByLabelText("目标环境"), "sit");
     await user.clear(within(dialog).getByLabelText("默认 Schema"));
     await user.type(within(dialog).getByLabelText("默认 Schema"), "REPORTING");
     await user.clear(within(dialog).getByLabelText("允许 Schema"));
@@ -524,7 +759,7 @@ describe("SqlWorkbenchPage", () => {
       body: {
         contractVersion: "1.0",
         displayName: "AS/400 Reporting",
-        targetEnvironment: "test",
+        targetEnvironment: "sit",
         defaultSchema: "REPORTING",
         allowedSchemas: ["REPORTING"],
         credentialAlias: "as400-reporting-readonly",
@@ -542,67 +777,63 @@ describe("SqlWorkbenchPage", () => {
     expect(screen.getByText("ORDERS_QA")).toBeInTheDocument();
   });
 
-  test("keeps SQL text and validation reports isolated per session tab", async () => {
+  test("keeps SQL text and execution results isolated per session tab", async () => {
     const user = userEvent.setup();
     server.use(
       http.get("/internal/sql-workbench/connections", () =>
         HttpResponse.json(sqlConnections),
       ),
-      http.post("/internal/sql-workbench/queries/validate", async ({ request }) => {
+      http.post("/internal/sql-workbench/queries/run", async ({ request }) => {
         const body = await request.json();
         const sql = typeof body === "object" && body !== null && "sql" in body
           ? String(/** @type {{sql: unknown}} */ (body).sql)
           : "";
+        const resultId = sql.includes("SESSION_ONE")
+          ? "result-session-one"
+          : "result-session-two";
         return HttpResponse.json({
-          ...validatedSelectReport,
-          sqlHash: sql.includes("SESSION_ONE") ? "sha256:session-one" : "sha256:session-two",
-          referencedObjects: sql.includes("SESSION_ONE")
-            ? ["ORDERS.SESSION_ONE"]
-            : ["ORDERS.SESSION_TWO"],
+          ...queryRunResult,
+          resultId,
         });
       }),
+      http.get("/internal/sql-workbench/results/:resultId", ({ params }) =>
+        HttpResponse.json({
+          ...resultPage,
+          resultId: String(params.resultId),
+          rows: [[String(params.resultId).toUpperCase(), "OK"]],
+        }),
+      ),
     );
 
     renderAt("/sql");
 
     await replaceSqlText(user, "SELECT * FROM ORDERS.SESSION_ONE");
-    await user.click(screen.getByRole("button", { name: "校验" }));
-    expect(await screen.findAllByText("sha256:session-one")).toHaveLength(2);
+    await clickRunSqlButton(user);
+    expect(await screen.findByText("RESULT-SESSION-ONE")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "+ 新建会话" }));
     expect(screen.getByRole("tab", { name: "SQL 2" })).toHaveAttribute("aria-selected", "true");
     expect(readSqlText()).not.toBe("SELECT * FROM ORDERS.SESSION_ONE");
-    expect(screen.queryByText("sha256:session-one")).not.toBeInTheDocument();
+    expect(screen.queryByText("RESULT-SESSION-ONE")).not.toBeInTheDocument();
 
     await replaceSqlText(user, "SELECT * FROM ORDERS.SESSION_TWO");
-    await user.click(screen.getByRole("button", { name: "校验" }));
-    expect(await screen.findAllByText("sha256:session-two")).toHaveLength(2);
+    await clickRunSqlButton(user);
+    expect(await screen.findByText("RESULT-SESSION-TWO")).toBeInTheDocument();
 
     await user.click(screen.getByRole("tab", { name: "SQL 1" }));
     expect(readSqlText()).toBe("SELECT * FROM ORDERS.SESSION_ONE");
-    expect(screen.getAllByText("sha256:session-one")).toHaveLength(2);
-    expect(screen.queryByText("sha256:session-two")).not.toBeInTheDocument();
+    expect(screen.getByText("RESULT-SESSION-ONE")).toBeInTheDocument();
+    expect(screen.queryByText("RESULT-SESSION-TWO")).not.toBeInTheDocument();
   });
 
-  test("executes SELECT directly through server-side validation and keeps DML on preflight", async () => {
+  test("executes SELECT through the editor gutter and hides direct SQL toolbar actions", async () => {
     const user = userEvent.setup();
     /** @type {unknown[]} */
     const runRequests = [];
-    /** @type {unknown[]} */
-    const validationRequests = [];
     server.use(
       http.get("/internal/sql-workbench/connections", () =>
         HttpResponse.json(sqlConnections),
       ),
-      http.post("/internal/sql-workbench/queries/validate", async ({ request }) => {
-        const body = await request.json();
-        validationRequests.push(body);
-        return HttpResponse.json(
-          typeof body === "object" && body !== null && body.action === "PREFLIGHT_DML"
-            ? rejectedDmlReport
-            : validatedSelectReport,
-        );
-      }),
       http.post("/internal/sql-workbench/queries/run", async ({ request }) => {
         runRequests.push(await request.json());
         return HttpResponse.json(queryRunResult);
@@ -615,12 +846,13 @@ describe("SqlWorkbenchPage", () => {
     renderAt("/sql");
 
     await screen.findByText("已连接 · development");
-    expect(screen.getByRole("button", { name: "执行 SELECT" })).toBeDisabled();
+    expectDirectSqlToolbarActionsHidden();
+    expectExecutionFactsErrorFieldsHidden();
 
     await replaceSqlText(user, "SELECT * FROM ORDERS.ORDERS");
-    expect(screen.getByRole("button", { name: "执行 SELECT" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "执行此 SQL" })).toBeEnabled();
 
-    await user.click(screen.getByRole("button", { name: "执行 SELECT" }));
+    await clickRunSqlButton(user);
     expect(await screen.findByText("OD-10500")).toBeInTheDocument();
     expect(screen.getAllByText("result-001").length).toBeGreaterThanOrEqual(1);
 
@@ -634,15 +866,11 @@ describe("SqlWorkbenchPage", () => {
       sql: "SELECT * FROM ORDERS.ORDERS",
     });
     expect(runRequests[0]).not.toHaveProperty("validationHash");
-    expect(validationRequests).toHaveLength(0);
 
     await replaceSqlText(user, "UPDATE ORDERS.ORDERS SET status = 'X'");
-    expect(screen.getByRole("button", { name: "执行 SELECT" })).toBeDisabled();
-    await user.click(screen.getByRole("button", { name: "DML 预检" }));
-    expect(await screen.findByText("DML_PRECHECK_ONLY")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "执行 SELECT" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "执行此 SQL" })).toBeDisabled();
+    expectDirectSqlToolbarActionsHidden();
     expect(runRequests).toHaveLength(1);
-    expect(validationRequests.at(-1)).toMatchObject({ action: "PREFLIGHT_DML" });
   });
 
   test("shows an execution animation while SELECT is running", async () => {
@@ -675,7 +903,7 @@ describe("SqlWorkbenchPage", () => {
     renderAt("/sql");
 
     await replaceSqlText(user, "SELECT * FROM ORDERS.ORDERS");
-    await user.click(screen.getByRole("button", { name: "执行 SELECT" }));
+    await clickRunSqlButton(user);
     await runStarted;
 
     expect(screen.getByRole("status")).toHaveTextContent("正在执行 SELECT 查询");
@@ -686,6 +914,89 @@ describe("SqlWorkbenchPage", () => {
     await waitFor(() =>
       expect(screen.queryByText("正在执行 SELECT 查询")).not.toBeInTheDocument(),
     );
+  });
+
+  test("shows concurrent SQL execution results as switchable result tabs", async () => {
+    const user = userEvent.setup();
+    /** @type {() => void} */
+    let releaseFirstRun = () => {};
+    /** @type {() => void} */
+    let releaseSecondRun = () => {};
+    const runGates = {
+      first: new Promise((resolve) => {
+        releaseFirstRun = () => resolve(undefined);
+      }),
+      second: new Promise((resolve) => {
+        releaseSecondRun = () => resolve(undefined);
+      }),
+    };
+    /** @type {string[]} */
+    const runSqlTexts = [];
+
+    server.use(
+      http.get("/internal/sql-workbench/connections", () =>
+        HttpResponse.json(sqlConnections),
+      ),
+      http.post("/internal/sql-workbench/queries/run", async ({ request }) => {
+        const body = await request.json();
+        const sql = String(/** @type {{sql: unknown}} */ (body).sql);
+        runSqlTexts.push(sql);
+        if (sql.includes("ORDERS.ONE")) {
+          await runGates.first;
+          return HttpResponse.json({
+            ...queryRunResult,
+            executionRequestId: "exec-one",
+            resultId: "result-one",
+            workflowId: "wf-one",
+          });
+        }
+        await runGates.second;
+        return HttpResponse.json({
+          ...queryRunResult,
+          executionRequestId: "exec-two",
+          resultId: "result-two",
+          workflowId: "wf-two",
+        });
+      }),
+      http.get("/internal/sql-workbench/results/:resultId", ({ params }) =>
+        HttpResponse.json({
+          ...resultPage,
+          resultId: String(params.resultId),
+          rows: [[String(params.resultId).toUpperCase(), "OK"]],
+        }),
+      ),
+    );
+
+    renderAt("/sql");
+
+    await replaceSqlText(user, "SELECT * FROM ORDERS.ONE;\nSELECT * FROM ORDERS.TWO;");
+    const runStatementButtons = await screen.findAllByRole("button", {
+      name: "执行此 SQL",
+    });
+    expect(runStatementButtons).toHaveLength(2);
+
+    await user.click(runStatementButtons[0]);
+    await user.click(runStatementButtons[1]);
+    await waitFor(() => expect(runSqlTexts).toHaveLength(2));
+    expect(screen.getByRole("tab", { name: "结果 1 · 执行中" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "结果 2 · 执行中" })).toBeInTheDocument();
+
+    releaseSecondRun();
+    expect(await screen.findByText("RESULT-TWO")).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "结果 2 · SUCCEEDED" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+
+    releaseFirstRun();
+    await screen.findByRole("tab", { name: "结果 1 · SUCCEEDED" });
+    await user.click(screen.getByRole("tab", { name: "结果 1 · SUCCEEDED" }));
+    expect(await screen.findByText("RESULT-ONE")).toBeInTheDocument();
+    expect(screen.queryByText("RESULT-TWO")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("tab", { name: "结果 2 · SUCCEEDED" }));
+    expect(await screen.findByText("RESULT-TWO")).toBeInTheDocument();
+    expect(screen.queryByText("RESULT-ONE")).not.toBeInTheDocument();
   });
 
   test("highlights line comments and keeps commented SELECT runnable", async () => {
@@ -716,14 +1027,14 @@ describe("SqlWorkbenchPage", () => {
     expect(editor.querySelector(".cm-sql-comment")).toHaveTextContent(
       "-- run this read-only smoke check",
     );
-    expect(screen.getByRole("button", { name: "执行 SELECT" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "执行此 SQL" })).toBeEnabled();
 
-    await user.click(screen.getByRole("button", { name: "执行 SELECT" }));
+    await clickRunSqlButton(user);
 
     await waitFor(() => expect(runRequests).toHaveLength(1));
     expect(runRequests[0]).toMatchObject({
       action: "RUN_READ_ONLY",
-      sql: commentedSql,
+      sql: "SELECT * FROM ORDERS.ORDERS",
     });
   });
 
@@ -759,7 +1070,7 @@ describe("SqlWorkbenchPage", () => {
       name: "执行此 SQL",
     });
     expect(runStatementButtons).toHaveLength(2);
-    expect(screen.getByRole("button", { name: "执行 SELECT" })).toBeDisabled();
+    expectDirectSqlToolbarActionsHidden();
 
     await user.click(runStatementButtons[1]);
 
@@ -824,7 +1135,7 @@ describe("SqlWorkbenchPage", () => {
 
     await screen.findByText("已连接 · development");
     await replaceSqlText(user, "SELECT * FROM ORDERS.ORDERS");
-    await user.click(screen.getByRole("button", { name: "执行 SELECT" }));
+    await clickRunSqlButton(user);
 
     const alerts = await screen.findAllByRole("alert");
     const alert = alerts.find((element) =>
@@ -889,7 +1200,7 @@ describe("SqlWorkbenchPage", () => {
 
     await screen.findByText("已连接 · development");
     await replaceSqlText(user, syntaxSql);
-    await user.click(screen.getByRole("button", { name: "执行 SELECT" }));
+    await clickRunSqlButton(user);
 
     expect(await screen.findByText("SQL syntax is not supported")).toBeInTheDocument();
     expect(await screen.findByText("SQL 语法错误：FORM 应改为 FROM。")).toBeInTheDocument();
@@ -955,10 +1266,10 @@ describe("SqlWorkbenchPage", () => {
     renderAt("/sql");
 
     await screen.findByText("已连接 · development");
-    await user.click(screen.getByRole("button", { name: "展开工作区" }));
+    await user.click(screen.getByRole("button", { name: "展开 SQL 工作区" }));
     expect(screen.queryByLabelText("SQL 信息面板")).not.toBeInTheDocument();
     await replaceSqlText(user, failedSql);
-    await user.click(screen.getByRole("button", { name: "执行 SELECT" }));
+    await clickRunSqlButton(user);
 
     expect(await screen.findByText("SQL_EXECUTION_FAILED: SQL query execution failed")).toBeInTheDocument();
     expect(screen.getAllByRole("alert")).toHaveLength(1);
@@ -1013,7 +1324,7 @@ describe("SqlWorkbenchPage", () => {
 
     await screen.findByText("已连接 · development");
     await replaceSqlText(user, "SELECT * FROM ORDERS.ORDERS");
-    await user.click(screen.getByRole("button", { name: "执行 SELECT" }));
+    await clickRunSqlButton(user);
 
     expect(await screen.findByText("OD-10500")).toBeInTheDocument();
     expect(screen.getByText("第 1 页")).toBeInTheDocument();
@@ -1057,7 +1368,7 @@ describe("SqlWorkbenchPage", () => {
     await waitFor(() => expect(separator).toHaveAttribute("aria-valuenow", "84"));
   });
 
-  test("blocks invalid production connection data at the contract boundary", async () => {
+  test("blocks production connection data with DML capabilities at the contract boundary", async () => {
     server.use(
       http.get("/internal/sql-workbench/connections", () =>
         HttpResponse.json([
@@ -1099,8 +1410,7 @@ describe("SqlWorkbenchPage", () => {
     renderAt("/sql");
 
     await replaceSqlText(user, "SELECT * FROM ORDERS.ORDERS");
-    await user.click(screen.getByRole("button", { name: "校验" }));
-    expect(await screen.findByText("VALIDATED")).toBeInTheDocument();
+    expectDirectSqlToolbarActionsHidden();
 
     await user.click(screen.getByRole("button", { name: "优化建议" }));
     expect(await screen.findByText("Use explicit columns.")).toBeInTheDocument();
@@ -1119,7 +1429,7 @@ describe("SqlWorkbenchPage", () => {
     await user.click(screen.getByRole("button", { name: "应用建议到编辑器" }));
     expect(readSqlText()).toBe("select order_id, status from ORDERS.ORDERS");
     expect(screen.queryByText("VALIDATED")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "执行 SELECT" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "执行此 SQL" })).toBeEnabled();
   });
 
   test("shows an AI SQL assistant loading animation while advice is pending", async () => {
@@ -1174,7 +1484,7 @@ const sqlConnections = [
     status: "READY",
     defaultSchema: "ORDERS",
     allowedSchemas: ["ORDERS", "INVENTORY"],
-    capabilities: ["VALIDATE", "RUN_READ_ONLY", "PREFLIGHT_DML"],
+    capabilities: ["VALIDATE", "RUN_READ_ONLY", "PREFLIGHT_DML", "COMMIT_DML"],
     credentialAlias: "as400-development-readonly",
     maxRowsDefault: 500,
     timeoutSecondsDefault: 30,
@@ -1190,7 +1500,7 @@ const sqlConnections = [
     status: "READY",
     defaultSchema: "ORDERS_QA",
     allowedSchemas: ["ORDERS_QA"],
-    capabilities: ["VALIDATE", "RUN_READ_ONLY", "PREFLIGHT_DML"],
+    capabilities: ["VALIDATE", "RUN_READ_ONLY", "PREFLIGHT_DML", "COMMIT_DML"],
     credentialAlias: "as400-test-readonly",
     maxRowsDefault: 500,
     timeoutSecondsDefault: 30,
@@ -1201,12 +1511,12 @@ const createdConnection = {
   contractVersion: "1.0",
   connectionId: "as400-lab",
   displayName: "AS/400 Lab",
-  targetEnvironment: "test",
+  targetEnvironment: "sit",
   platformType: "DB2_FOR_I",
   status: "PENDING_WORKER_BINDING",
   defaultSchema: "LABORDERS",
   allowedSchemas: ["LABORDERS", "INVENTORY_QA"],
-  capabilities: ["VALIDATE", "RUN_READ_ONLY", "PREFLIGHT_DML"],
+  capabilities: ["VALIDATE", "RUN_READ_ONLY", "PREFLIGHT_DML", "COMMIT_DML"],
   maxRowsDefault: 500,
   timeoutSecondsDefault: 30,
 };
@@ -1223,17 +1533,70 @@ const validatedSelectReport = {
   unverifiedItems: [],
 };
 
-const rejectedDmlReport = {
+const sqlMetadataResponse = {
   contractVersion: "1.0",
-  statementType: "UPDATE",
-  validationLevel: "REJECTED",
-  sqlHash: "sha256:dml",
-  validationHash: "sha256:validation-dml",
-  referencedObjects: ["ORDERS.ORDERS"],
-  risks: ["DML_PRECHECK_ONLY"],
-  rejectionReasons: ["DML execution is not allowed in P1"],
-  unverifiedItems: ["affectedRows"],
+  connectionId: "as400-development",
+  schema: "ORDERS",
+  objects: [
+    {
+      schema: "ORDERS",
+      name: "ORDERS",
+      type: "TABLE",
+      columns: [
+        {
+          name: "ORDER_ID",
+          type: "INTEGER",
+          nullable: false,
+          ordinalPosition: 1,
+          masked: false,
+        },
+        {
+          name: "STATUS",
+          type: "VARCHAR",
+          nullable: false,
+          ordinalPosition: 2,
+          masked: false,
+        },
+      ],
+      indexes: [
+        {
+          name: "PRIMARY_KEY_ORDERS",
+          unique: true,
+          columns: ["ORDER_ID"],
+        },
+      ],
+    },
+  ],
+  truncated: false,
+  refreshedAt: "2026-06-27T10:15:31Z",
 };
+
+/**
+ * @param {number} count
+ */
+function buildSqlMetadataResponse(count) {
+  return {
+    ...sqlMetadataResponse,
+    objects: Array.from({ length: count }, (_, index) => {
+      const ordinal = String(index + 1).padStart(3, "0");
+      return {
+        schema: "ORDERS",
+        name: `TABLE_${ordinal}`,
+        type: "TABLE",
+        columns: [
+          {
+            name: `COL_${ordinal}`,
+            type: "VARCHAR",
+            nullable: false,
+            ordinalPosition: 1,
+            masked: false,
+          },
+        ],
+        indexes: [],
+      };
+    }),
+  };
+}
 
 const rejectedSyntaxReport = {
   contractVersion: "1.0",

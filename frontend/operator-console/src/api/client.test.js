@@ -16,7 +16,7 @@ import {
 } from "./agent-api.js";
 import { ApiError, SESSION_EXPIRED_EVENT, requestJson } from "./client.js";
 import { getSkill, listSkills } from "./skill-api.js";
-import { listSqlConnections, validateSqlQuery } from "./sql-api.js";
+import { commitControlledSqlDml, listSqlConnections, validateSqlQuery } from "./sql-api.js";
 import {
   listReleaseScriptProfiles,
   listReleaseApplications,
@@ -252,6 +252,19 @@ describe("feature API modules", () => {
         calls.push([request.method, new URL(request.url).pathname, await request.json()]);
         return HttpResponse.json(validationReport);
       }),
+      http.post("/internal/sql-workbench/queries/commit", async ({ request }) => {
+        calls.push([request.method, new URL(request.url).pathname, await request.json()]);
+        return HttpResponse.json({
+          contractVersion: "1.0",
+          executionRequestId: "execution-dml-1",
+          workflowId: "workflow-dml-1",
+          status: "SUCCEEDED",
+          resultId: null,
+          errorCode: null,
+          errorMessage: null,
+          affectedRows: 1,
+        });
+      }),
     );
 
     await listSkills();
@@ -259,6 +272,7 @@ describe("feature API modules", () => {
     await searchSkillCandidates(routingRequest);
     await listSqlConnections();
     await validateSqlQuery(sqlRequest);
+    await commitControlledSqlDml(sqlDmlCommitRequest);
 
     expect(calls).toEqual([
       ["GET", "/internal/skills"],
@@ -266,6 +280,7 @@ describe("feature API modules", () => {
       ["POST", "/internal/routing/skills/search", routingRequest],
       ["GET", "/internal/sql-workbench/connections"],
       ["POST", "/internal/sql-workbench/queries/validate", sqlRequest],
+      ["POST", "/internal/sql-workbench/queries/commit", sqlDmlCommitRequest],
     ]);
   });
 
@@ -590,6 +605,18 @@ const sqlRequest = {
   parameters: [],
   limits: { maxRows: 500, maxBytes: 5000000, timeoutSeconds: 30 },
   idempotencyKey: "sql-validate-1",
+};
+
+const sqlDmlCommitRequest = {
+  contractVersion: "1.0",
+  query: {
+    ...sqlRequest,
+    targetEnvironment: "dev",
+    action: "COMMIT_DML",
+    sql: "update ORDERS.ORDERS set status = 'READY' where order_id = 1",
+    idempotencyKey: "sql-commit-1",
+  },
+  confirmation: null,
 };
 
 const validationReport = {

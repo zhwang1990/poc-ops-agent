@@ -3,6 +3,7 @@ package com.company.opsagent.controlplane.modules.sqlworkbench;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryExecutionRequest;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryExecutionResult;
 import com.company.opsagent.contracts.sqlworkbench.SqlResultPage;
+import com.company.opsagent.contracts.sqlworkbench.SqlDatabaseMetadata;
 import com.company.opsagent.contracts.sqlworkbench.SqlConnectionProbeResult;
 import com.company.opsagent.contracts.sqlworkbench.SqlConnectionSummary;
 
@@ -16,4 +17,6 @@ public interface SqlWorkbenchWorkerClient {
   SqlQueryExecutionResult execute(SqlQueryExecutionRequest request);
 
   SqlResultPage readResultPage(String resultId);
+
+  SqlDatabaseMetadata readMetadata(SqlConnectionSummary connection, String schema);
 }

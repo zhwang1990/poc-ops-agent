@@ -55,10 +55,7 @@ public record SqlConnectionSummary(
     }
     connectionId = requiredText(connectionId, "connectionId");
     displayName = requiredText(displayName, "displayName");
-    targetEnvironment = requiredText(targetEnvironment, "targetEnvironment");
-    if ("production".equalsIgnoreCase(targetEnvironment)) {
-      throw new IllegalArgumentException("production connections must not be exposed");
-    }
+    targetEnvironment = SqlTargetEnvironments.normalize(targetEnvironment);
     platformType = SqlPlatformTypes.normalize(platformType);
     host = requiredText(host, "host");
     if (port < 1 || port > 65535) {
@@ -71,6 +68,10 @@ public record SqlConnectionSummary(
       throw new IllegalArgumentException("defaultSchema must be present in allowedSchemas");
     }
     capabilities = requiredList(capabilities, "capabilities");
+    if (SqlTargetEnvironments.isProduction(targetEnvironment)
+        && capabilities.stream().anyMatch(SqlConnectionSummary::isDmlCapability)) {
+      throw new IllegalArgumentException("production SQL connections only allow query capabilities");
+    }
     credentialAlias = requiredText(credentialAlias, "credentialAlias");
     status = requiredText(status, "status");
     if (maxRowsDefault < 1 || maxRowsDefault > 10_000) {
@@ -79,5 +80,9 @@ public record SqlConnectionSummary(
     if (timeoutSecondsDefault < 1 || timeoutSecondsDefault > 300) {
       throw new IllegalArgumentException("timeoutSecondsDefault must be between 1 and 300");
     }
+  }
+
+  private static boolean isDmlCapability(SqlQueryAction action) {
+    return action == SqlQueryAction.PREFLIGHT_DML || action == SqlQueryAction.COMMIT_DML;
   }
 }

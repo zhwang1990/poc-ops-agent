@@ -19,12 +19,15 @@ export const LEGACY_READ_ONLY_VALIDATION_ERROR =
  * @typedef {import("../../schemas/sql-schemas.js").SqlResultPage} SqlResultPage
  * @typedef {import("../../schemas/sql-schemas.js").SqlAssistantResponse} SqlAssistantResponse
  * @typedef {"sql" | "natural-language" | "compare"} SqlSessionMode
+ * @typedef {"auto" | "manual"} SqlTransactionMode
  * @typedef {"EXPLAIN_SQL" | "OPTIMIZE_SQL" | "ANALYZE_ERROR" | "GENERATE_SELECT" | "COMPARE_SUMMARY"} SqlAssistantAction
  * @typedef {{draftSql: string, fields: string, includeCurrentSql: boolean, library: string, prompt: string, statusMessage: string | null, tableName: string}} SqlNaturalLanguageState
  * @typedef {{assistant: SqlAssistantResponse | null, baseLibrary: string, compareLibrary: string, errorMessage: string | null, fields: string, ignoredFields: string, keyFields: string, maxRows: string, report: SqlCompareReport | null, statusMessage: string | null, tableName: string, whereClause: string}} SqlCompareState
+ * @typedef {{errorMessage: string | null, execution: SqlQueryRunResult | null, id: string, isPending: boolean, label: string, resultPageIndex: number, resultPage: SqlResultPage | null, resultPageToken: string | null, resultPageTokens: Array<string | null>, sql: string}} SqlResultTab
  * @typedef {{
  *   assistant: SqlAssistantResponse | null,
  *   assistantErrorMessage: string | null,
+ *   activeResultTabId: string | null,
  *   compare: SqlCompareState,
  *   connectionId: string,
  *   errorMessage: string | null,
@@ -37,8 +40,10 @@ export const LEGACY_READ_ONLY_VALIDATION_ERROR =
  *   resultPage: SqlResultPage | null,
  *   resultPageToken: string | null,
  *   resultPageTokens: Array<string | null>,
+ *   resultTabs: SqlResultTab[],
  *   schema: string,
  *   sql: string,
+ *   transactionMode: SqlTransactionMode,
  *   validation: SqlValidationReport | null,
  * }} SqlWorkbenchSession
  * @typedef {{from: number, sql: string, to: number}} SqlEditorStatement
@@ -352,6 +357,7 @@ export function createSession(index, sql) {
   return {
     assistant: null,
     assistantErrorMessage: null,
+    activeResultTabId: null,
     compare: createCompareState(),
     connectionId: "",
     errorMessage: null,
@@ -364,8 +370,10 @@ export function createSession(index, sql) {
     resultPageIndex: 0,
     resultPageToken: null,
     resultPageTokens: [null],
+    resultTabs: [],
     schema: "",
     sql,
+    transactionMode: "auto",
     validation: null,
   };
 }
@@ -378,6 +386,16 @@ export function createSession(index, sql) {
  */
 export function isLikelyReadOnlySql(sql) {
   return /^(?:\s|--[^\n]*(?:\n|$)|\/\*[\s\S]*?\*\/)*(?:select|with)\b/iu.test(sql);
+}
+
+/**
+ * Lightweight UX hint only. The server performs the authoritative AST-based
+ * controlled DML validation before commit.
+ *
+ * @param {string} sql
+ */
+export function isLikelyControlledDmlSql(sql) {
+  return /^(?:\s|--[^\n]*(?:\n|$)|\/\*[\s\S]*?\*\/)*(?:insert|update|delete)\b/iu.test(sql);
 }
 
 /**
@@ -488,7 +506,7 @@ export function buildLimits(connection) {
 /**
  * @param {SqlConnectionSummary} connection
  * @param {string} schema
- * @param {"VALIDATE" | "PREFLIGHT_DML" | "RUN_READ_ONLY"} action
+ * @param {"VALIDATE" | "PREFLIGHT_DML" | "RUN_READ_ONLY" | "COMMIT_DML"} action
  * @param {string} sql
  * @param {string} idempotencyAction
  */

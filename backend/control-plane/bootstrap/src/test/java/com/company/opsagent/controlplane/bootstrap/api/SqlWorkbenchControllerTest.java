@@ -12,6 +12,11 @@ import com.company.opsagent.contracts.sqlworkbench.SqlAssistantRequest;
 import com.company.opsagent.contracts.sqlworkbench.SqlAssistantResponse;
 import com.company.opsagent.contracts.sqlworkbench.SqlAssistantStatus;
 import com.company.opsagent.contracts.sqlworkbench.SqlAssistantSuggestion;
+import com.company.opsagent.contracts.sqlworkbench.SqlDatabaseMetadata;
+import com.company.opsagent.contracts.sqlworkbench.SqlDmlCommitRequest;
+import com.company.opsagent.contracts.sqlworkbench.SqlMetadataColumn;
+import com.company.opsagent.contracts.sqlworkbench.SqlMetadataIndex;
+import com.company.opsagent.contracts.sqlworkbench.SqlMetadataObject;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryExecutionResult;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryRequest;
 import com.company.opsagent.contracts.sqlworkbench.SqlResultPage;
@@ -164,16 +169,127 @@ class SqlWorkbenchControllerTest {
     assertEquals("SQL syntax is not supported", service.lastAssistantRequest.diagnosticContext());
   }
 
+  @Test
+  void passesMetadataReadThroughServiceBoundary() {
+    StepVerifier.create(controller.metadata("h2-local-test", "PUBLIC"))
+        .assertNext(response -> {
+          assertEquals("h2-local-test", response.connectionId());
+          assertEquals("PUBLIC", response.schema());
+          assertEquals("ORDERS", response.objects().getFirst().name());
+        })
+        .verifyComplete();
+
+    assertEquals(1, service.metadataCount.get());
+    assertEquals("h2-local-test", service.lastMetadataConnectionId);
+    assertEquals("PUBLIC", service.lastMetadataSchema);
+  }
+
+  @Test
+  void passesDmlCommitRequestThroughTypedServiceBoundary() throws Exception {
+    var request = objectMapper.readTree("""
+        {
+          "contractVersion": "1.0",
+          "query": {
+            "contractVersion": "1.0",
+            "connectionId": "as400-dev",
+            "targetEnvironment": "dev",
+            "schema": "ORDERS",
+            "action": "COMMIT_DML",
+            "sql": "update ORDERS.ORDERS set status = 'READY'",
+            "parameters": [],
+            "limits": {
+              "maxRows": 500,
+              "maxBytes": 5000000,
+              "timeoutSeconds": 30
+            },
+            "idempotencyKey": "commit-key-1"
+          },
+          "confirmation": {
+            "contractVersion": "1.0",
+            "sqlHash": "sha256:test",
+            "confirmedRisks": ["UPDATE_WITHOUT_WHERE"],
+            "confirmationCode": "CONFIRM_SQL_DML_RISK"
+          }
+        }
+        """);
+
+    StepVerifier.create(controller.commit(request, exchange()))
+        .assertNext(response -> {
+          assertEquals("SUCCEEDED", response.status());
+          assertEquals(1, response.affectedRows());
+        })
+        .verifyComplete();
+
+    assertEquals(1, service.commitCount.get());
+  }
+
+  @Test
+  void rejectsUnknownDmlCommitFieldsBeforeServiceLayer() throws Exception {
+    var request = objectMapper.readTree("""
+        {
+          "contractVersion": "1.0",
+          "query": {
+            "contractVersion": "1.0",
+            "connectionId": "as400-dev",
+            "targetEnvironment": "dev",
+            "schema": "ORDERS",
+            "action": "COMMIT_DML",
+            "sql": "delete from ORDERS.ORDERS where order_id = 1",
+            "parameters": [],
+            "limits": {
+              "maxRows": 500,
+              "maxBytes": 5000000,
+              "timeoutSeconds": 30
+            },
+            "idempotencyKey": "commit-key-1"
+          },
+          "password": "must-not-be-accepted"
+        }
+        """);
+
+    StepVerifier.create(controller.commit(request, exchange()))
+        .expectErrorSatisfies(error -> {
+          assertInstanceOf(IllegalArgumentException.class, error);
+          assertEquals("unsupported SQL DML commit field: password", error.getMessage());
+        })
+        .verify();
+
+    assertEquals(0, service.commitCount.get());
+  }
+
+  private org.springframework.web.server.ServerWebExchange exchange() {
+    var exchange = org.springframework.mock.web.server.MockServerWebExchange.from(
+        org.springframework.mock.http.server.reactive.MockServerHttpRequest.post("/internal/sql-workbench/queries/commit"));
+    exchange.getAttributes().put(
+        com.company.opsagent.controlplane.bootstrap.security.PolicyEnforcementWebFilter.EXECUTION_CONTEXT_ATTRIBUTE,
+        new com.company.opsagent.controlplane.modules.audit.ExecutionContext(
+            "request-1",
+            "trace-1",
+            "operator-1",
+            "operator",
+            List.of("ROLE_ops-admin"),
+            "internal.sql-workbench.dml.commit",
+            "/internal/sql-workbench/queries/commit",
+            "POST",
+            "/internal/sql-workbench/queries/commit",
+            "policy-v1"));
+    return exchange;
+  }
+
   private static final class RecordingSqlWorkbenchService implements SqlWorkbenchService {
 
     private final AtomicInteger createCount = new AtomicInteger();
     private final AtomicInteger updateCount = new AtomicInteger();
     private final AtomicInteger deleteCount = new AtomicInteger();
     private final AtomicInteger assistCount = new AtomicInteger();
+    private final AtomicInteger metadataCount = new AtomicInteger();
+    private final AtomicInteger commitCount = new AtomicInteger();
     private String lastUpdateConnectionId;
     private SqlConnectionUpdateRequest lastUpdateRequest;
     private String lastDeleteConnectionId;
     private SqlAssistantRequest lastAssistantRequest;
+    private String lastMetadataConnectionId;
+    private String lastMetadataSchema;
 
     @Override
     public List<SqlConnectionSummary> listConnections() {
@@ -252,8 +368,45 @@ class SqlWorkbenchControllerTest {
     }
 
     @Override
+    public SqlQueryExecutionResult commitControlledDml(
+        SqlDmlCommitRequest request,
+        OperatorContext operator,
+        PolicyDecisionReference policyDecision,
+        TraceContext trace) {
+      commitCount.incrementAndGet();
+      return new SqlQueryExecutionResult(
+          "1.0",
+          "execution-1",
+          "workflow-1",
+          "SUCCEEDED",
+          null,
+          null,
+          null,
+          1);
+    }
+
+    @Override
     public SqlResultPage readResultPage(String resultId) {
       throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public SqlDatabaseMetadata readMetadata(String connectionId, String schema) {
+      metadataCount.incrementAndGet();
+      lastMetadataConnectionId = connectionId;
+      lastMetadataSchema = schema;
+      return new SqlDatabaseMetadata(
+          "1.0",
+          connectionId,
+          schema,
+          List.of(new SqlMetadataObject(
+              schema,
+              "ORDERS",
+              "TABLE",
+              List.of(new SqlMetadataColumn("ORDER_ID", "INTEGER", false, 1, false)),
+              List.of(new SqlMetadataIndex("PRIMARY_KEY_ORDERS", true, List.of("ORDER_ID"))))),
+          false,
+          java.time.OffsetDateTime.parse("2026-06-27T10:30:00Z"));
     }
   }
 }

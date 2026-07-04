@@ -71,8 +71,14 @@ class PolicyEnforcementWebFilterTest {
         "internal.sql-workbench.connections.probe",
         resolvedAction(MockServerHttpRequest.post("/internal/sql-workbench/connections/as400-development/probe")));
     assertEquals(
+        "internal.sql-workbench.metadata.read",
+        resolvedAction(MockServerHttpRequest.get("/internal/sql-workbench/connections/as400-development/metadata")));
+    assertEquals(
         "internal.sql-workbench.queries.run",
         resolvedAction(MockServerHttpRequest.post("/internal/sql-workbench/queries/run")));
+    assertEquals(
+        "internal.sql-workbench.dml.commit",
+        resolvedAction(MockServerHttpRequest.post("/internal/sql-workbench/queries/commit")));
     assertEquals(
         "internal.sql-workbench.assistant.use",
         resolvedAction(MockServerHttpRequest.post("/internal/sql-workbench/assistant")));

@@ -55,6 +55,16 @@ public class SqlWorkerTransportAuthenticator {
     assertSignature(headers, payload);
   }
 
+  public void authenticateSqlMetadataRead(HttpHeaders headers, SqlConnectionSummary connection, String schema) {
+    if (!properties.isEnabled()) {
+      return;
+    }
+    String keyId = acceptedKeyId(headers);
+    String timestamp = acceptedTimestamp(headers);
+    String payload = WorkerRequestSignature.canonicalSqlMetadataPayload(keyId, timestamp, connection, schema);
+    assertSignature(headers, payload);
+  }
+
   private String acceptedKeyId(HttpHeaders headers) {
     ensureConfigured();
     String keyId = requireHeader(headers, WorkerTransportHeaders.KEY_ID);

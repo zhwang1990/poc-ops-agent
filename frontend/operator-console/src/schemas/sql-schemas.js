@@ -8,13 +8,22 @@ import { z } from "zod";
  * @typedef {z.infer<typeof sqlConnectionProbeResultSchema>} SqlConnectionProbeResult
  * @typedef {z.infer<typeof sqlQueryRunRequestSchema>} SqlQueryRunRequest
  * @typedef {z.infer<typeof sqlQueryRunResultSchema>} SqlQueryRunResult
+ * @typedef {z.infer<typeof sqlDmlCommitRequestSchema>} SqlDmlCommitRequest
  * @typedef {z.infer<typeof sqlResultPageSchema>} SqlResultPage
+ * @typedef {z.infer<typeof sqlMetadataResponseSchema>} SqlMetadataResponse
  * @typedef {z.infer<typeof sqlAssistantRequestSchema>} SqlAssistantRequest
  * @typedef {z.infer<typeof sqlAssistantResponseSchema>} SqlAssistantResponse
  */
 
 const nonBlankString = z.string().trim().min(1);
-const targetEnvironmentSchema = z.enum(["development", "test"]);
+const targetEnvironmentSchema = z.enum([
+  "dev",
+  "sit",
+  "uat",
+  "production",
+  "development",
+  "test",
+]);
 const sqlPlatformTypeSchema = z.enum(["DB2_FOR_I", "H2", "MYSQL"]);
 const sqlConnectionStatusSchema = z.enum([
   "READY",
@@ -35,6 +44,7 @@ const sqlQueryActionSchema = z.enum([
   "EXPLAIN",
   "RUN_READ_ONLY",
   "PREFLIGHT_DML",
+  "COMMIT_DML",
 ]);
 const sqlAssistantActionSchema = z.enum([
   "EXPLAIN_SQL",
@@ -43,8 +53,47 @@ const sqlAssistantActionSchema = z.enum([
   "GENERATE_SELECT",
   "COMPARE_SUMMARY",
 ]);
+const productionWriteActions = new Set(["PREFLIGHT_DML", "COMMIT_DML"]);
 
-const sqlConnectionSchema = z
+/**
+ * @param {string} targetEnvironment
+ */
+function isProductionEnvironment(targetEnvironment) {
+  return targetEnvironment === "production";
+}
+
+/**
+ * @param {unknown[]} capabilities
+ * @param {import("zod").RefinementCtx} context
+ */
+function rejectProductionDmlCapabilities(capabilities, context) {
+  const firstDmlIndex = capabilities.findIndex((capability) =>
+    productionWriteActions.has(String(capability)),
+  );
+  if (firstDmlIndex >= 0) {
+    context.addIssue({
+      code: "custom",
+      message: "production SQL connections only allow query capabilities",
+      path: ["capabilities", firstDmlIndex],
+    });
+  }
+}
+
+/**
+ * @param {unknown} action
+ * @param {import("zod").RefinementCtx} context
+ */
+function rejectProductionDmlAction(action, context) {
+  if (productionWriteActions.has(String(action))) {
+    context.addIssue({
+      code: "custom",
+      message: "production SQL workbench requests only allow query actions",
+      path: ["action"],
+    });
+  }
+}
+
+const sqlConnectionBaseSchema = z
   .object({
     contractVersion: z.literal("1.0"),
     connectionId: nonBlankString,
@@ -63,9 +112,15 @@ const sqlConnectionSchema = z
   })
   .strict();
 
+const sqlConnectionSchema = sqlConnectionBaseSchema.superRefine((connection, context) => {
+  if (isProductionEnvironment(connection.targetEnvironment)) {
+    rejectProductionDmlCapabilities(connection.capabilities, context);
+  }
+});
+
 export const sqlConnectionListSchema = z.array(sqlConnectionSchema);
 
-export const sqlConnectionCreateRequestSchema = z
+const sqlConnectionCreateRequestBaseSchema = z
   .object({
     contractVersion: z.literal("1.0"),
     displayName: nonBlankString,
@@ -81,6 +136,14 @@ export const sqlConnectionCreateRequestSchema = z
     timeoutSecondsDefault: z.number().int().min(1).max(300),
   })
   .strict();
+
+export const sqlConnectionCreateRequestSchema = sqlConnectionCreateRequestBaseSchema.superRefine(
+  (connection, context) => {
+    if (isProductionEnvironment(connection.targetEnvironment)) {
+      rejectProductionDmlCapabilities(connection.capabilities, context);
+    }
+  },
+);
 
 export const sqlConnectionUpdateRequestSchema = sqlConnectionCreateRequestSchema;
 
@@ -113,7 +176,7 @@ const sqlQueryLimitsSchema = z
   })
   .strict();
 
-export const sqlQueryRequestSchema = z
+const sqlQueryRequestBaseSchema = z
   .object({
     contractVersion: z.literal("1.0"),
     connectionId: nonBlankString,
@@ -127,9 +190,44 @@ export const sqlQueryRequestSchema = z
   })
   .strict();
 
-export const sqlQueryRunRequestSchema = sqlQueryRequestSchema
+export const sqlQueryRequestSchema = sqlQueryRequestBaseSchema.superRefine((request, context) => {
+  if (isProductionEnvironment(request.targetEnvironment)) {
+    rejectProductionDmlAction(request.action, context);
+  }
+});
+
+export const sqlQueryRunRequestSchema = sqlQueryRequestBaseSchema
   .extend({
     action: z.literal("RUN_READ_ONLY"),
+  })
+  .strict()
+  .superRefine((request, context) => {
+    if (isProductionEnvironment(request.targetEnvironment)) {
+      rejectProductionDmlAction(request.action, context);
+    }
+  });
+
+const sqlDmlConfirmationSchema = z
+  .object({
+    contractVersion: z.literal("1.0"),
+    sqlHash: nonBlankString,
+    confirmedRisks: z.array(nonBlankString).min(1),
+    confirmationCode: z.literal("CONFIRM_SQL_DML_RISK"),
+  })
+  .strict();
+
+export const sqlDmlCommitRequestSchema = z
+  .object({
+    contractVersion: z.literal("1.0"),
+    query: sqlQueryRequestBaseSchema
+      .extend({ action: z.literal("COMMIT_DML") })
+      .strict()
+      .superRefine((request, context) => {
+        if (isProductionEnvironment(request.targetEnvironment)) {
+          rejectProductionDmlAction(request.action, context);
+        }
+      }),
+    confirmation: sqlDmlConfirmationSchema.nullable().optional(),
   })
   .strict();
 
@@ -191,6 +289,7 @@ export const sqlQueryRunResultSchema = z
     resultId: nonBlankString.nullable().optional(),
     errorCode: z.string().nullable().optional(),
     errorMessage: z.string().nullable().optional(),
+    affectedRows: z.number().int().min(0).nullable().optional(),
   })
   .strict();
 
@@ -211,5 +310,44 @@ export const sqlResultPageSchema = z
     nextCursor: z.string().nullable(),
     truncated: z.boolean(),
     expiresAt: nonBlankString,
+  })
+  .strict();
+
+const sqlMetadataColumnSchema = z
+  .object({
+    name: nonBlankString,
+    type: nonBlankString,
+    nullable: z.boolean(),
+    ordinalPosition: z.number().int().min(1),
+    masked: z.boolean().default(false),
+  })
+  .strict();
+
+const sqlMetadataIndexSchema = z
+  .object({
+    name: nonBlankString,
+    unique: z.boolean(),
+    columns: z.array(nonBlankString).min(1),
+  })
+  .strict();
+
+const sqlMetadataObjectSchema = z
+  .object({
+    schema: nonBlankString,
+    name: nonBlankString,
+    type: z.enum(["TABLE", "VIEW", "SYSTEM_TABLE"]),
+    columns: z.array(sqlMetadataColumnSchema),
+    indexes: z.array(sqlMetadataIndexSchema),
+  })
+  .strict();
+
+export const sqlMetadataResponseSchema = z
+  .object({
+    contractVersion: z.literal("1.0"),
+    connectionId: nonBlankString,
+    schema: nonBlankString,
+    objects: z.array(sqlMetadataObjectSchema),
+    truncated: z.boolean(),
+    refreshedAt: nonBlankString,
   })
   .strict();

@@ -4,11 +4,13 @@ import {
   sqlConnectionListSchema,
   sqlConnectionProbeResultSchema,
   sqlConnectionUpdateRequestSchema,
+  sqlDmlCommitRequestSchema,
   sqlAssistantRequestSchema,
   sqlAssistantResponseSchema,
   sqlQueryRunRequestSchema,
   sqlQueryRunResultSchema,
   sqlQueryRequestSchema,
+  sqlMetadataResponseSchema,
   sqlResultPageSchema,
   sqlValidationReportSchema,
 } from "../schemas/sql-schemas.js";
@@ -107,6 +109,19 @@ export function runReadOnlySqlQuery(input) {
 /**
  * @param {unknown} input
  */
+export function commitControlledSqlDml(input) {
+  const request = sqlDmlCommitRequestSchema.parse(input);
+  return requestJson("/internal/sql-workbench/queries/commit", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+    schema: sqlQueryRunResultSchema,
+  });
+}
+
+/**
+ * @param {unknown} input
+ */
 export function askSqlAssistant(input) {
   const request = sqlAssistantRequestSchema.parse(input);
   return requestJson("/internal/sql-workbench/assistant", {
@@ -128,6 +143,19 @@ export function readSqlResultPage(input) {
     `/internal/sql-workbench/results/${encodeURIComponent(input.resultId)}${query}`,
     {
       schema: sqlResultPageSchema,
+    },
+  );
+}
+
+/**
+ * @param {{connectionId: string, schema: string}} input
+ */
+export function readSqlMetadata(input) {
+  const query = `?schema=${encodeURIComponent(input.schema)}`;
+  return requestJson(
+    `/internal/sql-workbench/connections/${encodeURIComponent(input.connectionId)}/metadata${query}`,
+    {
+      schema: sqlMetadataResponseSchema,
     },
   );
 }

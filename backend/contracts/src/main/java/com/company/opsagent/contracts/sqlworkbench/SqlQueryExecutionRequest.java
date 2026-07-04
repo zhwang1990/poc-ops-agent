@@ -29,8 +29,8 @@ public record SqlQueryExecutionRequest(
     executionRequestId = requiredText(executionRequestId, "executionRequestId");
     workflowId = requiredText(workflowId, "workflowId");
     query = required(query, "query");
-    if (query.action() != SqlQueryAction.RUN_READ_ONLY) {
-      throw new IllegalArgumentException("Worker execution only accepts RUN_READ_ONLY");
+    if (query.action() != SqlQueryAction.RUN_READ_ONLY && query.action() != SqlQueryAction.COMMIT_DML) {
+      throw new IllegalArgumentException("Worker execution only accepts RUN_READ_ONLY or COMMIT_DML");
     }
     validationHash = requiredText(validationHash, "validationHash");
     operator = required(operator, "operator");

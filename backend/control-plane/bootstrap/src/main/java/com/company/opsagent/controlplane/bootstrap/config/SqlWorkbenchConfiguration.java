@@ -42,7 +42,8 @@ public class SqlWorkbenchConfiguration {
     initializer.setConnectionFactory(connectionFactory);
     initializer.setDatabasePopulator(new ResourceDatabasePopulator(
         new ClassPathResource("sql/migrations/V001__sql_connection_catalog_schema.sql"),
-        new ClassPathResource("sql/migrations/V002__local_h2_sql_connection_seed.sql")));
+        new ClassPathResource("sql/migrations/V002__local_h2_sql_connection_seed.sql"),
+        new ClassPathResource("sql/migrations/V003__local_h2_sql_connection_controlled_crud.sql")));
     return initializer;
   }
 

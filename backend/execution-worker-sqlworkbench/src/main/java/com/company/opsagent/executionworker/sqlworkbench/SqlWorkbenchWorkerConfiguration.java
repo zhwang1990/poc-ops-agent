@@ -98,6 +98,13 @@ public class SqlWorkbenchWorkerConfiguration {
     return new JdbcSqlQueryExecutor(sqlDataSourceRegistry, sqlResultStore, objectMapper, workerClock);
   }
 
+  @Bean
+  SqlMetadataReader sqlMetadataReader(
+      SqlDataSourceRegistry sqlDataSourceRegistry,
+      Clock workerClock) {
+    return new JdbcSqlMetadataReader(sqlDataSourceRegistry, workerClock);
+  }
+
   /**
    * 构建 SQL 查询专用受限 Worker。
    */
@@ -107,6 +114,7 @@ public class SqlWorkbenchWorkerConfiguration {
       SqlQueryExecutor sqlQueryExecutor) {
     return new RestrictedSqlQueryExecutionWorker(
         new CalciteSqlReadOnlyGuard(),
+        new CalciteSqlDmlGuard(),
         sqlQueryExecutor,
         workerClock);
   }

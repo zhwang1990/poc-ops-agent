@@ -38,13 +38,13 @@ class CalciteSqlValidationServiceTest {
   }
 
   @Test
-  void rejectsDmlExecution() {
+  void rejectsDmlForReadOnlyExecution() {
     var report = service.validate(request(SqlQueryAction.RUN_READ_ONLY,
         "update ORDERS.ORDERS set status = 'READY' where order_id = 42"));
 
     assertEquals(SqlStatementType.UPDATE, report.statementType());
     assertEquals(SqlValidationLevel.REJECTED, report.validationLevel());
-    assertTrue(report.rejectionReasons().contains("DML execution is prohibited in P1"));
+    assertTrue(report.rejectionReasons().contains("DML execution is prohibited for read-only actions"));
   }
 
   @Test

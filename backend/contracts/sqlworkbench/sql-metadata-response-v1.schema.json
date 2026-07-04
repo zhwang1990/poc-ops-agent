@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://company.example/ops-agent/contracts/sqlworkbench/sql-metadata-response-v1.schema.json",
+  "title": "SQL Workbench Metadata Response v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contractVersion",
+    "connectionId",
+    "schema",
+    "objects",
+    "truncated",
+    "refreshedAt"
+  ],
+  "properties": {
+    "contractVersion": {
+      "const": "1.0"
+    },
+    "connectionId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "schema": {
+      "type": "string",
+      "minLength": 1
+    },
+    "objects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schema",
+          "name",
+          "type",
+          "columns",
+          "indexes"
+        ],
+        "properties": {
+          "schema": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "type": {
+            "enum": [
+              "TABLE",
+              "VIEW",
+              "SYSTEM_TABLE"
+            ]
+          },
+          "columns": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "type",
+                "nullable",
+                "ordinalPosition",
+                "masked"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "type": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "nullable": {
+                  "type": "boolean"
+                },
+                "ordinalPosition": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "masked": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "indexes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "unique",
+                "columns"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "unique": {
+                  "type": "boolean"
+                },
+                "columns": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "minItems": 1
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "truncated": {
+      "type": "boolean"
+    },
+    "refreshedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

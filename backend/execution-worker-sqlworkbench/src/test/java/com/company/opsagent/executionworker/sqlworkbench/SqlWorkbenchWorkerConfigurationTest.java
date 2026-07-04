@@ -125,7 +125,7 @@ class SqlWorkbenchWorkerConfigurationTest {
         "ops-agent.worker.sql-egress.allowed-targets[0].host=localhost",
         "ops-agent.worker.sql-egress.allowed-targets[0].port=9092",
         "ops-agent.worker.sql-egress.connections[0].connection-id=h2-local-test",
-        "ops-agent.worker.sql-egress.connections[0].target-environment=test",
+        "ops-agent.worker.sql-egress.connections[0].target-environment=sit",
         "ops-agent.worker.sql-egress.connections[0].platform-type=H2",
         "ops-agent.worker.sql-egress.connections[0].host=localhost",
         "ops-agent.worker.sql-egress.connections[0].port=9092",
@@ -174,7 +174,7 @@ class SqlWorkbenchWorkerConfigurationTest {
     var query = new SqlQueryRequest(
         "1.0",
         "h2-local-test",
-        "test",
+        "sit",
         "PUBLIC",
         SqlQueryAction.RUN_READ_ONLY,
         sql,

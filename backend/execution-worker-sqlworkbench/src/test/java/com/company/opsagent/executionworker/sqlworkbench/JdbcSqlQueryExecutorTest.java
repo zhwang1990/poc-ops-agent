@@ -45,14 +45,48 @@ class JdbcSqlQueryExecutorTest {
     assertTrue(page.truncated());
   }
 
+  @Test
+  void commitsControlledDmlInShortTransaction() throws Exception {
+    JdbcDataSource dataSource = new JdbcDataSource();
+    dataSource.setURL("jdbc:h2:mem:sql-worker-dml;DB_CLOSE_DELAY=-1");
+    try (var connection = dataSource.getConnection(); var statement = connection.createStatement()) {
+      statement.execute("create table ORDERS (ORDER_ID integer primary key, STATUS varchar(20))");
+      statement.execute("insert into ORDERS values (1, 'PENDING'), (2, 'PENDING')");
+    }
+    Clock clock = Clock.systemUTC();
+    JdbcSqlQueryExecutor executor = new JdbcSqlQueryExecutor(
+        request -> dataSource,
+        new InMemorySqlResultStore(clock),
+        new ObjectMapper(),
+        clock);
+
+    int affectedRows = executor.executeDml(request(
+        SqlQueryAction.COMMIT_DML,
+        "update ORDERS set STATUS = 'READY' where ORDER_ID = ?"));
+
+    assertEquals(1, affectedRows);
+    try (var connection = dataSource.getConnection();
+        var statement = connection.createStatement();
+        var resultSet = statement.executeQuery("select STATUS from ORDERS where ORDER_ID = 1")) {
+      resultSet.next();
+      assertEquals("READY", resultSet.getString(1));
+    }
+  }
+
   private SqlQueryExecutionRequest request() {
+    return request(
+        SqlQueryAction.RUN_READ_ONLY,
+        "select ORDER_ID, STATUS from ORDERS where ORDER_ID >= ? order by ORDER_ID");
+  }
+
+  private SqlQueryExecutionRequest request(SqlQueryAction action, String sql) {
     var query = new SqlQueryRequest(
         "1.0",
         "as400-development",
         "development",
         "PUBLIC",
-        SqlQueryAction.RUN_READ_ONLY,
-        "select ORDER_ID, STATUS from ORDERS where ORDER_ID >= ? order by ORDER_ID",
+        action,
+        sql,
         List.of(new SqlTypedParameter("minimumOrderId", "INTEGER", IntNode.valueOf(1))),
         new SqlQueryLimits(1, 5_000_000, 30),
         "key");

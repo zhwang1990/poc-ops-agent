@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryAction;
 import com.company.opsagent.contracts.sqlworkbench.SqlConnectionSummary;
+import com.company.opsagent.contracts.sqlworkbench.SqlDatabaseMetadata;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryExecutionRequest;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryLimits;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryRequest;
@@ -131,6 +132,33 @@ class WebClientSqlWorkbenchWorkerClientTest {
   }
 
   @Test
+  void readsSqlMetadataThroughSignedWorkerEndpoint() {
+    List<ClientRequest> captured = new ArrayList<>();
+    var client = new WebClientSqlWorkbenchWorkerClient(
+        webClient(captured),
+        workerProperties(true),
+        Clock.fixed(SIGNED_AT, ZoneOffset.UTC));
+    var connection = connection();
+
+    SqlDatabaseMetadata metadata = client.readMetadata(connection, "ORDERS");
+
+    assertEquals("ORDERS", metadata.schema());
+    assertEquals("CUSTOMERS", metadata.objects().getFirst().name());
+    ClientRequest sent = captured.getFirst();
+    assertEquals("/internal/executions/sql-query/connections/as400-development/metadata", sent.url().getPath());
+    assertEquals("schema=ORDERS", sent.url().getQuery());
+    assertEquals(KEY_ID, sent.headers().getFirst(WorkerTransportHeaders.KEY_ID));
+    assertEquals("2026-06-27T10:15:30Z", sent.headers().getFirst(WorkerTransportHeaders.TIMESTAMP));
+    String signature = sent.headers().getFirst(WorkerTransportHeaders.SIGNATURE);
+    String payload = WorkerRequestSignature.canonicalSqlMetadataPayload(
+        KEY_ID,
+        "2026-06-27T10:15:30Z",
+        connection,
+        "ORDERS");
+    assertTrue(WorkerRequestSignature.matches(WorkerRequestSignature.sign(SHARED_SECRET, payload), signature));
+  }
+
+  @Test
   void returnsProbeFailedWhenWorkerRejectsProbe() {
     List<ClientRequest> captured = new ArrayList<>();
     var client = new WebClientSqlWorkbenchWorkerClient(
@@ -182,6 +210,43 @@ class WebClientSqlWorkbenchWorkerClientTest {
                       "status": "READY",
                       "message": "SQL connection probe succeeded",
                       "probedAt": "2026-06-27T10:15:31Z"
+                    }
+                    """)
+                .build());
+          }
+          if (request.url().getPath().endsWith("/metadata")) {
+            return Mono.just(ClientResponse.create(HttpStatus.OK)
+                .header("Content-Type", "application/json")
+                .body("""
+                    {
+                      "contractVersion": "1.0",
+                      "connectionId": "as400-development",
+                      "schema": "ORDERS",
+                      "objects": [
+                        {
+                          "schema": "ORDERS",
+                          "name": "CUSTOMERS",
+                          "type": "TABLE",
+                          "columns": [
+                            {
+                              "name": "CUSTOMER_ID",
+                              "type": "VARCHAR",
+                              "nullable": false,
+                              "ordinalPosition": 1,
+                              "masked": false
+                            }
+                          ],
+                          "indexes": [
+                            {
+                              "name": "PRIMARY_KEY_CUSTOMERS",
+                              "unique": true,
+                              "columns": ["CUSTOMER_ID"]
+                            }
+                          ]
+                        }
+                      ],
+                      "truncated": false,
+                      "refreshedAt": "2026-06-27T10:15:31Z"
                     }
                     """)
                 .build());

@@ -24,12 +24,13 @@ public record SqlQueryRequest(
       throw new IllegalArgumentException("contractVersion must be 1.0");
     }
     connectionId = requiredText(connectionId, "connectionId");
-    targetEnvironment = requiredText(targetEnvironment, "targetEnvironment");
-    if ("production".equalsIgnoreCase(targetEnvironment)) {
-      throw new IllegalArgumentException("production SQL workbench requests are not allowed");
-    }
+    targetEnvironment = SqlTargetEnvironments.normalize(targetEnvironment);
     schema = requiredText(schema, "schema");
     action = required(action, "action");
+    if (SqlTargetEnvironments.isProduction(targetEnvironment)
+        && (action == SqlQueryAction.PREFLIGHT_DML || action == SqlQueryAction.COMMIT_DML)) {
+      throw new IllegalArgumentException("production SQL workbench requests only allow query actions");
+    }
     sql = requiredText(sql, "sql");
     parameters = parameters == null ? List.of() : List.copyOf(parameters);
     limits = required(limits, "limits");

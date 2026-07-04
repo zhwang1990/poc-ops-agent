@@ -8,9 +8,9 @@
   "properties": {
     "contractVersion": { "const": "1.0" },
     "connectionId": { "type": "string", "minLength": 1 },
-    "targetEnvironment": { "enum": ["development", "test"] },
+    "targetEnvironment": { "enum": ["dev", "sit", "uat", "production", "development", "test"] },
     "schema": { "type": "string", "minLength": 1 },
-    "action": { "enum": ["VALIDATE", "EXPLAIN", "RUN_READ_ONLY", "PREFLIGHT_DML"] },
+    "action": { "enum": ["VALIDATE", "EXPLAIN", "RUN_READ_ONLY", "PREFLIGHT_DML", "COMMIT_DML"] },
     "sql": { "type": "string", "minLength": 1, "maxLength": 100000 },
     "parameters": { "type": "array", "items": { "type": "object" } },
     "limits": {
@@ -24,5 +24,20 @@
       }
     },
     "idempotencyKey": { "type": "string", "minLength": 1, "maxLength": 200 }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "targetEnvironment": { "const": "production" }
+        },
+        "required": ["targetEnvironment"]
+      },
+      "then": {
+        "properties": {
+          "action": { "enum": ["VALIDATE", "EXPLAIN", "RUN_READ_ONLY"] }
+        }
+      }
+    }
+  ]
 }

@@ -2,6 +2,8 @@ package com.company.opsagent.executionworker.sqlworkbench;
 
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryExecutionRequest;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryExecutionResult;
+import com.company.opsagent.contracts.sqlworkbench.SqlQueryAction;
+import com.company.opsagent.contracts.sqlworkbench.SqlTargetEnvironments;
 import java.sql.SQLException;
 import java.time.Clock;
 import java.time.OffsetDateTime;
@@ -13,6 +15,7 @@ import java.util.Locale;
 public class RestrictedSqlQueryExecutionWorker {
 
   private final SqlReadOnlyGuard readOnlyGuard;
+  private final SqlDmlGuard dmlGuard;
   private final SqlQueryExecutor executor;
   private final Clock clock;
 
@@ -20,7 +23,16 @@ public class RestrictedSqlQueryExecutionWorker {
       SqlReadOnlyGuard readOnlyGuard,
       SqlQueryExecutor executor,
       Clock clock) {
+    this(readOnlyGuard, new CalciteSqlDmlGuard(), executor, clock);
+  }
+
+  public RestrictedSqlQueryExecutionWorker(
+      SqlReadOnlyGuard readOnlyGuard,
+      SqlDmlGuard dmlGuard,
+      SqlQueryExecutor executor,
+      Clock clock) {
     this.readOnlyGuard = readOnlyGuard;
+    this.dmlGuard = dmlGuard;
     this.executor = executor;
     this.clock = clock;
   }
@@ -29,22 +41,14 @@ public class RestrictedSqlQueryExecutionWorker {
     if (!request.expiresAt().isAfter(OffsetDateTime.now(clock))) {
       return rejected(request, "REQUEST_EXPIRED", "execution request has expired");
     }
-    if ("production".equalsIgnoreCase(request.query().targetEnvironment())) {
-      return rejected(request, "PRODUCTION_NOT_ALLOWED", "production SQL connections are prohibited");
-    }
-    if (!readOnlyGuard.isReadOnly(request.query().sql())) {
-      return rejected(request, "SQL_NOT_READ_ONLY", "Worker accepts exactly one SELECT statement");
-    }
     try {
-      String resultId = executor.execute(request);
-      return new SqlQueryExecutionResult(
-          "1.0",
-          request.executionRequestId(),
-          request.workflowId(),
-          "SUCCEEDED",
-          resultId,
-          null,
-          null);
+      if (request.query().action() == SqlQueryAction.RUN_READ_ONLY) {
+        return executeReadOnly(request);
+      }
+      if (request.query().action() == SqlQueryAction.COMMIT_DML) {
+        return executeControlledDml(request);
+      }
+      return rejected(request, "SQL_ACTION_NOT_EXECUTABLE", "Worker accepts only query or controlled DML actions");
     } catch (WorkerSqlEgressException exception) {
       return rejected(request, exception.errorCode(), exception.safeMessage());
     } catch (RuntimeException exception) {
@@ -57,6 +61,40 @@ public class RestrictedSqlQueryExecutionWorker {
           "SQL_EXECUTION_FAILED",
           safeExecutionFailureMessage(exception));
     }
+  }
+
+  private SqlQueryExecutionResult executeReadOnly(SqlQueryExecutionRequest request) {
+    if (!readOnlyGuard.isReadOnly(request.query().sql())) {
+      return rejected(request, "SQL_NOT_READ_ONLY", "Worker accepts exactly one SELECT statement");
+    }
+    String resultId = executor.execute(request);
+    return new SqlQueryExecutionResult(
+        "1.0",
+        request.executionRequestId(),
+        request.workflowId(),
+        "SUCCEEDED",
+        resultId,
+        null,
+        null);
+  }
+
+  private SqlQueryExecutionResult executeControlledDml(SqlQueryExecutionRequest request) {
+    if (!SqlTargetEnvironments.allowsCrud(request.query().targetEnvironment())) {
+      return rejected(request, "SQL_DML_ENVIRONMENT_NOT_ALLOWED", "SQL DML is allowed only in dev, sit, or uat");
+    }
+    if (!dmlGuard.isControlledDml(request.query().sql())) {
+      return rejected(request, "SQL_NOT_CONTROLLED_DML", "Worker accepts exactly one INSERT, UPDATE, or DELETE statement");
+    }
+    int affectedRows = executor.executeDml(request);
+    return new SqlQueryExecutionResult(
+        "1.0",
+        request.executionRequestId(),
+        request.workflowId(),
+        "SUCCEEDED",
+        null,
+        null,
+        null,
+        affectedRows);
   }
 
   private SqlQueryExecutionResult rejected(

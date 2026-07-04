@@ -1,6 +1,7 @@
 package com.company.opsagent.executionworker.sqlworkbench;
 
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryExecutionRequest;
+import com.company.opsagent.contracts.sqlworkbench.SqlConnectionSummary;
 import javax.sql.DataSource;
 
 /**
@@ -22,5 +23,11 @@ public final class PolicyEnforcedSqlDataSourceRegistry implements SqlDataSourceR
   public DataSource resolve(SqlQueryExecutionRequest request) {
     egressPolicy.validate(request);
     return delegate.resolve(request);
+  }
+
+  @Override
+  public DataSource resolve(SqlConnectionSummary connection) {
+    egressPolicy.validate(connection);
+    return delegate.resolve(connection);
   }
 }
