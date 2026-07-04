@@ -109,17 +109,24 @@ beforeEach(() => {
 
 describe("SqlWorkbenchPage", () => {
   test("keeps AI SQL assistant overflow scrollable inside the panel", () => {
+    const infoPanelRule = cssRule("infoPanel");
     const panelRule = cssRule("aiPanel");
     const actionsRule = cssRule("aiActions");
 
+    expect(infoPanelRule).toContain("grid-template-rows: auto minmax(0, 1fr)");
+    expect(infoPanelRule).toContain("min-height: 0");
+    expect(infoPanelRule).toContain("padding: 10px 10px 9px");
+    expect(panelRule).toContain("height: 100%");
     expect(panelRule).toContain("max-width: 100%");
+    expect(panelRule).toContain("min-height: 0");
     expect(panelRule).toContain("overflow-x: auto");
+    expect(panelRule).toContain("overflow-y: auto");
     expect(actionsRule).toContain("overflow-x: auto");
     expect(actionsRule).toContain("flex-wrap: nowrap");
     expect(actionsRule).toContain("min-width: 0");
   });
 
-  test("omits placeholder helper copy from validation and AI assistant panels", async () => {
+  test("omits duplicated validation panel from the SQL side panel", async () => {
     server.use(
       http.get("/internal/sql-workbench/connections", () =>
         HttpResponse.json(sqlConnections),
@@ -128,9 +135,8 @@ describe("SqlWorkbenchPage", () => {
 
     renderAt("/sql");
 
-    expect(await screen.findByText("服务端校验")).toBeInTheDocument();
-    expect(screen.getByText("AI SQL 助手")).toBeInTheDocument();
-    expect(screen.queryByText("服务端 AST、对象引用、风险和拒绝原因会显示在这里。")).not.toBeInTheDocument();
+    expect(await screen.findByText("AI SQL 助手")).toBeInTheDocument();
+    expect(screen.queryByText("服务端校验")).not.toBeInTheDocument();
     expect(
       screen.queryByText("助手只生成解释、优化和错误分析建议；建议应用后必须重新校验。"),
     ).not.toBeInTheDocument();
@@ -167,11 +173,28 @@ describe("SqlWorkbenchPage", () => {
   test("keeps the object browser schema area compact and object types icon-only", () => {
     const drawerRule = cssRule("objectDrawer");
     const schemaRule = cssRule("schemaTree");
+    const schemaSectionRule = cssRule("schemaSection");
+    const metadataListRule = cssRule("metadataList");
+    const metadataObjectRule = cssRule("metadataObject");
+    const metadataObjectHeaderRule = cssRule("metadataObjectHeader");
+    const metadataObjectHeaderStrongRule = Array.from(
+      sqlWorkbenchCss.matchAll(/\.metadataObjectHeader\s+strong\s*\{([^}]*)\}/gu),
+      (match) => match[1],
+    ).join("\n");
     const objectTypeIconRule = cssRule("metadataObjectTypeIcon");
 
     expect(drawerRule).toContain("grid-template-rows: auto auto minmax(0, 1fr)");
-    expect(schemaRule).toContain("align-content: start");
-    expect(schemaRule).toContain("grid-auto-rows: max-content");
+    expect(schemaRule).toContain("align-content: stretch");
+    expect(schemaRule).toContain("grid-template-rows: auto max-content minmax(0, 1fr)");
+    expect(schemaSectionRule).toContain("grid-auto-rows: max-content");
+    expect(metadataListRule).toContain("height: 100%");
+    expect(metadataListRule).toContain("max-height: none");
+    expect(metadataListRule).toContain("min-height: 0");
+    expect(metadataListRule).toContain("gap: 2px");
+    expect(metadataObjectRule).toContain("gap: 4px");
+    expect(metadataObjectRule).toContain("padding: 5px 0");
+    expect(metadataObjectHeaderRule).toContain("padding: 3px 5px");
+    expect(metadataObjectHeaderStrongRule).toContain("padding: 3px 8px");
     expect(objectTypeIconRule).toContain("width: 26px");
     expect(objectTypeIconRule).toContain("place-items: center");
   });
@@ -1150,7 +1173,7 @@ describe("SqlWorkbenchPage", () => {
     expect(within(alert).getByText("validationLevel=REJECTED")).toBeInTheDocument();
     expect(within(alert).getByText("rejectionReasons=SQL syntax is not supported")).toBeInTheDocument();
     expect(within(alert).getByText("sqlHash=sha256:bad")).toBeInTheDocument();
-    expect(screen.getAllByText("排查线索")).toHaveLength(2);
+    expect(screen.getAllByText("排查线索")).toHaveLength(1);
   });
 
   test("automatically asks AI assistant for syntax-error analysis after rejected SELECT execution", async () => {
@@ -1202,7 +1225,7 @@ describe("SqlWorkbenchPage", () => {
     await replaceSqlText(user, syntaxSql);
     await clickRunSqlButton(user);
 
-    expect(await screen.findByText("SQL syntax is not supported")).toBeInTheDocument();
+    expect(await screen.findByText("rejectionReasons=SQL syntax is not supported")).toBeInTheDocument();
     expect(await screen.findByText("SQL 语法错误：FORM 应改为 FROM。")).toBeInTheDocument();
     expect(screen.getByText("修正 FROM 关键字")).toBeInTheDocument();
 
