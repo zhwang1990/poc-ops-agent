@@ -548,6 +548,10 @@
   transform: none;
 }
 
+.jsonRunningIcon {
+  animation: jsonAgentSpin 900ms linear infinite;
+}
+
 .jsonAssistantStatus {
   display: inline-flex;
   max-width: 100%;
@@ -571,6 +575,28 @@
   border-color: rgba(37, 132, 169, 0.24);
   background: rgba(37, 132, 169, 0.07);
   color: var(--tool-accent);
+  gap: 7px;
+  box-shadow: 0 0 0 1px rgba(37, 132, 169, 0.06);
+}
+
+.jsonAssistantStatuspending strong {
+  color: oklch(0.42 0.09 225);
+  font-weight: 820;
+}
+
+.jsonAgentPulse {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: oklch(0.62 0.13 225);
+  box-shadow: 0 0 0 4px rgba(37, 132, 169, 0.12);
+  animation: jsonAgentPulse 1100ms ease-out infinite;
+}
+
+.jsonAgentPhase {
+  color: var(--tool-muted);
+  font-weight: 680;
 }
 
 .jsonAssistantStatussuccess {
@@ -583,6 +609,29 @@
   border-color: rgba(201, 59, 78, 0.24);
   background: rgba(201, 59, 78, 0.07);
   color: #c93b4e;
+}
+
+@keyframes jsonAgentSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes jsonAgentPulse {
+  0% {
+    opacity: 0.54;
+    transform: scale(0.92);
+  }
+
+  70% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  100% {
+    opacity: 0.54;
+    transform: scale(0.92);
+  }
 }
 
 .errorMessage,

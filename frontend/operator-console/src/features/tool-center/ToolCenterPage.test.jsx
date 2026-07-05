@@ -44,6 +44,18 @@ beforeEach(() => {
 });
 
 describe("ToolCenterPage", () => {
+  test("starts Json Helper without sample JSON data", async () => {
+    renderToolCenter();
+
+    const input = await screen.findByLabelText("JSON 输入");
+    expect(input).toHaveValue("");
+    expect(screen.getByLabelText("JSON 输出")).toHaveValue("");
+    expect(screen.queryByText(/queFork/u)).not.toBeInTheDocument();
+    expect(screen.queryByText("JSON 解析失败，请检查对象、数组、逗号和引号。")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "复制路径" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "复制值" })).not.toBeInTheDocument();
+  });
+
   test("renders the built-in tools without calling missing backend APIs", async () => {
     let executeCalls = 0;
     server.use(
@@ -293,6 +305,36 @@ describe("ToolCenterPage", () => {
       assistantAction: "REPAIR_JSON",
       source: 'String json = "{\\"service\\":\\"queFork\\",\\"enabled\\":true}";',
     });
+  });
+
+  test("shows an active Agent running state while AI fallback is pending", async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.post(
+        "/internal/tool-center/json-assistant/repair",
+        () =>
+          new Promise(() => {
+            // Hold the request open so the pending state remains observable.
+          }),
+      ),
+    );
+    renderToolCenter();
+
+    const input = await screen.findByLabelText("JSON 输入");
+    await user.clear(input);
+    fireEvent.change(input, {
+      target: { value: 'String json = "{\\"service\\":\\"queFork\\",\\"enabled\\":true}";' },
+    });
+    await user.click(screen.getByRole("button", { name: "AI 兜底修补 JSON" }));
+
+    expect(await screen.findByRole("status", { name: "Agent 正在运行" })).toHaveTextContent(
+      "Agent 正在运行",
+    );
+    expect(screen.getByRole("status", { name: "Agent 正在运行" })).toHaveTextContent(
+      "自定义 Skill 正在修补 JSON",
+    );
+    expect(screen.getByRole("button", { name: "AI 兜底修补 JSON" })).toBeDisabled();
+    expect(screen.getByText("自定义 Skill 调用中")).toBeInTheDocument();
   });
 
   test("browses parsed JSON with react-json-view-lite in a local structure view", async () => {

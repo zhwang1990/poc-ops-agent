@@ -4,6 +4,7 @@ import {
   Copy,
   ListCollapse,
   ListTree,
+  LoaderCircle,
   Maximize2,
   Minimize2,
   Plus,
@@ -48,7 +49,7 @@ const toolModes = [
     label: "API Caller",
   },
 ];
-const initialJson = "{\"service\":\"queFork\",\"enabled\":true}";
+const initialJson = "";
 /** @type {{ ok: boolean, errors: string[] }} */
 const initialValidation = { ok: true, errors: [] };
 const defaultAllowlistDraft = {
@@ -289,6 +290,7 @@ function JsonFormatterPanel() {
   const [assistantStatus, setAssistantStatus] = useState(
     /** @type {{ kind: JsonAssistantStatusKind, message: string }} */ ({ kind: "idle", message: "" }),
   );
+  const sourceHasContent = source.trim().length > 0;
   const searchResult = useMemo(
     () => (parsedJson.ok ? findJsonHeroMatches(parsedJson.root, searchQuery) : { matchingPaths: [], ancestorPaths: [] }),
     [parsedJson, searchQuery],
@@ -427,7 +429,11 @@ function JsonFormatterPanel() {
               title="AI 兜底修补 JSON"
               type="button"
             >
-              <Sparkles aria-hidden="true" size={16} />
+              {repairPending ? (
+                <LoaderCircle aria-hidden="true" className={styles.jsonRunningIcon} size={16} />
+              ) : (
+                <Sparkles aria-hidden="true" size={16} />
+              )}
             </button>
             <button
               aria-label="本地修补 JSON"
@@ -460,10 +466,21 @@ function JsonFormatterPanel() {
         <div className={styles.jsonPanelFooter}>
           {assistantStatus.kind !== "idle" ? (
             <span
+              aria-label={assistantStatus.kind === "pending" ? "Agent 正在运行" : undefined}
+              aria-live="polite"
               className={`${styles.jsonAssistantStatus} ${styles[`jsonAssistantStatus${assistantStatus.kind}`]}`}
               role={assistantStatus.kind === "error" ? "alert" : "status"}
             >
-              {assistantStatus.message}
+              {assistantStatus.kind === "pending" ? (
+                <>
+                  <span aria-hidden="true" className={styles.jsonAgentPulse} />
+                  <strong>Agent 正在运行</strong>
+                  <span>自定义 Skill 正在修补 JSON</span>
+                  <span className={styles.jsonAgentPhase}>自定义 Skill 调用中</span>
+                </>
+              ) : (
+                assistantStatus.message
+              )}
             </span>
           ) : null}
         </div>
@@ -516,6 +533,7 @@ function JsonFormatterPanel() {
         searchQuery={searchQuery}
         searchResult={searchResult}
         selectedPath={selectedPath}
+        sourceHasContent={sourceHasContent}
       />
       ) : null}
     </section>
@@ -536,6 +554,7 @@ function JsonFormatterPanel() {
  *   searchQuery: string,
  *   searchResult: ReturnType<typeof findJsonHeroMatches>,
  *   selectedPath: string,
+ *   sourceHasContent: boolean,
  * }} props
  */
 function JsonHeroBrowserPanel({
@@ -551,6 +570,7 @@ function JsonHeroBrowserPanel({
   searchQuery,
   searchResult,
   selectedPath,
+  sourceHasContent,
 }) {
   const matchingNodes = useMemo(
     () =>
@@ -676,7 +696,7 @@ function JsonHeroBrowserPanel({
           ) : null}
         </div>
         <div className={styles.jsonHeroFooterStatus}>
-          {!parseResult.ok ? (
+          {sourceHasContent && !parseResult.ok ? (
             <span className={`${styles.jsonPanelFooterMessage} ${styles.jsonPanelFooterError}`} role="alert">
               {parseResult.error}
             </span>
