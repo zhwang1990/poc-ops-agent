@@ -4,6 +4,7 @@ import {
   Copy,
   ListCollapse,
   ListTree,
+  LoaderCircle,
   Maximize2,
   Minimize2,
   Plus,
@@ -13,7 +14,7 @@ import {
   ShieldCheck,
   Sparkles,
   Trash2,
-  WandSparkles,
+  X,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { JsonView, allExpanded, collapseAllNested } from "react-json-view-lite";
@@ -31,7 +32,6 @@ import {
   minifyJsonDocument,
   parseJsonForHeroView,
   previewSecretInput,
-  repairJsonDocument,
   validateAllowlistDraft,
 } from "./tool-center-utils.js";
 import styles from "./ToolCenterPage.module.css";
@@ -48,7 +48,7 @@ const toolModes = [
     label: "API Caller",
   },
 ];
-const initialJson = "{\"service\":\"queFork\",\"enabled\":true}";
+const initialJson = "";
 /** @type {{ ok: boolean, errors: string[] }} */
 const initialValidation = { ok: true, errors: [] };
 const defaultAllowlistDraft = {
@@ -286,13 +286,27 @@ function JsonFormatterPanel() {
   const [searchQuery, setSearchQuery] = useState("");
   const [copyStatus, setCopyStatus] = useState("");
   const [repairPending, setRepairPending] = useState(false);
+  const [assistantMessageOpen, setAssistantMessageOpen] = useState(false);
   const [assistantStatus, setAssistantStatus] = useState(
     /** @type {{ kind: JsonAssistantStatusKind, message: string }} */ ({ kind: "idle", message: "" }),
   );
+  const sourceHasContent = source.trim().length > 0;
+  const assistantFullMessage =
+    assistantStatus.kind === "pending"
+      ? "Agent 正在运行。自定义 Skill 正在 AI 修补 JSON。AI 修补调用中。"
+      : assistantStatus.message;
   const searchResult = useMemo(
     () => (parsedJson.ok ? findJsonHeroMatches(parsedJson.root, searchQuery) : { matchingPaths: [], ancestorPaths: [] }),
     [parsedJson, searchQuery],
   );
+
+  /**
+   * @param {{ kind: JsonAssistantStatusKind, message: string }} status
+   */
+  function updateAssistantStatus(status) {
+    setAssistantStatus(status);
+    setAssistantMessageOpen(false);
+  }
 
   /**
    * @param {string} value
@@ -310,7 +324,7 @@ function JsonFormatterPanel() {
    */
   function updateSource(value) {
     replaceJsonSource(value);
-    setAssistantStatus({ kind: "idle", message: "" });
+    updateAssistantStatus({ kind: "idle", message: "" });
   }
 
   /**
@@ -321,53 +335,31 @@ function JsonFormatterPanel() {
     if (result.ok) {
       setOutput(result.value);
       setError("");
-      setAssistantStatus({ kind: "idle", message: "" });
+      updateAssistantStatus({ kind: "idle", message: "" });
       return;
     }
     setError(result.error);
-    setAssistantStatus({ kind: "idle", message: "" });
+    updateAssistantStatus({ kind: "idle", message: "" });
   }
 
-  function applyJsonLocalRepair() {
-    const result = repairJsonDocument(source);
-    if (result.ok) {
-      replaceJsonSource(result.value);
-      setOutput(result.value);
-      setError("");
-      setAssistantStatus({ kind: "success", message: "JSON 已本地修补并通过校验。" });
-      return;
-    }
-    setError(result.error);
-    setAssistantStatus({ kind: "error", message: "本地修补失败，可尝试 AI 兜底修补。" });
-  }
-
-  async function applyJsonFallbackRepair() {
+  async function applyJsonRepair() {
     const localResult = formatJsonDocument(source);
     if (localResult.ok) {
       setOutput(localResult.value);
       setError("");
-      setAssistantStatus({ kind: "success", message: "JSON 已可解析，无需 AI 兜底。" });
+      updateAssistantStatus({ kind: "success", message: "JSON 已可解析，无需 AI 修补。" });
       return;
     }
 
-    const localRepair = repairJsonDocument(source);
-    if (localRepair.ok) {
-      replaceJsonSource(localRepair.value);
-      setOutput(localRepair.value);
-      setError("");
-      setAssistantStatus({ kind: "success", message: "JSON 已通过本地修补，无需 AI 兜底。" });
-      return;
-    }
-
-    setError(localRepair.error);
+    setError(localResult.error);
     setRepairPending(true);
-    setAssistantStatus({ kind: "pending", message: "正在通过自定义 Skill 做 AI 兜底修补。" });
+    updateAssistantStatus({ kind: "pending", message: "正在通过自定义 Skill 做 AI 修补。" });
     try {
       const response = await repairJsonWithAssistant({
         contractVersion: "1.0",
         assistantAction: "REPAIR_JSON",
         source,
-        parseError: localRepair.error,
+        parseError: localResult.error,
         idempotencyKey: createJsonRepairIdempotencyKey(),
       });
       if (response.status === "SUCCEEDED" && response.repairedJson) {
@@ -376,20 +368,20 @@ function JsonFormatterPanel() {
           replaceJsonSource(verified.value);
           setOutput(verified.value);
           setError("");
-          setAssistantStatus({ kind: "success", message: response.summary });
+          updateAssistantStatus({ kind: "success", message: response.summary });
           return;
         }
         setError(verified.error);
-        setAssistantStatus({ kind: "error", message: "AI 修复结果未通过本地 JSON 校验。" });
+        updateAssistantStatus({ kind: "error", message: "AI 修复结果未通过本地 JSON 校验。" });
         return;
       }
-      setAssistantStatus({
+      updateAssistantStatus({
         kind: "error",
         message: response.failureReason || response.summary,
       });
     } catch (repairError) {
-      const message = repairError instanceof Error ? repairError.message : "AI 兜底修补请求失败。";
-      setAssistantStatus({ kind: "error", message });
+      const message = repairError instanceof Error ? repairError.message : "AI 修补请求失败。";
+      updateAssistantStatus({ kind: "error", message });
     } finally {
       setRepairPending(false);
     }
@@ -420,23 +412,18 @@ function JsonFormatterPanel() {
           <PanelTitle icon={Braces} title="输入" />
           <div className={styles.jsonPanelHeaderActions}>
             <button
-              aria-label="AI 兜底修补 JSON"
+              aria-label="AI 修补 JSON"
               className={styles.jsonTransformIconButton}
               disabled={repairPending}
-              onClick={() => void applyJsonFallbackRepair()}
-              title="AI 兜底修补 JSON"
+              onClick={() => void applyJsonRepair()}
+              title="AI 修补 JSON"
               type="button"
             >
-              <Sparkles aria-hidden="true" size={16} />
-            </button>
-            <button
-              aria-label="本地修补 JSON"
-              className={styles.jsonTransformIconButton}
-              onClick={applyJsonLocalRepair}
-              title="本地修补 JSON"
-              type="button"
-            >
-              <WandSparkles aria-hidden="true" size={16} />
+              {repairPending ? (
+                <LoaderCircle aria-hidden="true" className={styles.jsonRunningIcon} size={16} />
+              ) : (
+                <Sparkles aria-hidden="true" size={16} />
+              )}
             </button>
             <button
               aria-label="格式化 JSON"
@@ -459,12 +446,48 @@ function JsonFormatterPanel() {
         </label>
         <div className={styles.jsonPanelFooter}>
           {assistantStatus.kind !== "idle" ? (
-            <span
+            <div
+              aria-label={assistantStatus.kind === "pending" ? "Agent 正在运行" : undefined}
+              aria-live="polite"
               className={`${styles.jsonAssistantStatus} ${styles[`jsonAssistantStatus${assistantStatus.kind}`]}`}
               role={assistantStatus.kind === "error" ? "alert" : "status"}
             >
-              {assistantStatus.message}
-            </span>
+              <button
+                aria-expanded={assistantMessageOpen}
+                aria-haspopup="dialog"
+                aria-label="查看完整状态消息"
+                className={styles.jsonAssistantStatusButton}
+                onClick={() => setAssistantMessageOpen((isOpen) => !isOpen)}
+                title={assistantFullMessage}
+                type="button"
+              >
+                {assistantStatus.kind === "pending" ? (
+                  <>
+                    <span aria-hidden="true" className={styles.jsonAgentPulse} />
+                    <span className={styles.jsonAssistantStatusText}>
+                      <strong>Agent 正在运行</strong>
+                      <span>自定义 Skill 正在 AI 修补 JSON</span>
+                      <span className={styles.jsonAgentPhase}>AI 修补调用中</span>
+                    </span>
+                  </>
+                ) : (
+                  <span className={styles.jsonAssistantStatusText}>{assistantStatus.message}</span>
+                )}
+              </button>
+              {assistantMessageOpen ? (
+                <div aria-label="完整状态消息" className={styles.jsonAssistantPopover} role="dialog">
+                  <p>{assistantFullMessage}</p>
+                  <button
+                    aria-label="关闭完整状态消息"
+                    className={styles.jsonAssistantPopoverClose}
+                    onClick={() => setAssistantMessageOpen(false)}
+                    type="button"
+                  >
+                    <X aria-hidden="true" size={14} />
+                  </button>
+                </div>
+              ) : null}
+            </div>
           ) : null}
         </div>
       </div>
@@ -516,6 +539,7 @@ function JsonFormatterPanel() {
         searchQuery={searchQuery}
         searchResult={searchResult}
         selectedPath={selectedPath}
+        sourceHasContent={sourceHasContent}
       />
       ) : null}
     </section>
@@ -536,6 +560,7 @@ function JsonFormatterPanel() {
  *   searchQuery: string,
  *   searchResult: ReturnType<typeof findJsonHeroMatches>,
  *   selectedPath: string,
+ *   sourceHasContent: boolean,
  * }} props
  */
 function JsonHeroBrowserPanel({
@@ -551,6 +576,7 @@ function JsonHeroBrowserPanel({
   searchQuery,
   searchResult,
   selectedPath,
+  sourceHasContent,
 }) {
   const matchingNodes = useMemo(
     () =>
@@ -676,7 +702,7 @@ function JsonHeroBrowserPanel({
           ) : null}
         </div>
         <div className={styles.jsonHeroFooterStatus}>
-          {!parseResult.ok ? (
+          {!parseResult.ok && sourceHasContent ? (
             <span className={`${styles.jsonPanelFooterMessage} ${styles.jsonPanelFooterError}`} role="alert">
               {parseResult.error}
             </span>

@@ -147,6 +147,20 @@ describe("ToolCenterPage", () => {
     expect(executeCalls).toBe(0);
   });
 
+  test("starts Json Helper without sample JSON data", async () => {
+    renderToolCenter();
+
+    const input = await screen.findByLabelText("JSON 输入");
+    const output = screen.getByLabelText("JSON 输出");
+    const browser = screen.getByRole("region", { name: "JSON 结构浏览" });
+
+    expect(input).toHaveValue("");
+    expect(output).toHaveValue("");
+    expect(within(browser).queryByText(/queFork/)).not.toBeInTheDocument();
+    expect(within(browser).queryByRole("alert")).not.toBeInTheDocument();
+    expect(within(browser).queryByRole("button", { name: "复制值" })).not.toBeInTheDocument();
+  });
+
   test("expands a single JSON panel and restores the three panel layout", async () => {
     const user = userEvent.setup();
     renderToolCenter();
@@ -225,34 +239,50 @@ describe("ToolCenterPage", () => {
     );
   });
 
-  test("repairs JSON locally with jsonrepair without calling AI fallback", async () => {
+  test("uses AI repair directly without exposing local JSON repair", async () => {
     const user = userEvent.setup();
     let assistantCalls = 0;
+    /** @type {unknown} */
+    let requestBody = null;
     server.use(
-      http.post("/internal/tool-center/json-assistant/repair", () => {
+      http.post("/internal/tool-center/json-assistant/repair", async ({ request }) => {
         assistantCalls += 1;
-        return HttpResponse.json({ status: "blocked" });
+        requestBody = await request.json();
+        return HttpResponse.json({
+          contractVersion: "1.0",
+          status: "SUCCEEDED",
+          assistantAction: "REPAIR_JSON",
+          summary: "AI 修补已完成。",
+          repairedJson: '{"service":"queFork","enabled":true}',
+          failureReason: null,
+          safetyNotes: ["AI 修补结果必须重新经过本地 JSON 校验。"],
+          validationRequired: true,
+          skillId: "json-repair-assistant-read",
+          modelProviderFingerprint: "provider:fingerprint",
+        });
       }),
     );
     renderToolCenter();
 
     const input = await screen.findByLabelText("JSON 输入");
-    await user.clear(input);
+    expect(screen.queryByRole("button", { name: "本地修补 JSON" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "AI 修补 JSON" })).toBeInTheDocument();
+
     fireEvent.change(input, { target: { value: '{"service":"queFork","enabled":true,}' } });
-    await user.click(screen.getByRole("button", { name: "本地修补 JSON" }));
+    await user.click(screen.getByRole("button", { name: "AI 修补 JSON" }));
 
     expect(input).toHaveValue('{\n  "service": "queFork",\n  "enabled": true\n}');
     expect(screen.getByLabelText("JSON 输出")).toHaveValue('{\n  "service": "queFork",\n  "enabled": true\n}');
-    const inputPanel = input.closest('[class*="editorPanel"]');
-    const inputFooter = inputPanel?.querySelector('[class*="jsonPanelFooter"]');
-    expect(inputFooter).not.toBeNull();
-    expect(within(/** @type {HTMLElement} */ (inputFooter)).getByRole("status")).toHaveTextContent(
-      "JSON 已本地修补并通过校验。",
-    );
-    expect(assistantCalls).toBe(0);
+    expect(await screen.findByText("AI 修补已完成。")).toBeInTheDocument();
+    expect(assistantCalls).toBe(1);
+    expect(requestBody).toMatchObject({
+      contractVersion: "1.0",
+      assistantAction: "REPAIR_JSON",
+      source: '{"service":"queFork","enabled":true,}',
+    });
   });
 
-  test("uses AI fallback only after local parse and jsonrepair both fail", async () => {
+  test("uses AI repair after local parse fails", async () => {
     const user = userEvent.setup();
     let assistantCalls = 0;
     /** @type {unknown} */
@@ -268,7 +298,7 @@ describe("ToolCenterPage", () => {
           summary: "已从 Java 字符串中提取候选 JSON。",
           repairedJson: '{"service":"queFork","enabled":true}',
           failureReason: null,
-          safetyNotes: ["AI 兜底结果必须重新经过本地 JSON 校验。"],
+          safetyNotes: ["AI 修补结果必须重新经过本地 JSON 校验。"],
           validationRequired: true,
           skillId: "json-repair-assistant-read",
           modelProviderFingerprint: "provider:fingerprint",
@@ -282,7 +312,7 @@ describe("ToolCenterPage", () => {
     fireEvent.change(input, {
       target: { value: 'String json = "{\\"service\\":\\"queFork\\",\\"enabled\\":true}";' },
     });
-    await user.click(screen.getByRole("button", { name: "AI 兜底修补 JSON" }));
+    await user.click(screen.getByRole("button", { name: "AI 修补 JSON" }));
 
     expect(await screen.findByText("已从 Java 字符串中提取候选 JSON。")).toBeInTheDocument();
     expect(input).toHaveValue('{\n  "service": "queFork",\n  "enabled": true\n}');
@@ -293,6 +323,92 @@ describe("ToolCenterPage", () => {
       assistantAction: "REPAIR_JSON",
       source: 'String json = "{\\"service\\":\\"queFork\\",\\"enabled\\":true}";',
     });
+  });
+
+  test("opens the full assistant status message from a truncated status chip", async () => {
+    const user = userEvent.setup();
+    const longSummary =
+      "原始输入包含 Java 字符串赋值代码和转义反斜杠，已提取并还原为有效 JSON。后续结果已重新通过本地 JSON 校验。";
+    server.use(
+      http.post("/internal/tool-center/json-assistant/repair", () =>
+        HttpResponse.json({
+          contractVersion: "1.0",
+          status: "SUCCEEDED",
+          assistantAction: "REPAIR_JSON",
+          summary: longSummary,
+          repairedJson: '{"service":"queFork","enabled":true}',
+          failureReason: null,
+          safetyNotes: ["AI 修补结果必须重新经过本地 JSON 校验。"],
+          validationRequired: true,
+          skillId: "json-repair-assistant-read",
+          modelProviderFingerprint: "provider:fingerprint",
+        }),
+      ),
+    );
+    renderToolCenter();
+
+    const input = await screen.findByLabelText("JSON 输入");
+    fireEvent.change(input, {
+      target: { value: 'String json = "{\\"service\\":\\"queFork\\",\\"enabled\\":true}";' },
+    });
+    await user.click(screen.getByRole("button", { name: "AI 修补 JSON" }));
+
+    const inputPanel = input.closest('[class*="editorPanel"]');
+    const inputFooter = inputPanel?.querySelector('[class*="jsonPanelFooter"]');
+    expect(inputFooter).not.toBeNull();
+    const status = await within(/** @type {HTMLElement} */ (inputFooter)).findByRole("status");
+    const statusButton = within(status).getByRole("button", { name: "查看完整状态消息" });
+    expect(statusButton).toHaveTextContent(longSummary);
+    expect(cssRule("jsonAssistantStatusText")).toContain("text-overflow: ellipsis");
+
+    await user.click(statusButton);
+    const dialog = screen.getByRole("dialog", { name: "完整状态消息" });
+    expect(dialog).toHaveTextContent(longSummary);
+
+    await user.click(within(dialog).getByRole("button", { name: "关闭完整状态消息" }));
+    expect(screen.queryByRole("dialog", { name: "完整状态消息" })).not.toBeInTheDocument();
+  });
+
+  test("shows an active Agent running state while AI repair is pending", async () => {
+    const user = userEvent.setup();
+    /** @type {() => void} */
+    let releaseRepair = () => {};
+    server.use(
+      http.post("/internal/tool-center/json-assistant/repair", async () => {
+        await new Promise((resolve) => {
+          releaseRepair = () => resolve(undefined);
+        });
+        return HttpResponse.json({
+          contractVersion: "1.0",
+          status: "SUCCEEDED",
+          assistantAction: "REPAIR_JSON",
+          summary: "AI 修补完成。",
+          repairedJson: '{"service":"queFork","enabled":true}',
+          failureReason: null,
+          safetyNotes: ["AI 修补结果必须重新经过本地 JSON 校验。"],
+          validationRequired: true,
+          skillId: "json-repair-assistant-read",
+          modelProviderFingerprint: "provider:fingerprint",
+        });
+      }),
+    );
+    renderToolCenter();
+
+    const input = await screen.findByLabelText("JSON 输入");
+    await user.clear(input);
+    fireEvent.change(input, {
+      target: { value: 'String json = "{\\"service\\":\\"queFork\\",\\"enabled\\":true}";' },
+    });
+    await user.click(screen.getByRole("button", { name: "AI 修补 JSON" }));
+
+    const runningStatus = await screen.findByRole("status", { name: "Agent 正在运行" });
+    expect(runningStatus).toHaveTextContent("Agent 正在运行");
+    expect(runningStatus).toHaveTextContent("自定义 Skill 正在 AI 修补 JSON");
+    expect(screen.getByRole("button", { name: "AI 修补 JSON" })).toBeDisabled();
+    expect(screen.getByText("AI 修补调用中")).toBeInTheDocument();
+
+    releaseRepair();
+    expect(await screen.findByText("AI 修补完成。")).toBeInTheDocument();
   });
 
   test("browses parsed JSON with react-json-view-lite in a local structure view", async () => {
