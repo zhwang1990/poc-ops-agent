@@ -20,7 +20,7 @@ import { SkillRegistryPage } from "../features/skill-registry/SkillRegistryPage.
 import { SqlWorkbenchPage } from "../features/sql-workbench/SqlWorkbenchPage.jsx";
 import { ThirdPartyLicenseDetailPage } from "../features/third-party-licenses/ThirdPartyLicenseDetailPage.jsx";
 import { ThirdPartyLicensesPage } from "../features/third-party-licenses/ThirdPartyLicensesPage.jsx";
-import { ToolCenterPage } from "../features/tool-center/ToolCenterPage.jsx";
+import { ApiCallerSettingsPage, ToolCenterPage } from "../features/tool-center/ToolCenterPage.jsx";
 import { WorkflowEventsPage } from "../features/workflow-events/WorkflowEventsPage.jsx";
 
 const legacyAgentViewRoutes = {
@@ -205,6 +205,14 @@ export function AppRouter() {
           </ProtectedRoute>
         }
         path="/tools"
+      />
+      <Route
+        element={
+          <ProtectedRoute>
+            <ApiCallerSettingsPage />
+          </ProtectedRoute>
+        }
+        path="/tools/api-caller-settings"
       />
       <Route
         element={

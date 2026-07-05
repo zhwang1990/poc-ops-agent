@@ -1,0 +1,25 @@
+{
+  "caseId": "json-repair-assistant-read-invalid-parameters",
+  "skillId": "json-repair-assistant-read",
+  "version": "1.0.0",
+  "description": "缺少 source 时拒绝请求。",
+  "operator": {
+    "subject": "ops-reader-1",
+    "roles": [
+      "ROLE_ops-reader"
+    ]
+  },
+  "targetEnvironment": "development",
+  "input": {
+    "contractVersion": "1.0",
+    "assistantAction": "REPAIR_JSON",
+    "idempotencyKey": "json-repair-invalid-1"
+  },
+  "expected": {
+    "decision": "REJECT",
+    "status": "REJECTED",
+    "reasons": [
+      "source is required"
+    ]
+  }
+}

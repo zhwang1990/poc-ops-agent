@@ -113,6 +113,10 @@ describe("operator console routes", () => {
       screen.getByRole("link", { name: "SQL 工作区" }),
     ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "工具中心" })).toHaveAttribute("href", "/tools");
+    expect(screen.getByRole("link", { name: "API Caller 设置" })).toHaveAttribute(
+      "href",
+      "/tools/api-caller-settings",
+    );
     expect(
       screen.getByRole("link", { name: "模型设置" }),
     ).toHaveAttribute("href", "/model-settings");
@@ -240,6 +244,7 @@ describe("operator console routes", () => {
     ["/quick-links", "快捷连接"],
     ["/sql", "SQL 工作台"],
     ["/tools", "工具中心"],
+    ["/tools/api-caller-settings", "API Caller 设置"],
     ["/model-settings", "模型设置"],
     ["/release", "发布中心"],
     ["/help", "帮助"],
@@ -275,9 +280,9 @@ describe("operator console routes", () => {
     await userEvent.click(legalLink);
 
     expect(await screen.findByRole("heading", { name: "第三方组件声明" })).toBeInTheDocument();
-    expect(screen.getByText("前端操作台 14 项")).toBeInTheDocument();
+    expect(screen.getByText("前端操作台 15 项")).toBeInTheDocument();
     expect(screen.getByText("后端服务 16 项")).toBeInTheDocument();
-    expect(screen.getByText("第 1 / 3 页")).toBeInTheDocument();
+    expect(screen.getByText("第 1 / 4 页")).toBeInTheDocument();
     const componentList = screen.getByRole("region", { name: "第三方组件清单" });
     const reactRow = within(componentList).getByRole("row", { name: "React 19.2.7" });
     expect(within(reactRow).getByRole("link", { name: "React 许可证" })).toHaveAttribute(

@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://company.example/ops-agent/skills/json-repair-assistant-read/1.0.0/output.schema.json",
+  "title": "json-repair-assistant-read 输出",
+  "description": "AI JSON 修复助手只读评估结构化输出。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contractVersion",
+    "status",
+    "assistantAction",
+    "summary",
+    "safetyNotes",
+    "validationRequired",
+    "skillId"
+  ],
+  "properties": {
+    "contractVersion": {
+      "const": "1.0"
+    },
+    "status": {
+      "enum": [
+        "SUCCEEDED",
+        "MODEL_NOT_CONFIGURED",
+        "FAILED",
+        "REJECTED",
+        "NOT_REPAIRABLE"
+      ]
+    },
+    "assistantAction": {
+      "enum": [
+        "REPAIR_JSON"
+      ]
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4000
+    },
+    "repairedJson": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 30000
+    },
+    "failureReason": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
+    },
+    "safetyNotes": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 1000
+      }
+    },
+    "validationRequired": {
+      "const": true
+    },
+    "skillId": {
+      "const": "json-repair-assistant-read"
+    },
+    "modelProviderFingerprint": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    }
+  }
+}

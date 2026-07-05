@@ -29,6 +29,10 @@ import com.company.opsagent.contracts.sqlworkbench.SqlConnectionUpdateRequest;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryAction;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryLimits;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryRequest;
+import com.company.opsagent.contracts.toolcenter.JsonRepairAssistantAction;
+import com.company.opsagent.contracts.toolcenter.JsonRepairAssistantRequest;
+import com.company.opsagent.contracts.toolcenter.JsonRepairAssistantResponse;
+import com.company.opsagent.contracts.toolcenter.JsonRepairAssistantStatus;
 import com.company.opsagent.contracts.workflow.OperatorContext;
 import com.company.opsagent.contracts.workflow.PolicyDecisionReference;
 import com.company.opsagent.contracts.workflow.ReadOnlyCommandEnvelope;
@@ -234,6 +238,42 @@ class ContractsTest {
         List.of(new SqlAssistantSuggestion("Limit columns", "Reduce returned data.", "select id from orders")),
         List.of("Validate before execution."),
         false,
+        "provider:fingerprint"));
+  }
+
+  @Test
+  void normalizesJsonRepairAssistantRequestsAndRequiresSuccessfulOutputValidation() {
+    var request = new JsonRepairAssistantRequest(
+        "1.0",
+        JsonRepairAssistantAction.REPAIR_JSON,
+        "  {\"service\":\"queFork\",}  ",
+        "  trailing comma  ",
+        "json-repair-1");
+
+    assertEquals("{\"service\":\"queFork\",}", request.source());
+    assertEquals("trailing comma", request.parseError());
+
+    assertThrows(IllegalArgumentException.class, () -> new JsonRepairAssistantResponse(
+        "1.0",
+        JsonRepairAssistantStatus.SUCCEEDED,
+        JsonRepairAssistantAction.REPAIR_JSON,
+        "Fixed trailing comma.",
+        null,
+        null,
+        List.of("Validate before use."),
+        true,
+        "json-repair-assistant-read",
+        "provider:fingerprint"));
+    assertThrows(IllegalArgumentException.class, () -> new JsonRepairAssistantResponse(
+        "1.0",
+        JsonRepairAssistantStatus.SUCCEEDED,
+        JsonRepairAssistantAction.REPAIR_JSON,
+        "Fixed trailing comma.",
+        "{\"service\":\"queFork\"}",
+        null,
+        List.of("Validate before use."),
+        false,
+        "json-repair-assistant-read",
         "provider:fingerprint"));
   }
 
@@ -656,6 +696,43 @@ class ContractsTest {
     JsonNode outputSchema = mapper.readTree(skillPackage.resolve("output.schema.json").toFile());
     assertTrue(outputSchema.path("$id").asText().contains("sql-assistant-advice-read/1.0.0/output.schema.json"));
     assertTrue(outputSchema.path("properties").has("suggestions"));
+    assertTrue(outputSchema.path("properties").has("validationRequired"));
+  }
+
+  @Test
+  void providesJsonRepairAssistantSkillPackageForAgentScopeAndRegistry() throws Exception {
+    Path skillPackage = Path.of("skills/packages/json-repair-assistant");
+    Path agentScopeSkill = Path.of("../skills/json-repair-assistant/SKILL.md");
+
+    assertTrue(Files.exists(agentScopeSkill));
+    assertTrue(Files.exists(skillPackage.resolve("manifest.json")));
+    assertTrue(Files.exists(skillPackage.resolve("manifest.signature.json")));
+    assertTrue(Files.exists(skillPackage.resolve("input.schema.json")));
+    assertTrue(Files.exists(skillPackage.resolve("output.schema.json")));
+    assertTrue(Files.exists(skillPackage.resolve("tests/happy-path.json")));
+    assertTrue(Files.exists(skillPackage.resolve("tests/invalid-parameters.json")));
+    assertTrue(Files.exists(skillPackage.resolve("tests/policy-denied.json")));
+
+    ObjectMapper mapper = new ObjectMapper();
+    JsonNode manifest = mapper.readTree(skillPackage.resolve("manifest.json").toFile());
+    assertEquals("json-repair-assistant-read", manifest.path("skillId").asText());
+    assertEquals("1.0.0", manifest.path("version").asText());
+    assertTrue(manifest.path("readOnly").asBoolean());
+    assertEquals("READ_ONLY", manifest.path("riskLevel").asText());
+    assertEquals("WORKFLOW", manifest.path("executor").asText());
+
+    JsonNode inputSchema = mapper.readTree(skillPackage.resolve("input.schema.json").toFile());
+    assertEquals(false, inputSchema.path("additionalProperties").asBoolean());
+    assertTrue(inputSchema.path("properties").has("source"));
+    assertTrue(inputSchema.path("properties").has("parseError"));
+    assertTrue(StreamSupport.stream(inputSchema.path("required").spliterator(), false)
+        .map(JsonNode::asText)
+        .anyMatch("idempotencyKey"::equals));
+
+    JsonNode outputSchema = mapper.readTree(skillPackage.resolve("output.schema.json").toFile());
+    assertTrue(outputSchema.path("$id").asText().contains("json-repair-assistant-read/1.0.0/output.schema.json"));
+    assertTrue(outputSchema.path("properties").has("repairedJson"));
+    assertEquals("json-repair-assistant-read", outputSchema.path("properties").path("skillId").path("const").asText());
     assertTrue(outputSchema.path("properties").has("validationRequired"));
   }
 
