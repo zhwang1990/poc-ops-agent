@@ -10,8 +10,8 @@
   position: relative;
   z-index: 1;
   display: grid;
-  min-height: 78px;
-  grid-template-columns: minmax(236px, 336px) max-content minmax(0, 1fr) max-content max-content;
+  min-height: 84px;
+  grid-template-columns: minmax(236px, 336px) minmax(0, 1fr) max-content max-content;
   gap: 8px;
   align-items: center;
   padding: 10px 11px;
@@ -50,7 +50,7 @@
   isolation: isolate;
   display: grid;
   min-width: 0;
-  min-height: 60px;
+  min-height: 64px;
   grid-template-columns: 56px minmax(0, 1fr);
   gap: 12px;
   align-items: center;
@@ -198,11 +198,13 @@
 
 .workspaceContext {
   display: grid;
-  width: max-content;
+  width: 100%;
   min-width: 0;
   max-width: 100%;
-  min-height: 48px;
-  grid-template-columns: 36px max-content max-content 48px;
+  min-height: 52px;
+  grid-column: 2;
+  grid-row: 1;
+  grid-template-columns: 36px max-content max-content minmax(56px, 1fr);
   gap: 7px;
   align-items: center;
   padding: 6px 9px;
@@ -218,8 +220,8 @@
 
 .contextIcon {
   display: grid;
-  width: 34px;
-  height: 34px;
+  width: 36px;
+  height: 36px;
   place-items: center;
   border: 1px solid oklch(0.76 0.074 236 / 0.74);
   border-radius: 10px;
@@ -288,62 +290,121 @@
 
 .signalRail {
   position: relative;
+  isolation: isolate;
   display: grid;
-  width: 48px;
-  min-width: 48px;
-  height: 24px;
+  width: 100%;
+  min-width: 56px;
+  height: 28px;
   grid-template-columns: repeat(3, 1fr);
   align-items: center;
+  overflow: hidden;
+  border-radius: 999px;
+  container-type: inline-size;
+}
+
+.signalRail::before,
+.signalRail::after {
+  position: absolute;
+  content: "";
+  pointer-events: none;
 }
 
 .signalRail::before {
-  position: absolute;
-  right: 6px;
-  left: 6px;
+  right: 7px;
+  left: 7px;
+  z-index: 0;
+  top: 13px;
   height: 1px;
-  background: linear-gradient(
-    90deg,
-    oklch(0.6 0.11 236 / 0.18),
-    oklch(0.52 0.18 18 / 0.28),
-    oklch(0.52 0.12 156 / 0.24)
-  );
-  content: "";
+  background:
+    linear-gradient(90deg, oklch(0.5 0.115 236 / 0.28), oklch(0.52 0.19 18 / 0.18), oklch(0.5 0.118 156 / 0.16), transparent),
+    linear-gradient(90deg, transparent, oklch(0.99 0.004 236 / 0.7), transparent);
+}
+
+.signalRail::after {
+  left: 7px;
+  top: 13px;
+  z-index: 0;
+  width: 112px;
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, oklch(0.52 0.19 18 / 0.82), transparent);
+  opacity: 0;
+  animation: signal-ion-scan 5.2s ease-in-out infinite;
 }
 
 .signalRail i {
-  position: relative;
+  position: absolute;
+  top: 7px;
   z-index: 1;
   display: block;
-  width: 7px;
-  height: 7px;
-  justify-self: center;
-  border: 2px solid oklch(0.98 0.006 236);
+  width: 14px;
+  height: 14px;
+  border: 3px solid oklch(0.99 0.004 236);
   border-radius: 999px;
   background: var(--toolbar-blue);
+  transform: translateX(-50%);
   box-shadow:
-    0 0 0 4px oklch(0.7 0.08 236 / 0.1),
-    0 0 12px oklch(0.54 0.1 236 / 0.2);
+    0 0 0 1px oklch(0.5 0.115 236 / 0.22),
+    0 0 0 7px oklch(0.5 0.115 236 / 0.08);
+  animation: signal-node-pulse 4.8s ease-in-out infinite;
+}
+
+.signalRail i:nth-child(1) {
+  left: 18%;
 }
 
 .signalRail i:nth-child(2) {
+  left: 52%;
   background: var(--toolbar-red);
   box-shadow:
-    0 0 0 4px oklch(0.7 0.11 18 / 0.09),
-    0 0 12px oklch(0.55 0.16 18 / 0.18);
+    0 0 0 1px oklch(0.52 0.19 18 / 0.2),
+    0 0 0 7px oklch(0.52 0.19 18 / 0.08);
+  animation-delay: 1.2s;
 }
 
 .signalRail i:nth-child(3) {
+  left: 86%;
   background: var(--toolbar-green);
   box-shadow:
-    0 0 0 4px oklch(0.7 0.08 156 / 0.09),
-    0 0 12px oklch(0.5 0.12 156 / 0.18);
+    0 0 0 1px oklch(0.5 0.118 156 / 0.2),
+    0 0 0 7px oklch(0.5 0.118 156 / 0.08);
+  animation-delay: 2.4s;
+}
+
+@keyframes signal-ion-scan {
+  0%,
+  12% {
+    transform: translateX(0);
+    opacity: 0;
+  }
+
+  22%,
+  76% {
+    opacity: 1;
+  }
+
+  100% {
+    transform: translateX(max(0px, calc(100cqw - 126px)));
+    opacity: 0;
+  }
+}
+
+@keyframes signal-node-pulse {
+  0%,
+  100% {
+    transform: translateX(-50%) scale(1);
+  }
+
+  42% {
+    transform: translateX(-50%) scale(1.16);
+  }
 }
 
 .workspaceToolbar {
   display: inline-flex;
   min-width: 0;
   height: 48px;
-  grid-column: 4;
+  grid-column: 3;
   grid-row: 1;
   gap: 7px;
   align-items: center;
@@ -448,7 +509,7 @@
 .operatorDock {
   display: grid;
   min-width: 0;
-  grid-column: 5;
+  grid-column: 4;
   grid-row: 1;
   grid-template-columns: 114px minmax(132px, 176px) 82px;
   gap: 6px;
@@ -635,19 +696,21 @@
 
 @media (prefers-reduced-motion: reduce) {
   .logoMark,
-  .logoMark::after {
+  .logoMark::after,
+  .signalRail i,
+  .signalRail::after {
     animation: none;
   }
 }
 
 @media (max-width: 1480px) {
   .appCapsule {
-    grid-template-columns: minmax(226px, 312px) max-content minmax(0, 1fr) max-content max-content;
+    grid-template-columns: minmax(226px, 312px) minmax(0, 1fr) max-content max-content;
     gap: 7px;
   }
 
   .workspaceContext {
-    grid-template-columns: 34px max-content max-content 46px;
+    grid-template-columns: 34px max-content max-content minmax(52px, 1fr);
     padding-inline: 8px;
   }
 
@@ -657,8 +720,7 @@
   }
 
   .signalRail {
-    width: 46px;
-    min-width: 46px;
+    min-width: 52px;
   }
 }
 
@@ -673,6 +735,7 @@
   }
 
   .workspaceContext {
+    grid-column: auto;
     width: 100%;
     grid-template-columns: 30px minmax(0, 1fr);
   }
