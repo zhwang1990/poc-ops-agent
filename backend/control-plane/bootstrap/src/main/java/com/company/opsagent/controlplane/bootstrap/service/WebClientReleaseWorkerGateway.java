@@ -12,6 +12,7 @@ import com.company.opsagent.controlplane.modules.release.ReleaseNodeExecutionEve
 import com.company.opsagent.controlplane.modules.release.ReleaseNodeExecutionResult;
 import com.company.opsagent.controlplane.modules.release.ReleaseNodeStep;
 import com.company.opsagent.controlplane.modules.release.ReleasePlan;
+import com.company.opsagent.controlplane.modules.release.ReleaseRequestContext;
 import com.company.opsagent.controlplane.modules.release.ReleaseScriptProfileDefinition;
 import com.company.opsagent.controlplane.modules.release.ReleaseServer;
 import com.company.opsagent.controlplane.modules.release.ReleaseWorkerGateway;
@@ -24,6 +25,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -62,9 +64,28 @@ public class WebClientReleaseWorkerGateway implements ReleaseWorkerGateway {
   }
 
   @Override
+  public Mono<ReleaseNodeExecutionResult> execute(
+      ReleasePlan plan,
+      ReleaseNodeStep node,
+      ReleaseRequestContext context) {
+    return executeWithEvents(plan, node, context)
+        .filter(event -> event.eventType() == ReleaseNodeExecutionEvent.EventType.RESULT)
+        .map(ReleaseNodeExecutionEvent::result)
+        .last();
+  }
+
+  @Override
   public Flux<ReleaseNodeExecutionEvent> executeWithEvents(ReleasePlan plan, ReleaseNodeStep node) {
+    return executeWithEvents(plan, node, ReleaseRequestContext.system(plan.releaseId()));
+  }
+
+  @Override
+  public Flux<ReleaseNodeExecutionEvent> executeWithEvents(
+      ReleasePlan plan,
+      ReleaseNodeStep node,
+      ReleaseRequestContext context) {
     OffsetDateTime now = OffsetDateTime.ofInstant(clock.instant(), ZoneOffset.UTC);
-    return request(plan, node, now)
+    return request(plan, node, context, now)
         .flatMapMany(request -> webClient.post()
             .uri("/internal/release/execute/events")
             .contentType(MediaType.APPLICATION_JSON)
@@ -76,7 +97,11 @@ public class WebClientReleaseWorkerGateway implements ReleaseWorkerGateway {
         .map(this::executionEvent);
   }
 
-  private Mono<ReleaseWorkerRequest> request(ReleasePlan plan, ReleaseNodeStep node, OffsetDateTime now) {
+  private Mono<ReleaseWorkerRequest> request(
+      ReleasePlan plan,
+      ReleaseNodeStep node,
+      ReleaseRequestContext context,
+      OffsetDateTime now) {
     Mono<Optional<ReleaseArtifact>> artifact = plan.artifactId() == null
         ? Mono.just(Optional.empty())
         : releaseCatalogStore.findArtifact(plan.artifactId())
@@ -89,14 +114,14 @@ public class WebClientReleaseWorkerGateway implements ReleaseWorkerGateway {
         .flatMap(tuple -> {
           ReleaseServer server = tuple.getT2();
           if (server.managementMode() != ManagementMode.LIBERTY_SCRIPT_PROFILE) {
-            return Mono.just(request(plan, node, tuple.getT1().orElse(null), server, null, now));
+            return Mono.just(request(plan, node, tuple.getT1().orElse(null), server, null, context, now));
           }
           return releaseCatalogStore
               .findScriptProfileDefinition(server.scriptProfile().profileId())
               .switchIfEmpty(Mono.error(new IllegalStateException("release script profile not found")))
               .filter(ReleaseScriptProfileDefinition::executable)
               .switchIfEmpty(Mono.error(new IllegalStateException("release script profile is not executable")))
-              .map(definition -> request(plan, node, tuple.getT1().orElse(null), server, definition, now));
+              .map(definition -> request(plan, node, tuple.getT1().orElse(null), server, definition, context, now));
         });
   }
 
@@ -106,11 +131,14 @@ public class WebClientReleaseWorkerGateway implements ReleaseWorkerGateway {
       ReleaseArtifact artifact,
       ReleaseServer server,
       ReleaseScriptProfileDefinition scriptProfileDefinition,
+      ReleaseRequestContext context,
       OffsetDateTime now) {
+    ReleaseRequestContext requestContext = requireContext(context);
     ReleaseWorkerCommand command = new ReleaseWorkerCommand(
         "1.0",
         plan.releaseId(),
         workflowId(plan.releaseId()),
+        idempotencyKey(plan, node),
         "DEPLOY",
         plan.targetEnvironment().value(),
         plan.applicationId(),
@@ -129,16 +157,16 @@ public class WebClientReleaseWorkerGateway implements ReleaseWorkerGateway {
             server.applicationPath(),
             server.credentialAlias(),
             scriptProfile(server.scriptProfile(), scriptProfileDefinition))),
-        new OperatorContext("release-center", List.of("ROLE_ops-admin")),
+        new OperatorContext(requestContext.operatorId(), requestContext.roles()),
         new PolicyDecisionReference(
-            "release-policy:" + plan.releaseId(),
-            "release-center-policy-v1",
+            requestContext.policyDecisionId(),
+            requestContext.policyVersion(),
             "ALLOW"),
-        new TraceContext("trace:" + plan.releaseId(), "request:" + plan.releaseId()),
+        new TraceContext(requestContext.traceId(), requestContext.requestId()),
         now);
     return new ReleaseWorkerRequest(
         "1.0",
-        "release-worker-" + plan.releaseId() + "-" + node.sequence(),
+        executionRequestId(plan, node),
         now,
         now.plusSeconds(60),
         command);
@@ -197,6 +225,7 @@ public class WebClientReleaseWorkerGateway implements ReleaseWorkerGateway {
         value(command.contractVersion()),
         value(command.releaseId()),
         value(command.workflowId()),
+        value(command.idempotencyKey()),
         value(command.operation()),
         value(command.targetEnvironment()),
         value(command.applicationId()),
@@ -215,7 +244,16 @@ public class WebClientReleaseWorkerGateway implements ReleaseWorkerGateway {
   }
 
   private String workflowId(String releaseId) {
-    return java.util.UUID.nameUUIDFromBytes(releaseId.getBytes(StandardCharsets.UTF_8)).toString();
+    return UUID.nameUUIDFromBytes(releaseId.getBytes(StandardCharsets.UTF_8)).toString();
+  }
+
+  private UUID executionRequestId(ReleasePlan plan, ReleaseNodeStep node) {
+    String source = plan.releaseId() + ":" + node.sequence();
+    return UUID.nameUUIDFromBytes(source.getBytes(StandardCharsets.UTF_8));
+  }
+
+  private String idempotencyKey(ReleasePlan plan, ReleaseNodeStep node) {
+    return "release:" + plan.releaseId() + ":node:" + node.sequence();
   }
 
   private ReleaseScriptProfile scriptProfile(
@@ -273,13 +311,20 @@ public class WebClientReleaseWorkerGateway implements ReleaseWorkerGateway {
     return value;
   }
 
+  private ReleaseRequestContext requireContext(ReleaseRequestContext context) {
+    if (context == null) {
+      throw new IllegalArgumentException("context is required");
+    }
+    return context;
+  }
+
   private String value(Object value) {
     return value == null ? "" : value.toString();
   }
 
   private record ReleaseWorkerRequest(
       String contractVersion,
-      String executionRequestId,
+      UUID executionRequestId,
       OffsetDateTime authorizedAt,
       OffsetDateTime expiresAt,
       ReleaseWorkerCommand command) {
@@ -289,6 +334,7 @@ public class WebClientReleaseWorkerGateway implements ReleaseWorkerGateway {
       String contractVersion,
       String releaseId,
       String workflowId,
+      String idempotencyKey,
       String operation,
       String targetEnvironment,
       String applicationId,

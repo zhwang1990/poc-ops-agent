@@ -182,9 +182,7 @@ class ReleaseCenterControllerTest {
               "workingDirectory": "C:\\\\ops-agent\\\\work\\\\release",
               "arguments": [],
               "successExitCodes": [0],
-              "timeoutSeconds": 600,
-              "approved": true,
-              "enabled": true
+              "timeoutSeconds": 600
             }
             """)
         .exchange()
@@ -194,8 +192,8 @@ class ReleaseCenterControllerTest {
         .jsonPath("$.targetEnvironment").doesNotExist()
         .jsonPath("$.executablePath").isEqualTo("C:\\ops\\scripts\\liberty-war-deploy.cmd")
         .jsonPath("$.arguments.length()").isEqualTo(0)
-        .jsonPath("$.approved").isEqualTo(true)
-        .jsonPath("$.enabled").isEqualTo(true);
+        .jsonPath("$.approved").isEqualTo(false)
+        .jsonPath("$.enabled").isEqualTo(false);
 
     webTestClient.get()
         .uri("/internal/release-center/script-profiles")
@@ -206,6 +204,32 @@ class ReleaseCenterControllerTest {
         .jsonPath("$[0].profileId").isEqualTo("liberty-war-deploy")
         .jsonPath("$[0].requiredParameters").doesNotExist()
         .jsonPath("$[0].allowedParameters").doesNotExist();
+  }
+
+  @Test
+  void rejectsClientDeclaredScriptProfileGovernanceFields() {
+    webTestClient.post()
+        .uri("/internal/release-center/script-profiles")
+        .headers(headers -> headers.setBearerAuth(token("release-operator", List.of("ops-release"))))
+        .contentType(APPLICATION_JSON)
+        .bodyValue("""
+            {
+              "profileId": "liberty-war-deploy",
+              "displayName": "Liberty WAR deploy",
+              "executablePath": "C:\\\\ops\\\\scripts\\\\liberty-war-deploy.cmd",
+              "workingDirectory": "C:\\\\ops-agent\\\\work\\\\release",
+              "arguments": [],
+              "successExitCodes": [0],
+              "timeoutSeconds": 600,
+              "approved": true,
+              "enabled": true
+            }
+            """)
+        .exchange()
+        .expectStatus().isBadRequest()
+        .expectBody()
+        .jsonPath("$.code").isEqualTo("INVALID_ARGUMENT")
+        .jsonPath("$.message").isEqualTo("unsupported release script profile request field: approved");
   }
 
   @Test
@@ -278,9 +302,7 @@ class ReleaseCenterControllerTest {
               "workingDirectory": "C:\\\\ops-agent\\\\work\\\\release",
               "arguments": ["{{param.serverName}}"],
               "successExitCodes": [0],
-              "timeoutSeconds": 600,
-              "approved": false,
-              "enabled": true
+              "timeoutSeconds": 600
             }
             """)
         .exchange()

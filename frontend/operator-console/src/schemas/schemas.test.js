@@ -20,6 +20,7 @@ import {
   releasePlanSchema,
   releaseWorkflowEventSchema,
   releaseScriptProfileDefinitionSchema,
+  releaseScriptProfileDefinitionSaveRequestSchema,
   releaseServerSchema,
 } from "./release-center-schemas.js";
 import {
@@ -416,6 +417,27 @@ describe("release center schemas", () => {
     });
 
     expect(parsed.arguments).toEqual([]);
+  });
+
+  test("rejects script profile governance fields in save requests", () => {
+    const request = {
+      profileId: "liberty-war-deploy",
+      displayName: "Liberty WAR deploy",
+      executablePath: "C:\\ops\\scripts\\liberty-war-deploy.cmd",
+      workingDirectory: "C:\\ops-agent\\work\\release",
+      arguments: [],
+      successExitCodes: [0],
+      timeoutSeconds: 600,
+    };
+
+    expect(releaseScriptProfileDefinitionSaveRequestSchema.parse(request).profileId).toBe("liberty-war-deploy");
+    expect(() =>
+      releaseScriptProfileDefinitionSaveRequestSchema.parse({
+        ...request,
+        approved: true,
+        enabled: true,
+      }),
+    ).toThrow();
   });
 
   test("accepts release node log events and rejects mismatched payload types", () => {

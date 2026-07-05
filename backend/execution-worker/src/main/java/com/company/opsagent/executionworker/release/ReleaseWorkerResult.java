@@ -92,10 +92,14 @@ public record ReleaseWorkerResult(
     return command.nodes().get(0);
   }
 
-  private static String valueOrUnknown(String value) {
-    if (value == null || value.isBlank()) {
+  private static String valueOrUnknown(Object value) {
+    if (value == null) {
       return "unknown";
     }
-    return value;
+    String text = value.toString();
+    if (text.isBlank()) {
+      return "unknown";
+    }
+    return text;
   }
 }

@@ -476,6 +476,22 @@ class ContractsTest {
   }
 
   @Test
+  void releaseCommandSchemaRequiresIdempotencyKey() throws Exception {
+    JsonNode schema = new ObjectMapper()
+        .readTree(Path.of("release/release-command-v1.schema.json").toFile());
+
+    List<String> required = StreamSupport.stream(schema.path("required").spliterator(), false)
+        .map(JsonNode::asText)
+        .toList();
+
+    assertTrue(required.contains("idempotencyKey"));
+    JsonNode idempotencyKey = schema.path("properties").path("idempotencyKey");
+    assertEquals("string", idempotencyKey.path("type").asText());
+    assertEquals(1, idempotencyKey.path("minLength").asInt());
+    assertEquals(200, idempotencyKey.path("maxLength").asInt());
+  }
+
+  @Test
   void releaseCommandSchemaAllowsArtifactlessLibertyScriptProfiles() throws Exception {
     JsonNode schema = new ObjectMapper()
         .readTree(Path.of("release/release-command-v1.schema.json").toFile());

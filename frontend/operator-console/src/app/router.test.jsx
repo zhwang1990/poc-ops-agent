@@ -30,10 +30,6 @@ const sqlWorkbenchCss = readFileSync(
   "src/features/sql-workbench/SqlWorkbenchPage.module.css",
   "utf8",
 );
-const as400ObjectCss = readFileSync(
-  "src/features/as400-object-management/As400ObjectManagementPage.module.css",
-  "utf8",
-);
 const skillRegistryCss = readFileSync(
   "src/features/skill-registry/SkillRegistryPage.module.css",
   "utf8",
@@ -240,7 +236,6 @@ describe("operator console routes", () => {
     ["/audit", "审计记录"],
     ["/skills", "Skill 注册中心"],
     ["/meeting-notes", "会议录制纪要"],
-    ["/as400-ddl", "AS400对象管理"],
     ["/quick-links", "快捷连接"],
     ["/sql", "SQL 工作台"],
     ["/tools", "工具中心"],
@@ -375,7 +370,8 @@ describe("operator console routes", () => {
     expect(within(capabilityMap).getByRole("link", { name: /RAG 问答/u })).toHaveAttribute("href", "/rag");
     expect(within(capabilityMap).getByRole("link", { name: /Skill 注册中心/u })).toHaveAttribute("href", "/skills");
     expect(within(capabilityMap).getByRole("link", { name: /会议录制纪要/u })).toHaveAttribute("href", "/meeting-notes");
-    expect(within(capabilityMap).getByRole("link", { name: /AS400对象管理/u })).toHaveAttribute("href", "/as400-ddl");
+    expect(within(capabilityMap).queryByRole("link", { name: /AS400对象管理/u })).not.toBeInTheDocument();
+    expect(within(capabilityMap).queryByText("AS400对象管理")).not.toBeInTheDocument();
     expect(within(capabilityMap).getByText("快捷连接")).toBeInTheDocument();
     expect(within(capabilityMap).getByText("后续切片")).toBeInTheDocument();
     expect(within(capabilityMap).queryByRole("link", { name: /快捷连接/u })).not.toBeInTheDocument();
@@ -428,64 +424,12 @@ describe("operator console routes", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("renders the AS400 object management mock workspace", async () => {
-    const user = userEvent.setup();
+  it("does not expose the out-of-scope AS400 object management route", async () => {
     renderAt("/as400-ddl");
 
-    expect(await screen.findByRole("heading", { name: "AS400对象管理" })).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "AS400 数据对象管理工作区" })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /在线设计/u })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByRole("region", { name: "在线设计模式" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "客户订单主表" })).toBeInTheDocument();
-    expect(screen.getByText("ORDERS.CUSORD")).toBeInTheDocument();
-    expect(screen.queryByText("在线字段设计")).not.toBeInTheDocument();
-    expect(screen.queryByText("字段明细")).not.toBeInTheDocument();
-    expect(screen.queryByText("M09 / UI ready")).not.toBeInTheDocument();
-    expect(screen.queryByText("数据对象草稿")).not.toBeInTheDocument();
-    expect(screen.queryByText("AS400_客户订单表_导入模板.xlsx")).not.toBeInTheDocument();
-    expect(screen.getByRole("columnheader", { name: "小数" })).toBeInTheDocument();
-    expect(screen.getByLabelText("第 1 行小数位").className).toContain("decimalInput");
-    expect(screen.getByRole("complementary", { name: "AS400 对象草稿状态" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "展开工作区" })).toHaveAttribute("aria-pressed", "false");
-    await user.click(screen.getByRole("button", { name: "展开工作区" }));
-    expect(screen.getByRole("button", { name: "退出展开" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.queryByRole("complementary", { name: "AS400 对象草稿状态" })).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "退出展开" }));
-    expect(screen.getByRole("button", { name: "展开工作区" })).toHaveAttribute("aria-pressed", "false");
-    expect(screen.getByRole("complementary", { name: "AS400 对象草稿状态" })).toBeInTheDocument();
-    await user.click(screen.getByRole("tab", { name: /上传 Excel/u }));
-    expect(screen.getByRole("tab", { name: /上传 Excel/u })).toHaveAttribute("aria-selected", "true");
-    expect(await screen.findByText("AS400_客户订单表_导入模板.xlsx")).toBeInTheDocument();
-    expect(screen.getByRole("table", { name: "Excel 字段映射" })).toBeInTheDocument();
-    expect(screen.getByText("nullable")).toBeInTheDocument();
-    expect(screen.queryByRole("columnheader", { name: "字段类型*" })).not.toBeInTheDocument();
-    expect(screen.queryByText("businessType")).not.toBeInTheDocument();
-    expect(screen.getByRole("columnheader", { name: "物理类型" })).toBeInTheDocument();
-    expect(screen.getByLabelText("第 1 行物理类型").className).toContain("physicalInput");
-    const firstPhysicalTypeSelect = screen.getByRole("combobox", { name: "第 1 行物理类型" });
-    expect(firstPhysicalTypeSelect).toHaveValue("CHAR");
-    expect(within(firstPhysicalTypeSelect).getByRole("option", { name: "VARGRAPHIC" })).toBeInTheDocument();
-    expect(screen.getByRole("columnheader", { name: "是否可空" })).toBeInTheDocument();
-    expect(screen.getByLabelText("第 1 行是否可空")).not.toBeChecked();
-    expect(screen.getByRole("columnheader", { name: "是否主键" })).toBeInTheDocument();
-    expect(screen.getByRole("columnheader", { name: "是否支持中文" })).toBeInTheDocument();
-    expect(screen.getByRole("combobox", { name: "第 1 行缩写候选" })).toHaveValue("ORDNO");
-    expect(screen.getByRole("option", { name: "ORDERID" })).toBeInTheDocument();
-    expect(screen.getByRole("columnheader", { name: "操作" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "删除第 1 行字段" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "提交审批" })).toBeDisabled();
-    expect(
-      screen.queryByText("当前页面只展示 P1 只读范围内的占位入口，后续任务再接入真实接口。"),
-    ).not.toBeInTheDocument();
-
-    await user.click(screen.getByRole("tab", { name: /在线设计/u }));
-    await user.click(screen.getByRole("button", { name: /新增字段/u }));
-
-    expect(screen.getByRole("region", { name: "在线设计模式" })).toBeInTheDocument();
-    expect(screen.getAllByDisplayValue("新字段")).toHaveLength(1);
-    await user.click(screen.getByRole("button", { name: "删除第 5 行字段" }));
-
-    expect(screen.queryByDisplayValue("新字段")).not.toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "用户登录" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "AS400对象管理" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "AS400 数据对象管理工作区" })).not.toBeInTheDocument();
   });
 
   it.each([
@@ -623,7 +567,6 @@ describe("operator console routes", () => {
     const overviewSource = readFileSync("src/features/overview/OverviewPage.jsx", "utf8");
     const sqlSource = readFileSync("src/features/sql-workbench/SqlWorkbenchPage.jsx", "utf8");
     const skillSource = readFileSync("src/features/skill-registry/SkillRegistryPage.jsx", "utf8");
-    const as400Source = readFileSync("src/features/as400-object-management/As400ObjectManagementPage.jsx", "utf8");
     const pageCanvasCss = [
       overviewCss,
       sqlWorkbenchCss,
@@ -683,7 +626,6 @@ describe("operator console routes", () => {
     expect(overviewSource).toContain("WorkspacePageFrame");
     expect(sqlSource).toContain("WorkspacePageFrame");
     expect(skillSource).toContain("WorkspacePageFrame");
-    expect(as400Source).toContain("WorkspacePageFrame");
   });
 
   it("keeps expanded workspace coverage stronger than menu page canvas height rules", () => {
@@ -732,10 +674,6 @@ describe("operator console routes", () => {
     const sqlCanvasRule = sqlWorkbenchCss.match(/[.]sqlCanvas\s*[{][^}]+[}]/u)?.[0] ?? "";
     const workbenchGridRule =
       sqlWorkbenchCss.match(/[.]workbenchGrid\s*[{][^}]+[}]/u)?.[0] ?? "";
-    const as400LayoutRule =
-      as400ObjectCss.match(/[.]objectLayout\s*[{][^}]+[}]/u)?.[0] ?? "";
-    const as400ToolbarRule =
-      as400ObjectCss.match(/[.]modeToolbar\s*[{][^}]+[}]/u)?.[0] ?? "";
     const pageToolbarSurfaceRule =
       pageToolbarCss.match(/[.]surface\s*[{][^}]+[}]/u)?.[0] ?? "";
 
@@ -772,13 +710,8 @@ describe("operator console routes", () => {
     expect(capabilityRowRule).toContain("grid-template-columns: 36px minmax(0, 1fr) auto");
     expect(sqlCanvasRule).toContain("grid-template-rows: auto auto minmax(0, 1fr)");
     expect(workbenchGridRule).toContain("gap: 12px");
-    expect(as400LayoutRule).toContain("grid-template-columns: minmax(0, 1fr) 292px");
-    expect(as400LayoutRule).toContain("gap: 12px");
-    expect(as400ToolbarRule).toContain("grid-template-columns: auto minmax(0, 1fr) auto auto");
     expect(pageToolbarSurfaceRule).toContain("min-height: 56px");
     expect(pageToolbarSurfaceRule).toContain("border-radius: 12px");
-    expect(as400ObjectCss).toContain(".candidateSelect");
-    expect(as400ObjectCss).not.toContain(".candidateChip");
     expect(skillRegistryCss).toContain(".registryCanvas");
     expect(skillRegistryCss).toContain(".registryTable");
   });

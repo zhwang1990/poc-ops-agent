@@ -343,16 +343,6 @@
   --nav-spark-y: 0.25rem;
 }
 
-.navToneas400 {
-  --nav-color: #66772a;
-  --nav-mark: #71862b;
-  --nav-icon-radius: 12px;
-  --nav-symbol-radius: 6px;
-  --nav-detail-radius: 4px;
-  --nav-spark-x: 0.875rem;
-  --nav-spark-y: 0.25rem;
-}
-
 .navTonequick {
   --nav-color: #476f96;
   --nav-mark: #4b769f;

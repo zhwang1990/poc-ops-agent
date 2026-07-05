@@ -241,27 +241,23 @@ class DefaultSqlWorkbenchServiceTest {
   }
 
   @Test
-  void commitControlledDmlSubmitsAuthorizedExecutionEnvelope() {
+  void commitControlledDmlRequiresPersistentWorkflowGateBeforeWorkerSubmission() {
     SqlQueryRequest request = request(
         "ORDERS",
         SqlQueryAction.COMMIT_DML,
         "update ORDERS.ORDERS set status = 'READY' where order_id = 42");
-    String expectedHash = service.validate(request).sqlHash();
 
-    SqlQueryExecutionResult result = service.commitControlledDml(
-        new SqlDmlCommitRequest("1.0", request, null),
-        operator(),
-        policy(),
-        trace());
+    SqlWorkbenchException exception = assertThrows(
+        SqlWorkbenchException.class,
+        () -> service.commitControlledDml(
+            new SqlDmlCommitRequest("1.0", request, null),
+            operator(),
+            policy(),
+            trace()));
 
-    assertEquals("SUCCEEDED", result.status());
-    assertEquals(3, result.affectedRows());
-    assertEquals(1, workerClient.executeCount);
-    SqlQueryExecutionRequest submitted = workerClient.lastExecutionRequest;
-    assertEquals(SqlQueryAction.COMMIT_DML, submitted.query().action());
-    assertEquals(expectedHash, submitted.validationHash());
-    assertEquals("operator-1", submitted.operator().operatorId());
-    assertEquals("decision-1", submitted.policyDecision().decisionId());
+    assertEquals("SQL_DML_WORKFLOW_REQUIRED", exception.code());
+    assertTrue(exception.getMessage().contains("M05 workflow"));
+    assertEquals(0, workerClient.executeCount);
   }
 
   @Test
@@ -285,30 +281,30 @@ class DefaultSqlWorkbenchServiceTest {
   }
 
   @Test
-  void commitControlledDmlAcceptsMatchingSecondConfirmationForUpdateWithoutWhere() {
+  void commitControlledDmlRejectsAfterMatchingSecondConfirmationUntilWorkflowGateExists() {
     SqlQueryRequest request = request(
         "ORDERS",
         SqlQueryAction.COMMIT_DML,
         "update ORDERS.ORDERS set status = 'READY'");
     String sqlHash = service.validate(request).sqlHash();
 
-    SqlQueryExecutionResult result = service.commitControlledDml(
-        new SqlDmlCommitRequest(
-            "1.0",
-            request,
-            new SqlDmlConfirmation(
+    SqlWorkbenchException exception = assertThrows(
+        SqlWorkbenchException.class,
+        () -> service.commitControlledDml(
+            new SqlDmlCommitRequest(
                 "1.0",
-                sqlHash,
-                List.of("UPDATE_WITHOUT_WHERE"),
-                SqlDmlConfirmation.RISK_CONFIRMATION_CODE)),
-        operator(),
-        policy(),
-        trace());
+                request,
+                new SqlDmlConfirmation(
+                    "1.0",
+                    sqlHash,
+                    List.of("UPDATE_WITHOUT_WHERE"),
+                    SqlDmlConfirmation.RISK_CONFIRMATION_CODE)),
+            operator(),
+            policy(),
+            trace()));
 
-    assertEquals("SUCCEEDED", result.status());
-    assertEquals(3, result.affectedRows());
-    assertEquals(1, workerClient.executeCount);
-    assertEquals(SqlQueryAction.COMMIT_DML, workerClient.lastExecutionRequest.query().action());
+    assertEquals("SQL_DML_WORKFLOW_REQUIRED", exception.code());
+    assertEquals(0, workerClient.executeCount);
   }
 
   @Test

@@ -138,7 +138,7 @@ public class LibertyScriptProfileReleaseAdapter implements ReleaseAdapter {
     }
     Path artifactPath = artifact == null ? null : artifactPath(artifact.storageKey());
     Path workingDirectory = workingDirectory(configuredProfile);
-    Path outputPath = workingDirectory.resolve(outputFileName(request.executionRequestId())).normalize();
+    Path outputPath = workingDirectory.resolve(outputFileName(request.executionRequestId().toString())).normalize();
     if (!outputPath.startsWith(workingDirectory)) {
       return rejected(request, "LIBERTY_SCRIPT_PROFILE_INVALID", "script output path is invalid");
     }

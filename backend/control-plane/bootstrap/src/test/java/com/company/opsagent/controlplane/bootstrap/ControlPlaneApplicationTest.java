@@ -161,6 +161,14 @@ class ControlPlaneApplicationTest {
   }
 
   @Test
+  void doesNotServeOutOfScopeAs400ObjectManagementRoute() {
+    webTestClient.get()
+        .uri("/as400-ddl")
+        .exchange()
+        .expectStatus().isNotFound();
+  }
+
+  @Test
   void exposesOpenApiDocument() {
     webTestClient.get()
         .uri("/v3/api-docs")

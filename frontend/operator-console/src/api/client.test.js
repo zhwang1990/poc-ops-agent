@@ -325,7 +325,7 @@ describe("feature API modules", () => {
 
     await listReleaseApplications();
     await listReleaseScriptProfiles();
-    await saveReleaseScriptProfile(releaseScriptProfile);
+    await saveReleaseScriptProfile(releaseScriptProfileSaveRequest);
     await rotateReleaseCredential({
       credentialAlias: "tomcat-dev",
       serverType: "TOMCAT",
@@ -335,7 +335,7 @@ describe("feature API modules", () => {
     expect(calls).toEqual([
       ["GET", "/internal/release-center/applications"],
       ["GET", "/internal/release-center/script-profiles"],
-      ["POST", "/internal/release-center/script-profiles", releaseScriptProfile],
+      ["POST", "/internal/release-center/script-profiles", releaseScriptProfileSaveRequest],
       [
         "POST",
         "/internal/release-center/credentials",
@@ -654,6 +654,16 @@ const releaseScriptProfile = {
   timeoutSeconds: 600,
   approved: true,
   enabled: true,
+};
+
+const releaseScriptProfileSaveRequest = {
+  profileId: releaseScriptProfile.profileId,
+  displayName: releaseScriptProfile.displayName,
+  executablePath: releaseScriptProfile.executablePath,
+  workingDirectory: releaseScriptProfile.workingDirectory,
+  arguments: releaseScriptProfile.arguments,
+  successExitCodes: releaseScriptProfile.successExitCodes,
+  timeoutSeconds: releaseScriptProfile.timeoutSeconds,
 };
 
 const releaseArtifact = {

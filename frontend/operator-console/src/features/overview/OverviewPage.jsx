@@ -129,14 +129,6 @@ const capabilityRows = [
     to: "/meeting-notes",
   },
   {
-    icon: DatabaseZap,
-    label: "AS400对象管理",
-    owner: "受控变更",
-    status: "P2 后启用",
-    tone: "as400",
-    to: "/as400-ddl",
-  },
-  {
     icon: ExternalLink,
     label: "快捷连接",
     owner: "链接目录",

@@ -114,8 +114,6 @@ const RELEASE_HISTORY_PAGE_SIZE = 5;
  *   argumentsText: string,
  *   successExitCodesText: string,
  *   timeoutSeconds: string,
- *   approved: boolean,
- *   enabled: boolean,
  * }} ScriptProfileForm
  */
 
@@ -1500,8 +1498,6 @@ function ScriptProfileDialog({ error, initialProfile, isPending, onClose, onSubm
       arguments: argumentLines,
       successExitCodes,
       timeoutSeconds: Number.parseInt(form.timeoutSeconds, 10),
-      approved: form.approved,
-      enabled: form.enabled,
     });
   }
 
@@ -1583,27 +1579,6 @@ function ScriptProfileDialog({ error, initialProfile, isPending, onClose, onSubm
               onChange={(event) => updateField("successExitCodesText", event.currentTarget.value)}
               value={form.successExitCodesText}
             />
-          </label>
-        </div>
-
-        <div className={styles.profileSwitchGrid}>
-          <label className={styles.toggleField}>
-            <input
-              aria-label="Approved"
-              checked={form.approved}
-              onChange={(event) => updateField("approved", event.currentTarget.checked)}
-              type="checkbox"
-            />
-            <span>Approved</span>
-          </label>
-          <label className={styles.toggleField}>
-            <input
-              aria-label="Enabled"
-              checked={form.enabled}
-              onChange={(event) => updateField("enabled", event.currentTarget.checked)}
-              type="checkbox"
-            />
-            <span>Enabled</span>
           </label>
         </div>
 
@@ -1911,8 +1886,6 @@ function createDefaultScriptProfileForm() {
     argumentsText: "",
     successExitCodesText: "0",
     timeoutSeconds: "600",
-    approved: false,
-    enabled: true,
   };
 }
 
@@ -1929,8 +1902,6 @@ function createScriptProfileFormFromDefinition(profile) {
     argumentsText: profile.arguments.join("\n"),
     successExitCodesText: profile.successExitCodes.join("\n"),
     timeoutSeconds: String(profile.timeoutSeconds),
-    approved: profile.approved,
-    enabled: profile.enabled,
   };
 }
 

@@ -36,7 +36,6 @@ public class OperatorConsoleSpaController {
           "/meeting-notes/recording-settings",
           "/meeting-notes/{noteId}",
           "/meeting-notes/{noteId}/edit",
-          "/as400-ddl",
           "/quick-links",
           "/sql",
           "/model-settings",
