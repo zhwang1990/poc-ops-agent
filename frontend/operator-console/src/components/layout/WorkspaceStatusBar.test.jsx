@@ -75,8 +75,8 @@ describe("WorkspaceStatusBar", () => {
     expect(source).not.toContain("READ_ONLY_TRAIL");
     expect(source).not.toContain("workspaceTrail");
     expect(source).not.toContain("trailItem");
-    expect(css).toContain("min-height: 78px");
-    expect(css).toContain("grid-template-columns: minmax(236px, 336px) max-content minmax(0, 1fr) max-content max-content");
+    expect(css).toContain("min-height: 84px");
+    expect(css).toContain("grid-template-columns: minmax(236px, 336px) minmax(0, 1fr) max-content max-content");
     expect(css).toContain("background: oklch");
     expect(css).toContain("border-radius: 18px");
     const brandPlateRule = css.match(/[.]brandPlate\s*[{][^}]+[}]/u)?.[0] ?? "";
@@ -88,7 +88,7 @@ describe("WorkspaceStatusBar", () => {
     expect(tokensCss).toContain('--font-heading: Inter, "HarmonyOS Sans SC", MiSans');
     expect(brandPlateRule).toContain("position: relative");
     expect(brandPlateRule).toContain("isolation: isolate");
-    expect(brandPlateRule).toContain("min-height: 60px");
+    expect(brandPlateRule).toContain("min-height: 64px");
     expect(brandPlateRule).toContain("grid-template-columns: 56px minmax(0, 1fr)");
     expect(brandPlateRule).toContain("overflow: hidden");
     expect(brandPlateRule).toContain("radial-gradient");
@@ -116,6 +116,8 @@ describe("WorkspaceStatusBar", () => {
     expect(css).not.toContain(".logoMark::before");
     expect(css).toContain("animation: logo-mark-breathe");
     expect(css).toContain("animation: logo-mark-orbit");
+    expect(css).toContain("animation: signal-ion-scan");
+    expect(css).toContain("animation: signal-node-pulse");
     expect(css).toContain("@media (prefers-reduced-motion: reduce)");
     expect(css).not.toContain(".appCapsule::after");
     expect(css).not.toContain("brand-scan");
@@ -142,6 +144,11 @@ describe("WorkspaceStatusBar", () => {
     const toolbarRule = css.match(/[.]workspaceToolbar\s*[{][^}]+[}]/u)?.[0] ?? "";
     const workspaceContextRule =
       css.match(/[.]workspaceContext\s*[{][^}]+[}]/u)?.[0] ?? "";
+    const signalRailRule = css.match(/[.]signalRail\s*[{][^}]+[}]/u)?.[0] ?? "";
+    const signalRailAfterRule =
+      [...css.matchAll(/[.]signalRail::after\s*[{][^}]+[}]/gu)]
+        .map((match) => match[0])
+        .find((rule) => rule.includes("animation: signal-ion-scan")) ?? "";
     const toolbarControlRule =
       css.match(/[.]toolbarIconToggle,\s*[\r\n]+[.]toolbarButton\s*[{][^}]+[}]/u)?.[0] ?? "";
     const toolbarIconToggleRule =
@@ -167,14 +174,32 @@ describe("WorkspaceStatusBar", () => {
 
     expect(source).toContain('aria-label="工作区工具栏"');
     expect(appCapsuleRule).toContain(
-      "grid-template-columns: minmax(236px, 336px) max-content minmax(0, 1fr) max-content max-content",
+      "grid-template-columns: minmax(236px, 336px) minmax(0, 1fr) max-content max-content",
     );
     expect(appCapsuleRule).toContain("minmax(0, 1fr)");
-    expect(workspaceContextRule).toContain("width: max-content");
-    expect(workspaceContextRule).toContain("grid-template-columns: 36px max-content max-content 48px");
+    expect(workspaceContextRule).toContain("width: 100%");
+    expect(workspaceContextRule).toContain("min-height: 52px");
+    expect(workspaceContextRule).toContain("grid-column: 2");
+    expect(workspaceContextRule).toContain("grid-template-columns: 36px max-content max-content minmax(56px, 1fr)");
     expect(workspaceContextRule).not.toContain("minmax(340px, 430px)");
     expect(workspaceContextRule).not.toContain("minmax(104px, 0.7fr)");
-    expect(toolbarRule).toContain("grid-column: 4");
+    expect(signalRailRule).toContain("width: 100%");
+    expect(signalRailRule).toContain("min-width: 56px");
+    expect(signalRailRule).toContain("overflow: hidden");
+    expect(signalRailRule).toContain("container-type: inline-size");
+    expect(signalRailAfterRule).toContain("width: 112px");
+    expect(signalRailAfterRule).toContain("height: 2px");
+    expect(signalRailAfterRule).toContain("linear-gradient(90deg, transparent, oklch(0.52 0.19 18 / 0.82), transparent)");
+    expect(signalRailAfterRule).toContain("animation: signal-ion-scan 5.2s ease-in-out infinite");
+    expect(signalRailAfterRule).not.toContain("filter");
+    expect(css).toContain("transform: translateX(max(0px, calc(100cqw - 126px)))");
+    expect(css).toContain(".signalRail i:nth-child(1)");
+    expect(css).toContain("left: 18%");
+    expect(css).toContain(".signalRail i:nth-child(2)");
+    expect(css).toContain("left: 52%");
+    expect(css).toContain(".signalRail i:nth-child(3)");
+    expect(css).toContain("left: 86%");
+    expect(toolbarRule).toContain("grid-column: 3");
     expect(toolbarRule).toContain("grid-row: 1");
     expect(toolbarRule).toContain("gap: 7px");
     expect(toolbarRule).toContain("height: 48px");
@@ -207,7 +232,7 @@ describe("WorkspaceStatusBar", () => {
     expect(css).not.toContain(".toolbarButtonText");
     expect(toolbarButtonBeforeRule).toBe("");
     expect(toolbarButtonRule).toContain("position: relative");
-    expect(operatorDockRule).toContain("grid-column: 5");
+    expect(operatorDockRule).toContain("grid-column: 4");
     expect(operatorDockRule).toContain("grid-row: 1");
     expect(operatorDockRule).toContain("grid-template-columns: 114px minmax(132px, 176px) 82px");
     expect(toolbarRule).not.toContain("grid-column: 1 / -1");
