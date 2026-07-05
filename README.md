@@ -19,6 +19,7 @@
 - `frontend/operator-console`：操作、审批和人工接管界面。
 - `backend/control-plane`：身份、策略、Skill、路由、工作流、DAG 编排和控制 API。
 - `backend/execution-worker`：受限执行和安全隔离边界。
+- `backend/execution-worker-sqlworkbench`：SQL 工作台 Worker 侧运行时适配模块，由 `backend/execution-worker` 加载，不新增部署服务或模块编号。
 - `backend/skills`：版本化运维 Skill 和测试。
 - `backend/contracts`：共享 API、事件、Skill 和工作流契约。
 - `backend/deploy`：部署和运维配置。
@@ -31,19 +32,22 @@ P1 只读诊断 MVP 已于 2026-07-01 完成里程碑验收。P2 仅推进非生
 
 ## 构建结构
 
-仓库当前按三层组织：
+仓库当前按四个顶层区域组织：
 
 - `frontend/`：前端应用
 - `backend/`：后端代码、契约、Skill、部署配置和 Maven 根工程
 - `docs/`：架构、规范、ADR、计划和运行手册
+- `tools/`：仓库内开发、检查和 CI 辅助脚本
 
 后端当前采用标准 Maven 多模块结构：
 
 - `backend/pom.xml`：后端聚合父工程
+- `backend/contracts`：契约和契约测试模块
 - `backend/control-plane`：控制面聚合父模块
 - `backend/control-plane/bootstrap`：控制面入口模块
 - `backend/control-plane/modules/*`：控制面业务子模块
-- `backend/execution-worker`：独立 Worker 模块
+- `backend/execution-worker`：独立 Worker 启动模块
+- `backend/execution-worker-sqlworkbench`：SQL 工作台 Worker 侧适配模块，作为同一 Worker 部署的运行时依赖
 
 ## 本地验证
 

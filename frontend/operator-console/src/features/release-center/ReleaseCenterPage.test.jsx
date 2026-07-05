@@ -1086,7 +1086,7 @@ describe("ReleaseCenterPage", () => {
     expect(await screen.findByRole("button", { name: "Copy artifact path for liberty-dev-1" })).toBeInTheDocument();
   });
 
-  it("registers an approved Liberty script profile from the profiles tab", async () => {
+  it("registers a draft Liberty script profile from the profiles tab", async () => {
     /** @type {unknown} */
     let savedProfile = null;
     server.use(
@@ -1107,7 +1107,7 @@ describe("ReleaseCenterPage", () => {
       http.post("/internal/release-center/script-profiles", async ({ request }) => {
         const requestBody = /** @type {Record<string, unknown>} */ (await request.json());
         savedProfile = requestBody;
-        return HttpResponse.json(requestBody);
+        return HttpResponse.json({ ...requestBody, approved: false, enabled: false });
       }),
     );
 
@@ -1127,7 +1127,8 @@ describe("ReleaseCenterPage", () => {
     await userEvent.type(within(dialog).getByLabelText("Working directory"), "C:\\ops-agent\\work\\release");
     expect(within(dialog).queryByLabelText("Required parameters")).not.toBeInTheDocument();
     expect(within(dialog).queryByLabelText("Allowed parameters")).not.toBeInTheDocument();
-    await userEvent.click(within(dialog).getByLabelText("Approved"));
+    expect(within(dialog).queryByLabelText("Approved")).not.toBeInTheDocument();
+    expect(within(dialog).queryByLabelText("Enabled")).not.toBeInTheDocument();
     await userEvent.click(within(dialog).getByRole("button", { name: "Save script profile" }));
 
     await waitFor(() =>
@@ -1139,8 +1140,6 @@ describe("ReleaseCenterPage", () => {
         arguments: [],
         successExitCodes: [0],
         timeoutSeconds: 600,
-        approved: true,
-        enabled: true,
       }),
     );
     expect(await screen.findByText("liberty-war-deploy")).toBeInTheDocument();

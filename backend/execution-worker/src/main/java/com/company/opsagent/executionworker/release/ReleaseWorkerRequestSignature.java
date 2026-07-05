@@ -31,6 +31,7 @@ public final class ReleaseWorkerRequestSignature {
         value(command.contractVersion()),
         value(command.releaseId()),
         value(command.workflowId()),
+        value(command.idempotencyKey()),
         value(command.operation()),
         value(command.targetEnvironment()),
         value(command.applicationId()),

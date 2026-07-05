@@ -64,6 +64,18 @@ export const releaseScriptProfileDefinitionSchema = z
 
 export const releaseScriptProfileDefinitionListSchema = z.array(releaseScriptProfileDefinitionSchema);
 
+export const releaseScriptProfileDefinitionSaveRequestSchema = z
+  .object({
+    profileId: nonBlankString.regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$/),
+    displayName: nonBlankString.max(160),
+    executablePath: nonBlankString.max(500),
+    workingDirectory: nonBlankString.max(500),
+    arguments: z.array(nonBlankString.max(500)).max(40),
+    successExitCodes: z.array(z.number().int().min(0).max(255)).min(1).max(20),
+    timeoutSeconds: z.number().int().min(1).max(7200),
+  })
+  .strict();
+
 export const releaseApplicationSchema = z
   .object({
     applicationId: nonBlankString,

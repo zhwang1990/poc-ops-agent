@@ -1,6 +1,5 @@
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 
-import { As400ObjectManagementPage } from "../features/as400-object-management/As400ObjectManagementPage.jsx";
 import { AgentWorkspacePage } from "../features/agent-workspace/AgentWorkspacePage.jsx";
 import { AuditRecordsPage } from "../features/audit-records/AuditRecordsPage.jsx";
 import { LoginPage } from "../features/auth/LoginPage.jsx";
@@ -173,14 +172,6 @@ export function AppRouter() {
           </ProtectedRoute>
         }
         path="/meeting-notes/:noteId"
-      />
-      <Route
-        element={
-          <ProtectedRoute>
-            <As400ObjectManagementPage />
-          </ProtectedRoute>
-        }
-        path="/as400-ddl"
       />
       <Route
         element={

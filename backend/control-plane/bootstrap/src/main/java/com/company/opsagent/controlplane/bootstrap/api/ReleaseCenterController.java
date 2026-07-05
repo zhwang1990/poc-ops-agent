@@ -12,6 +12,7 @@ import com.company.opsagent.controlplane.modules.release.ReleaseCredentialServic
 import com.company.opsagent.controlplane.modules.release.ReleaseCredentialSummary;
 import com.company.opsagent.controlplane.modules.release.ReleaseEnvironmentPolicy;
 import com.company.opsagent.controlplane.modules.release.ReleasePlan;
+import com.company.opsagent.controlplane.modules.release.ReleaseRequestContext;
 import com.company.opsagent.controlplane.modules.release.ReleaseScriptProfileDefinition;
 import com.company.opsagent.controlplane.modules.release.ReleaseScriptProfile;
 import com.company.opsagent.controlplane.modules.release.ReleaseServer;
@@ -89,9 +90,7 @@ public class ReleaseCenterController {
       "workingDirectory",
       "arguments",
       "successExitCodes",
-      "timeoutSeconds",
-      "approved",
-      "enabled");
+      "timeoutSeconds");
   private static final Set<String> PLAN_FIELDS = Set.of(
       "applicationId",
       "targetEnvironment",
@@ -196,8 +195,8 @@ public class ReleaseCenterController {
         parsed.arguments(),
         parsed.successExitCodes() == null ? List.of(0) : parsed.successExitCodes(),
         parsed.timeoutSeconds() == null ? 300 : parsed.timeoutSeconds(),
-        Boolean.TRUE.equals(parsed.approved()),
-        parsed.enabled() == null || parsed.enabled()));
+        false,
+        false));
   }
 
   @DeleteMapping("/script-profiles/{profileId}")
@@ -216,8 +215,9 @@ public class ReleaseCenterController {
   }
 
   @PostMapping("/plans")
-  public Mono<ReleasePlan> createPlan(@RequestBody JsonNode request) {
+  public Mono<ReleasePlan> createPlan(@RequestBody JsonNode request, ServerWebExchange exchange) {
     PlanRequest parsed = parsePlanRequest(request);
+    ExecutionContext context = executionContext(exchange);
     TargetEnvironment targetEnvironment = TargetEnvironment.from(parsed.targetEnvironment());
     Mono<Void> artifactValidation = parsed.artifactId() == null || parsed.artifactId().isBlank()
         ? Mono.empty()
@@ -236,7 +236,8 @@ public class ReleaseCenterController {
                 parsed.artifactId(),
                 tuple.getT1(),
                 tuple.getT2(),
-                parsed.parametersHash())))
+                parsed.parametersHash(),
+                releaseRequestContext(context))))
         .flatMap(releaseCatalogStore::savePlan)
         .onErrorMap(ReleaseWorkflowException.class, this::badRequest);
   }
@@ -255,16 +256,19 @@ public class ReleaseCenterController {
         Instant.now());
     return releaseCatalogStore.findPlan(releaseId)
         .switchIfEmpty(Mono.error(new ResponseStatusException(HttpStatus.NOT_FOUND, "release plan not found")))
-        .flatMap(plan -> releaseWorkflowService.confirm(plan, confirmation))
+        .flatMap(plan -> releaseWorkflowService.confirm(plan, confirmation, releaseRequestContext(context)))
         .flatMap(releaseCatalogStore::savePlan)
         .onErrorMap(ReleaseWorkflowException.class, this::badRequest);
   }
 
   @PostMapping("/plans/{releaseId}/execute")
-  public Mono<ReleasePlan> executePlan(@PathVariable("releaseId") String releaseId) {
+  public Mono<ReleasePlan> executePlan(
+      @PathVariable("releaseId") String releaseId,
+      ServerWebExchange exchange) {
+    ExecutionContext context = executionContext(exchange);
     return releaseCatalogStore.findPlan(releaseId)
         .switchIfEmpty(Mono.error(new ResponseStatusException(HttpStatus.NOT_FOUND, "release plan not found")))
-        .flatMap(releaseWorkflowService::execute)
+        .flatMap(plan -> releaseWorkflowService.execute(plan, releaseRequestContext(context)))
         .flatMap(releaseCatalogStore::savePlan)
         .onErrorMap(ReleaseWorkflowException.class, this::badRequest);
   }
@@ -480,6 +484,16 @@ public class ReleaseCenterController {
     return exchange.getRequiredAttribute(PolicyEnforcementWebFilter.EXECUTION_CONTEXT_ATTRIBUTE);
   }
 
+  private ReleaseRequestContext releaseRequestContext(ExecutionContext context) {
+    return new ReleaseRequestContext(
+        context.subject(),
+        context.roles(),
+        context.requestId() + ":" + context.action(),
+        context.policyVersion(),
+        context.traceId(),
+        context.requestId());
+  }
+
   private record ApplicationRequest(
       String applicationId,
       String displayName,
@@ -513,9 +527,7 @@ public class ReleaseCenterController {
       String workingDirectory,
       List<String> arguments,
       List<Integer> successExitCodes,
-      Integer timeoutSeconds,
-      Boolean approved,
-      Boolean enabled) {
+      Integer timeoutSeconds) {
   }
 
   private record PlanRequest(

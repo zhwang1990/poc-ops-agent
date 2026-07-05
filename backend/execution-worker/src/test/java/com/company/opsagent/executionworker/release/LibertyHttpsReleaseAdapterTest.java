@@ -17,6 +17,7 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
@@ -62,6 +63,7 @@ class LibertyHttpsReleaseAdapterTest {
         "1.0",
         "rel-1",
         "550e8400-e29b-41d4-a716-446655440000",
+        "release:rel-1:node:1",
         "DEPLOY",
         "dev",
         applicationId,
@@ -71,6 +73,11 @@ class LibertyHttpsReleaseAdapterTest {
         new PolicyDecisionReference("decision-release", "policy-v1", "ALLOW"),
         new TraceContext("trace-release", "request-release"),
         now);
-    return new ReleaseWorkerRequest("1.0", "550e8400-e29b-41d4-a716-446655440001", now, now.plusSeconds(30), command);
+    return new ReleaseWorkerRequest(
+        "1.0",
+        UUID.fromString("550e8400-e29b-41d4-a716-446655440001"),
+        now,
+        now.plusSeconds(30),
+        command);
   }
 }

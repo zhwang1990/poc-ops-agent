@@ -577,10 +577,6 @@
   --row-color: #72859a;
 }
 
-.as400 {
-  --row-color: #66772a;
-}
-
 @media (max-width: 1020px) {
   .overviewGrid {
     grid-template-columns: 1fr;

@@ -3,8 +3,8 @@ package com.company.opsagent.controlplane.bootstrap.config;
 import com.company.opsagent.controlplane.bootstrap.service.WebClientReleaseWorkerGateway;
 import com.company.opsagent.controlplane.modules.release.AesGcmReleaseCredentialSecretCodec;
 import com.company.opsagent.controlplane.modules.release.FileSystemReleaseArtifactStore;
-import com.company.opsagent.controlplane.modules.release.InMemoryReleaseEventSink;
 import com.company.opsagent.controlplane.modules.release.R2dbcReleaseCatalogStore;
+import com.company.opsagent.controlplane.modules.release.R2dbcReleaseEventSink;
 import com.company.opsagent.controlplane.modules.release.ReleaseArtifactStore;
 import com.company.opsagent.controlplane.modules.release.ReleaseCatalogStore;
 import com.company.opsagent.controlplane.modules.release.ReleaseCredentialSecretCodec;
@@ -12,15 +12,16 @@ import com.company.opsagent.controlplane.modules.release.ReleaseCredentialServic
 import com.company.opsagent.controlplane.modules.release.ReleaseEventSink;
 import com.company.opsagent.controlplane.modules.release.ReleaseWorkerGateway;
 import com.company.opsagent.controlplane.modules.release.ReleaseWorkflowService;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.r2dbc.spi.ConnectionFactory;
 import java.time.Clock;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.r2dbc.connection.init.ConnectionFactoryInitializer;
 import org.springframework.r2dbc.connection.init.ResourceDatabasePopulator;
 import org.springframework.r2dbc.core.DatabaseClient;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.web.reactive.function.client.WebClient;
 
 /**
@@ -80,15 +81,20 @@ public class ReleaseCenterConfiguration {
   }
 
   @Bean
-  ReleaseEventSink releaseEventSink() {
-    return new InMemoryReleaseEventSink();
+  ReleaseEventSink releaseEventSink(DatabaseClient databaseClient, ObjectMapper objectMapper) {
+    return new R2dbcReleaseEventSink(databaseClient, objectMapper);
   }
 
   @Bean
   ReleaseWorkflowService releaseWorkflowService(
       ReleaseWorkerGateway releaseWorkerGateway,
-      ReleaseEventSink releaseEventSink) {
-    return new ReleaseWorkflowService(releaseWorkerGateway, Clock.systemUTC(), releaseEventSink);
+      ReleaseEventSink releaseEventSink,
+      ReleaseCatalogStore releaseCatalogStore) {
+    return new ReleaseWorkflowService(
+        releaseWorkerGateway,
+        Clock.systemUTC(),
+        releaseEventSink,
+        releaseCatalogStore::savePlan);
   }
 
   @Bean
@@ -99,7 +105,8 @@ public class ReleaseCenterConfiguration {
         new ClassPathResource("sql/migrations/V001__release_center_schema.sql"),
         new ClassPathResource("sql/migrations/V002__release_server_script_profile.sql"),
         new ClassPathResource("sql/migrations/V003__release_plan_optional_artifact.sql"),
-        new ClassPathResource("sql/migrations/V004__release_script_profile_definition.sql")));
+        new ClassPathResource("sql/migrations/V004__release_script_profile_definition.sql"),
+        new ClassPathResource("sql/migrations/V005__release_workflow_event.sql")));
     return initializer;
   }
 }

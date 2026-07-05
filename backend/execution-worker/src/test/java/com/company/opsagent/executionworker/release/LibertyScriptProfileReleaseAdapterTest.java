@@ -20,6 +20,7 @@ import java.time.ZoneOffset;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -336,6 +337,7 @@ class LibertyScriptProfileReleaseAdapterTest {
         "1.0",
         "rel-1",
         "550e8400-e29b-41d4-a716-446655440000",
+        "release:rel-1:node:1",
         "DEPLOY",
         "dev",
         "orders",
@@ -352,7 +354,12 @@ class LibertyScriptProfileReleaseAdapterTest {
         new PolicyDecisionReference("decision-release", "policy-v1", "ALLOW"),
         new TraceContext("trace-release", "request-release"),
         now);
-    return new ReleaseWorkerRequest("1.0", "550e8400-e29b-41d4-a716-446655440001", now, now.plusSeconds(30), command);
+    return new ReleaseWorkerRequest(
+        "1.0",
+        UUID.fromString("550e8400-e29b-41d4-a716-446655440001"),
+        now,
+        now.plusSeconds(30),
+        command);
   }
 
   private String checksum(byte[] bytes) throws Exception {

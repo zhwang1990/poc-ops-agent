@@ -47,7 +47,7 @@ public record ReleaseWorkerExecutionEvent(
     ReleaseWorkerRequest.ReleaseCommand command = request.command();
     return new ReleaseWorkerExecutionEvent(
         EventType.LOG,
-        request.executionRequestId(),
+        request.executionRequestId().toString(),
         command.releaseId(),
         command.workflowId(),
         nodeId,

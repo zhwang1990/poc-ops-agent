@@ -13,6 +13,7 @@ import {
   releasePlanSchema,
   releaseWorkflowEventSchema,
   releaseScriptProfileDefinitionListSchema,
+  releaseScriptProfileDefinitionSaveRequestSchema,
   releaseScriptProfileDefinitionSchema,
   releaseServerDeleteResponseSchema,
   releaseServerListSchema,
@@ -88,7 +89,7 @@ export function listReleaseScriptProfiles() {
  * @param {unknown} input
  */
 export function saveReleaseScriptProfile(input) {
-  const request = releaseScriptProfileDefinitionSchema.parse(input);
+  const request = releaseScriptProfileDefinitionSaveRequestSchema.parse(input);
   return requestJson("/internal/release-center/script-profiles", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

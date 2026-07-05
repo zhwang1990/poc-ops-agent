@@ -4,10 +4,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
@@ -64,6 +66,41 @@ class ReleaseWorkflowServiceTest {
         eventSink.events().getFirst().payload());
     assertEquals("SCRIPT_PROFILE", payload.artifactType());
     assertEquals(plan.parametersHash(), payload.artifactChecksum());
+  }
+
+  @Test
+  void publishesReleaseCreatedEventWithRequestContext() {
+    InMemoryReleaseEventSink eventSink = new InMemoryReleaseEventSink();
+    ReleaseWorkflowService service = new ReleaseWorkflowService(
+        (plan, node) -> Mono.just(ReleaseNodeExecutionResult.succeeded()),
+        CLOCK,
+        eventSink);
+    ReleaseRequestContext context = new ReleaseRequestContext(
+        "alice",
+        List.of("ROLE_ops-release"),
+        "request-123:release.plan.create",
+        "rbac-v1",
+        "trace-123",
+        "request-123");
+
+    service.createPlan(
+        "rel-1",
+        "orders",
+        "dev",
+        "artifact-1",
+        List.of(server("node-1", "dev")),
+        ReleaseEnvironmentPolicy.defaultFor(TargetEnvironment.DEV).requireConfirmation(false),
+        "sha256:abc123",
+        context)
+        .block();
+
+    ReleaseWorkflowEvent event = eventSink.events().getFirst();
+    ReleaseEventPayload.Created payload = assertInstanceOf(ReleaseEventPayload.Created.class, event.payload());
+    assertEquals("alice", payload.operatorId());
+    assertEquals("request-123:release.plan.create", payload.policyDecisionId());
+    assertEquals("rbac-v1", event.audit().policyVersion());
+    assertEquals("trace-123", event.audit().traceId());
+    assertEquals("request-123", event.audit().requestId());
   }
 
   @Test
@@ -156,6 +193,41 @@ class ReleaseWorkflowServiceTest {
     assertEquals(ReleaseNodeStatus.FAILED, result.nodes().get(1).status());
     assertEquals(ReleaseNodeStatus.SKIPPED, result.nodes().get(2).status());
     assertEquals(2, calls.get());
+  }
+
+  @Test
+  void persistsRunningNodeAndTerminalStateDuringExecution() {
+    List<ReleasePlan> savedPlans = new ArrayList<>();
+    ReleaseWorkflowService service = new ReleaseWorkflowService(
+        (plan, node) -> Mono.just(ReleaseNodeExecutionResult.succeeded()),
+        CLOCK,
+        new InMemoryReleaseEventSink(),
+        plan -> {
+          savedPlans.add(plan);
+          return Mono.just(plan);
+        });
+    ReleaseEnvironmentPolicy policy = ReleaseEnvironmentPolicy.defaultFor(TargetEnvironment.DEV)
+        .requireConfirmation(false);
+    ReleasePlan plan = service.createPlan(
+        "rel-1",
+        "orders",
+        "dev",
+        "artifact-1",
+        List.of(server("node-1", "dev")),
+        policy,
+        "sha256:abc123")
+        .block();
+
+    service.execute(plan).block();
+
+    assertTrue(savedPlans.stream().anyMatch(saved ->
+        saved.status() == ReleaseStatus.RUNNING
+            && saved.nodes().get(0).status() == ReleaseNodeStatus.RUNNING));
+    assertTrue(savedPlans.stream().anyMatch(saved ->
+        saved.status() == ReleaseStatus.RUNNING
+            && saved.nodes().get(0).status() == ReleaseNodeStatus.SUCCEEDED));
+    assertEquals(ReleaseStatus.SUCCEEDED, savedPlans.getLast().status());
+    assertEquals(ReleaseNodeStatus.SUCCEEDED, savedPlans.getLast().nodes().get(0).status());
   }
 
   @Test

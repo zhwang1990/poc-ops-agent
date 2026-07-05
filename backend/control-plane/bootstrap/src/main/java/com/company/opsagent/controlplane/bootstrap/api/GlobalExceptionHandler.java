@@ -2,6 +2,7 @@ package com.company.opsagent.controlplane.bootstrap.api;
 
 import com.company.opsagent.contracts.identity.IdentityErrorResponse;
 import com.company.opsagent.controlplane.modules.identity.application.IdentityAuthenticationException;
+import com.company.opsagent.controlplane.modules.sqlworkbench.SqlWorkbenchException;
 import jakarta.validation.ConstraintViolationException;
 import java.time.OffsetDateTime;
 import org.springframework.http.HttpStatus;
@@ -42,6 +43,13 @@ public class GlobalExceptionHandler {
       IllegalArgumentException exception,
       ServerWebExchange exchange) {
     return build(HttpStatus.BAD_REQUEST, "INVALID_ARGUMENT", exception.getMessage(), exchange);
+  }
+
+  @ExceptionHandler(SqlWorkbenchException.class)
+  public ResponseEntity<ApiError> handleSqlWorkbench(
+      SqlWorkbenchException exception,
+      ServerWebExchange exchange) {
+    return build(resolveSqlWorkbenchStatus(exception.code()), exception.code(), exception.getMessage(), exchange);
   }
 
   /**
@@ -113,6 +121,13 @@ public class GlobalExceptionHandler {
       case "ACCOUNT_LOCKED" -> HttpStatus.LOCKED;
       case "ACCOUNT_DISABLED" -> HttpStatus.FORBIDDEN;
       case "ACCOUNT_NOT_FOUND", "CREDENTIAL_NOT_FOUND" -> HttpStatus.NOT_FOUND;
+      default -> HttpStatus.BAD_REQUEST;
+    };
+  }
+
+  private HttpStatus resolveSqlWorkbenchStatus(String errorCode) {
+    return switch (errorCode) {
+      case "SQL_DML_WORKFLOW_REQUIRED" -> HttpStatus.CONFLICT;
       default -> HttpStatus.BAD_REQUEST;
     };
   }

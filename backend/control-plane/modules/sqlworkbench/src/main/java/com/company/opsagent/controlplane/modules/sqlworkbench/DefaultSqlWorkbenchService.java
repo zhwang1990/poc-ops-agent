@@ -245,17 +245,9 @@ public class DefaultSqlWorkbenchService implements SqlWorkbenchService {
       throw new IllegalArgumentException(dmlValidationFailureMessage(report));
     }
     requireRiskConfirmation(report, commitRequest.confirmation());
-    SqlQueryExecutionRequest executionRequest = new SqlQueryExecutionRequest(
-        "1.0",
-        UUID.randomUUID().toString(),
-        UUID.randomUUID().toString(),
-        request,
-        report.sqlHash(),
-        operator,
-        policyDecision,
-        trace,
-        OffsetDateTime.now(clock).plusSeconds(request.limits().timeoutSeconds()));
-    return workerClient.execute(executionRequest);
+    throw new SqlWorkbenchException(
+        "SQL_DML_WORKFLOW_REQUIRED",
+        "COMMIT_DML requires a persisted M05 workflow gate, audit event, recovery state, and idempotency binding before worker execution");
   }
 
   private void requireRiskConfirmation(SqlValidationReport report, SqlDmlConfirmation confirmation) {

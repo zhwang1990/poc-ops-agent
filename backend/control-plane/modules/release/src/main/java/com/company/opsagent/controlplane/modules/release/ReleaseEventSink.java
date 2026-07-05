@@ -8,6 +8,10 @@ public interface ReleaseEventSink {
 
   Mono<Void> publish(ReleaseWorkflowEvent event);
 
+  default Mono<Long> nextSequence(String releaseId) {
+    return Mono.empty();
+  }
+
   default Flux<ReleaseWorkflowEvent> events(String releaseId, long afterSequence) {
     return Flux.empty();
   }
