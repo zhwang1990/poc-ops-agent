@@ -8,7 +8,7 @@
 
 - 认证：默认使用正式内建身份 `built-in` 浏览器登录模式；仍支持开发态 `HS256` Bearer Token 和真实 OIDC 模式作为显式配置。
 - 授权：当前为服务端基础 RBAC V0，客户端、Prompt 和人格均不能绕过。
-- 审计：当前为追加式文件持久化审计链，默认写入 `var/audit/control-plane-audit.jsonl`。
+- 审计：默认使用追加式文件持久化审计链，写入 `var/audit/control-plane-audit.jsonl`；P2 可显式切换为数据库审计主存储。
 
 ## 默认内建身份配置
 
@@ -130,7 +130,7 @@ spring:
 
 ## 审计持久化
 
-- 默认采用追加式 JSONL 文件。
+- 默认采用追加式 JSONL 文件。P2 数据库模式通过 `ops-agent.audit.storage-mode=database` 启用，记录写入 `audit_event` 表。
 - 每次请求至少记录：
   - 主体
   - 动作

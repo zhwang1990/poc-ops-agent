@@ -17,7 +17,7 @@ V1.0 至少需要以下运行手册：
 - `local-read-only-vertical-slice.md`：本地只读诊断垂直切片启动、验证与回滚；
 - `local-oidc-mock-testing.md`：本地 `local-oidc` 联调与验证；
 - `built-in-identity-production-mode.md`：正式内建身份模式启用、验证与回滚；
-- `audit-retention-and-recovery.md`：P1 文件审计保留、归档、恢复和访问控制；
+- `audit-retention-and-recovery.md`：P1 文件审计与 P2 数据库审计存储的保留、归档、恢复和访问控制；
 - `m07-worker-transport-auth.md`：控制面到 Worker 的应用层传输认证启用、排障和回滚；
 - `backend-only-packaging.md`：使用 `cmd.exe`、npm 和系统 Maven 将前端内嵌到控制面 JAR，并用 demo profile 启动验证；
 - `release-packaging.md`：使用 `tools/release` 生成包含控制面 JAR、Worker JAR、前端快照、Skill 契约包、启动脚本、清单、校验和与 ZIP 的统一发布包；

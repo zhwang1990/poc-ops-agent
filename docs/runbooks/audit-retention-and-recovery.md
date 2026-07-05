@@ -2,18 +2,19 @@
 
 ## 适用范围
 
-本文用于 P1 只读诊断 MVP 的 T010 审计链路运维。当前代码使用追加式 JSONL 文件审计存储，默认路径为 `var/audit/control-plane-audit.jsonl`。
+本文用于 P1 只读诊断 MVP 的 T010 审计链路运维，并覆盖 P2 初始数据库审计主存储的启用、检查和回退。默认仍使用追加式 JSONL 文件审计存储，路径为 `var/audit/control-plane-audit.jsonl`。
 
-本文只定义 P1 阶段的文件审计保留、归档、恢复和访问控制方式，不引入新的产品能力，也不替代后续集中审计存储或 SIEM 接入。
+本文定义文件审计和数据库审计的保留、归档、恢复和访问控制方式。P2 数据库模式只提供平台统一 `AuditTrail` 的关系型主存储，不替代后续 SIEM 接入、WORM 存储或组织级备份保全。
 
 ## 当前边界
 
-- 控制面通过 `AuditTrail` 抽象记录认证、授权和内部接口访问结果。
-- 当前正式装配为 `FileBackedAuditTrail`，按行追加 JSON 序列化的 `AuditEvent`。
+- 控制面通过统一 `AuditTrail` 抽象记录认证、授权和内部接口访问结果。
+- `ops-agent.audit.storage-mode=file` 时装配 `FileBackedAuditTrail`，按行追加 JSON 序列化的 `AuditEvent`。
+- `ops-agent.audit.storage-mode=database` 时装配 `R2dbcAuditTrail`，写入关系型数据库 `audit_event` 表，并在启动时加载已有事件作为最新记录快照。
 - `/internal/audit/latest` 只暴露最近审计事件和当前事件计数，访问动作是 `internal.audit.read`。
 - 默认策略仅允许 `ROLE_ops-admin` 和 `ROLE_ops-auditor` 读取审计查询入口。
-- 审计文件由控制面进程写入；P1 不提供浏览器端审计修改、删除、导出或批量查询入口。
-- P1 的“不可篡改”能力依赖应用追加写入、操作系统访问控制、归档哈希和备份保全；尚未提供 WORM 存储或集中审计系统级防篡改。
+- 审计记录由控制面进程写入；当前不提供浏览器端审计修改、删除、导出或批量查询入口。
+- 当前“不可篡改”能力依赖应用追加写入、操作系统或数据库访问控制、归档哈希和备份保全；尚未提供 WORM 存储或集中审计系统级防篡改。
 
 ## 保留策略
 
@@ -21,7 +22,8 @@ P1 最低保留要求如下：
 
 | 分层 | 默认周期 | 位置 | 访问方式 |
 |---|---:|---|---|
-| 热数据 | 30 天 | 控制面本机 `ops-agent.audit.storage-path` | 仅控制面服务账号写入；审计员通过受保护 API 查看最新记录 |
+| 文件热数据 | 30 天 | 控制面本机 `ops-agent.audit.storage-path` | 仅控制面服务账号写入；审计员通过受保护 API 查看最新记录 |
+| 数据库热数据 | 30 天 | 控制面数据库 `audit_event` 表 | 仅控制面数据库账号写入；审计员通过受保护 API 查看最新记录 |
 | 归档数据 | 180 天 | 受控备份目录或组织备份系统 | 仅平台负责人、安全负责人和审计员按变更单读取 |
 | 安全事件保全 | 按事件要求 | 独立保全目录 | 只读保存，禁止覆盖，访问必须记录审批和审计编号 |
 
@@ -43,6 +45,10 @@ icacls "D:\ops-agent\audit" /grant "OPS-AUDITORS:(OI)(CI)R"
 icacls "D:\ops-agent\audit" /grant "OPS-ADMINS:(OI)(CI)F"
 ```
 
+### 数据库账号权限
+
+数据库模式下，控制面数据库账号必须具备 `audit_event` 表的建表初始化、插入和读取权限。生产环境不得把通用管理员账号配置给控制面；如需归档、清理或保全历史审计记录，必须由独立运维账号按变更单执行，并记录审计编号、操作者、时间窗口和校验哈希。
+
 ### API 访问
 
 - `internal.audit.read` 必须继续要求 `ops-admin` 或 `ops-auditor`。
@@ -54,11 +60,11 @@ icacls "D:\ops-agent\audit" /grant "OPS-ADMINS:(OI)(CI)F"
 
 每天至少检查一次：
 
-1. 控制面启动配置中的 `ops-agent.audit.storage-mode` 为 `file`。
-2. `ops-agent.audit.storage-path` 指向受控目录。
-3. 审计文件存在且当天有新增记录。
-4. 最新一行是合法 JSON，包含 `subject`、`action`、`resource`、`policyVersion`、`result`、`traceId` 和 `requestId`。
-5. 备份任务已经覆盖审计目录。
+1. 控制面启动配置中的 `ops-agent.audit.storage-mode` 只能为 `file` 或 `database`。
+2. 文件模式下，`ops-agent.audit.storage-path` 指向受控目录，审计文件存在且当天有新增记录。
+3. 文件模式下，最新一行是合法 JSON，包含 `subject`、`action`、`resource`、`policyVersion`、`result`、`traceId` 和 `requestId`。
+4. 数据库模式下，`audit_event` 表存在，最新记录包含 `event_id`、`subject`、`action`、`resource`、`policy_version`、`result`、`trace_id` 和 `request_id`。
+5. 备份任务已经覆盖审计目录或控制面数据库。
 6. `/internal/audit/latest` 对审计员返回 `200`，对普通读者返回 `403`。
 
 检查失败时，先将控制面切到只读诊断降级窗口，不得继续扩大执行范围；随后按“故障处理”章节处理。
@@ -132,11 +138,11 @@ New-Item -ItemType File -Path $source
 
 ## 回滚
 
-如果新的审计路径或归档策略导致控制面无法启动：
+如果新的审计路径、数据库连接或归档策略导致控制面无法启动：
 
 1. 停止控制面。
-2. 恢复上一个已验证的 `ops-agent.audit.storage-path`。
-3. 恢复原审计文件和目录权限。
+2. 将 `ops-agent.audit.storage-mode` 恢复为上一个已验证值；数据库模式异常时优先回退到 `file`。
+3. 恢复上一个已验证的 `ops-agent.audit.storage-path`、审计文件和目录权限。
 4. 启动控制面并访问受保护只读接口。
 5. 用审计员身份验证 `/internal/audit/latest`。
 6. 在变更记录中说明回滚原因和验证结果。
@@ -151,3 +157,12 @@ P1 已于 2026-07-01 完成验收。审计收口证据至少包含：
 - 普通读者访问 `/internal/audit/latest` 的 `403` 证据。
 - 一次恢复到排障环境或生产路径的演练记录，或明确的 P2/P3 恢复演练跟进项。
 - 若尚未接入集中审计存储，必须在 P2/P3 审计治理跟进项中保留该限制。
+
+## P2 数据库审计存储证据
+
+启用 `ops-agent.audit.storage-mode=database` 前，至少保留以下证据：
+
+- `audit_event` 表初始化成功，索引存在，控制面账号权限符合最小权限要求。
+- 受保护接口访问后，数据库中出现对应审计记录，且 `/internal/audit/latest` 能读取最新事件。
+- 服务重启后，`R2dbcAuditTrail` 能从 `audit_event` 表恢复最新记录快照。
+- 文件模式回退演练通过，回退后仍能生成并读取新审计记录。

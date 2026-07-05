@@ -7,6 +7,7 @@ import com.company.opsagent.controlplane.bootstrap.security.ConfigurableJwtOpera
 import com.company.opsagent.controlplane.bootstrap.security.OperatorIdentityAuthenticator;
 import com.company.opsagent.controlplane.bootstrap.security.PolicyEnforcementWebFilter;
 import com.company.opsagent.controlplane.modules.audit.AuditTrail;
+import com.company.opsagent.controlplane.modules.audit.R2dbcAuditTrail;
 import com.company.opsagent.controlplane.modules.identity.IdentityClaimsMapper;
 import com.company.opsagent.controlplane.modules.identity.api.IdentitySessionQueryService;
 import com.company.opsagent.controlplane.modules.policy.PolicyDecisionService;
@@ -14,11 +15,16 @@ import com.company.opsagent.controlplane.modules.policy.RoleBasedPolicyDecider;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.file.Path;
 import java.net.URI;
+import io.r2dbc.spi.ConnectionFactory;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.http.HttpMethod;
+import org.springframework.r2dbc.connection.init.ConnectionFactoryInitializer;
+import org.springframework.r2dbc.connection.init.ResourceDatabasePopulator;
+import org.springframework.r2dbc.core.DatabaseClient;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
 import org.springframework.security.config.web.server.SecurityWebFiltersOrder;
@@ -71,11 +77,36 @@ public class SecurityConfiguration {
    * <p>如果未显式配置路径，则落到默认 JSONL 文件位置。
    */
   @Bean
-  AuditTrail auditTrail(AuditProperties properties, ObjectMapper objectMapper) {
+  AuditTrail auditTrail(
+      AuditProperties properties,
+      ObjectMapper objectMapper,
+      ObjectProvider<DatabaseClient> databaseClientProvider) {
+    String storageMode = properties.storageMode() == null || properties.storageMode().isBlank()
+        ? "file"
+        : properties.storageMode();
+    if ("database".equalsIgnoreCase(storageMode)) {
+      DatabaseClient databaseClient = databaseClientProvider.getIfAvailable();
+      if (databaseClient == null) {
+        throw new IllegalStateException("database audit storage requires a DatabaseClient");
+      }
+      return new R2dbcAuditTrail(databaseClient);
+    }
+    if (!"file".equalsIgnoreCase(storageMode)) {
+      throw new IllegalArgumentException("unsupported audit storage mode: " + storageMode);
+    }
     String storagePath = properties.storagePath() == null || properties.storagePath().isBlank()
         ? "var/audit/control-plane-audit.jsonl"
         : properties.storagePath();
     return new FileBackedAuditTrail(Path.of(storagePath), objectMapper);
+  }
+
+  @Bean
+  ConnectionFactoryInitializer auditSchemaInitializer(ConnectionFactory connectionFactory) {
+    var initializer = new ConnectionFactoryInitializer();
+    initializer.setConnectionFactory(connectionFactory);
+    initializer.setDatabasePopulator(new ResourceDatabasePopulator(
+        new ClassPathResource("sql/migrations/V001__audit_event_schema.sql")));
+    return initializer;
   }
 
   /**
