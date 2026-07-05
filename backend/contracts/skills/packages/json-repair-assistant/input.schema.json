@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://company.example/ops-agent/skills/json-repair-assistant-read/1.0.0/input.schema.json",
+  "title": "json-repair-assistant-read 输入",
+  "description": "AI JSON 修复助手只读评估请求输入。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contractVersion",
+    "assistantAction",
+    "source",
+    "idempotencyKey"
+  ],
+  "properties": {
+    "contractVersion": {
+      "const": "1.0"
+    },
+    "assistantAction": {
+      "enum": [
+        "REPAIR_JSON"
+      ],
+      "description": "JSON 修复助手动作。"
+    },
+    "source": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 30000,
+      "description": "无法被本地解析的 JSON 字符串或包含 JSON 的文本片段。"
+    },
+    "parseError": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1000,
+      "description": "本地 JSON 解析失败原因摘要。"
+    },
+    "idempotencyKey": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "description": "请求幂等键。"
+    }
+  }
+}

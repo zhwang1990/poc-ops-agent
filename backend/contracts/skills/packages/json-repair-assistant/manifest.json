@@ -1,0 +1,70 @@
+{
+  "skillId": "json-repair-assistant-read",
+  "version": "1.0.0",
+  "displayName": "AI JSON 修复助手",
+  "description": "对 JSON Formatter 中无法解析的 JSON 字符串进行只读失败原因评估，并在可高置信修复时返回待校验 JSON 文本，不执行输入内容。",
+  "category": "APPLICATION_DIAGNOSTICS",
+  "riskLevel": "READ_ONLY",
+  "executor": "WORKFLOW",
+  "outputType": "JSON",
+  "readOnly": true,
+  "timeoutSeconds": 30,
+  "owner": "tool-center",
+  "requiredRoles": [
+    "ROLE_ops-reader",
+    "ROLE_ops-admin"
+  ],
+  "tags": [
+    "json",
+    "formatter",
+    "repair",
+    "assistant",
+    "advisory"
+  ],
+  "interceptors": [
+    "AUTHORIZATION",
+    "AUDIT",
+    "SENSITIVE_DATA_MASKING",
+    "RATE_LIMIT"
+  ],
+  "parameters": [
+    {
+      "name": "assistantAction",
+      "displayName": "助手动作",
+      "description": "JSON 修复助手动作，当前固定为 REPAIR_JSON。",
+      "type": "ENUM",
+      "required": true,
+      "allowedValues": [
+        "REPAIR_JSON"
+      ],
+      "defaultValue": null
+    },
+    {
+      "name": "source",
+      "displayName": "JSON 输入",
+      "description": "无法被本地解析的 JSON 字符串或包含 JSON 的文本片段。",
+      "type": "STRING",
+      "required": true,
+      "allowedValues": [],
+      "defaultValue": null
+    },
+    {
+      "name": "parseError",
+      "displayName": "解析错误",
+      "description": "本地 JSON 解析失败原因摘要。",
+      "type": "STRING",
+      "required": false,
+      "allowedValues": [],
+      "defaultValue": null
+    },
+    {
+      "name": "idempotencyKey",
+      "displayName": "幂等键",
+      "description": "本次 JSON 修复助手请求的幂等键。",
+      "type": "STRING",
+      "required": true,
+      "allowedValues": [],
+      "defaultValue": null
+    }
+  ]
+}

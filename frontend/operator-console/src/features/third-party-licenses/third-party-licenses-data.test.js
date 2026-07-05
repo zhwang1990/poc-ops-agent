@@ -36,6 +36,11 @@ const expectedFrontendComponents = Object.freeze([
     packageName: "lucide-react",
   },
   {
+    id: "jsonrepair",
+    name: "jsonrepair",
+    packageName: "jsonrepair",
+  },
+  {
     id: "tanstack-react-query",
     name: "TanStack React Query",
     packageName: "@tanstack/react-query",
@@ -125,7 +130,7 @@ describe("third party license data", () => {
       "MPL 2.0 / EPL 1.0",
     ]);
     expect(thirdPartyLicensesSummary.deliveryUnits).toEqual([
-      { count: 14, id: "frontend", label: "前端操作台" },
+      { count: 15, id: "frontend", label: "前端操作台" },
       { count: 16, id: "backend", label: "后端服务" },
     ]);
   });

@@ -263,7 +263,7 @@ test("tool center exposes local tools and disabled API execution", async ({ page
   await page.locator('a[href="/tools"]').first().click();
   await page.waitForURL("**/tools");
 
-  await expect(page.getByRole("tab", { name: "JSON Formatter" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Json Helper" })).toBeVisible();
   await expect(page.getByRole("tab", { exact: true, name: "API Caller" })).toBeVisible();
 
   await page.getByLabel("JSON 输入").fill('{"orders":[{"id":1}]}');
@@ -275,11 +275,16 @@ test("tool center exposes local tools and disabled API execution", async ({ page
   await page.getByRole("tab", { exact: true, name: "API Caller" }).click();
   await expect(page.getByText("https://api.quefork.internal")).toBeVisible();
   await expect(page.getByRole("button", { name: "发送请求" })).toBeDisabled();
-  await expect(page.getByRole("button", { name: "AI 生成请求草稿" })).toBeDisabled();
-  await page.getByLabel("临时凭据").fill("super-secret-token");
+  await page.getByRole("tab", { name: "Auth" }).click();
+  await page.getByLabel("Auth Type").selectOption("bearer");
+  await page.getByLabel("Bearer Token").fill("super-secret-token");
   await expect(page.getByText("super-secret-token")).toHaveCount(0);
+  await expect(page.getByRole("tab", { name: "Settings" })).toHaveCount(0);
 
-  await page.getByRole("tab", { name: "API Caller 设置" }).click();
+  await page.getByRole("link", { name: "API Caller 设置" }).click();
+  await page.waitForURL("**/tools/api-caller-settings");
+  await expect(page.getByRole("heading", { name: "API Caller 设置" })).toBeVisible();
+  await expect(page.getByRole("tablist", { name: "API Caller 请求配置" })).toHaveCount(0);
   await page.getByLabel("允许域名").fill("https://api.quefork.internal");
   await page.getByRole("button", { name: "校验 allowlist 草稿" }).click();
   await expect(page.getByRole("status")).toContainText("allowlist 草稿校验通过");
@@ -294,9 +299,9 @@ test("第三方组件声明可从法律信息入口打开", async ({ page }, tes
   await page.getByRole("link", { name: "法律信息" }).click();
 
   await expect(page.getByRole("heading", { name: "第三方组件声明" })).toBeVisible();
-  await expect(page.getByText("前端操作台 14 项")).toBeVisible();
+  await expect(page.getByText("前端操作台 15 项")).toBeVisible();
   await expect(page.getByText("后端服务 16 项")).toBeVisible();
-  await expect(page.getByText("第 1 / 3 页")).toBeVisible();
+  await expect(page.getByText("第 1 / 4 页")).toBeVisible();
   await expect(page.getByRole("region", { name: "第三方组件清单" })).toContainText("React");
   const componentList = page.getByRole("region", { name: "第三方组件清单" });
   const reactRow = componentList.getByRole("row", { exact: true, name: "React 19.2.7" });
@@ -306,10 +311,10 @@ test("第三方组件声明可从法律信息入口打开", async ({ page }, tes
   );
 
   await page.getByRole("button", { name: "下一页" }).click();
-  await expect(page.getByText("第 2 / 3 页")).toBeVisible();
+  await expect(page.getByText("第 2 / 4 页")).toBeVisible();
   await expect(componentList.getByRole("row", { name: "Zod 4.4.3" })).toContainText("MIT License");
   await page.getByRole("button", { name: "下一页" }).click();
-  await expect(page.getByText("第 3 / 3 页")).toBeVisible();
+  await expect(page.getByText("第 3 / 4 页")).toBeVisible();
   await expect(componentList.getByText("后端服务", { exact: true })).toHaveCount(10);
   await expect(componentList.getByRole("row", { name: "AgentScope Java 2.0.0-RC4" })).toContainText(
     "Apache License 2.0",

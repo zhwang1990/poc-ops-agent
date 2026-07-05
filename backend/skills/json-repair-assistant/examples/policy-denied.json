@@ -1,0 +1,27 @@
+{
+  "caseId": "json-repair-assistant-read-policy-denied",
+  "skillId": "json-repair-assistant-read",
+  "version": "1.0.0",
+  "description": "缺少允许角色时拒绝调用 JSON 修复助手。",
+  "operator": {
+    "subject": "guest-1",
+    "roles": [
+      "ROLE_guest"
+    ]
+  },
+  "targetEnvironment": "development",
+  "input": {
+    "contractVersion": "1.0",
+    "assistantAction": "REPAIR_JSON",
+    "source": "{\"service\":\"queFork\",}",
+    "parseError": "Unexpected token } in JSON",
+    "idempotencyKey": "json-repair-denied-1"
+  },
+  "expected": {
+    "decision": "DENY",
+    "status": "REJECTED",
+    "reasons": [
+      "ROLE_ops-reader or ROLE_ops-admin is required"
+    ]
+  }
+}

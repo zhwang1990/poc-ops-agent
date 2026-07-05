@@ -56,10 +56,10 @@ describe("ThirdPartyLicensesPage", () => {
     expect(screen.queryByText("声明随平台分发的前端与后端直接运行依赖，保留版权与许可证信息。")).not.toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "声明范围" })).not.toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "声明摘要" })).not.toBeInTheDocument();
-    expect(screen.getByText("前端操作台 14 项")).toBeInTheDocument();
+    expect(screen.getByText("前端操作台 15 项")).toBeInTheDocument();
     expect(screen.getByText("后端服务 16 项")).toBeInTheDocument();
     expect(screen.getByText("5 种许可证")).toBeInTheDocument();
-    expect(screen.getByText("第 1 / 3 页")).toBeInTheDocument();
+    expect(screen.getByText("第 1 / 4 页")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "上一页" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "下一页" })).toBeEnabled();
 
@@ -78,9 +78,9 @@ describe("ThirdPartyLicensesPage", () => {
     expect(within(reactLicenseLink).queryByText("许可证")).not.toBeInTheDocument();
     expect(within(reactRow).getByRole("link", { name: "React 项目主页" })).toHaveAttribute("href", "https://react.dev/");
     await user.click(screen.getByRole("button", { name: "下一页" }));
-    expect(screen.getByText("第 2 / 3 页")).toBeInTheDocument();
-    expect(within(componentList).getAllByText("前端操作台")).toHaveLength(4);
-    expect(within(componentList).getAllByText("后端服务")).toHaveLength(6);
+    expect(screen.getByText("第 2 / 4 页")).toBeInTheDocument();
+    expect(within(componentList).getAllByText("前端操作台")).toHaveLength(5);
+    expect(within(componentList).getAllByText("后端服务")).toHaveLength(5);
     expect(within(componentList).getByRole("row", { name: /Zod\s+4[.]4[.]3/u })).toHaveTextContent("Zod");
     expect(within(within(componentList).getByRole("row", { name: /Zod\s+4[.]4[.]3/u })).getByRole("link", { name: "Zod 许可证" })).toHaveAttribute(
       "href",
@@ -88,14 +88,22 @@ describe("ThirdPartyLicensesPage", () => {
     );
 
     await user.click(screen.getByRole("button", { name: "下一页" }));
-    expect(screen.getByText("第 3 / 3 页")).toBeInTheDocument();
+    expect(screen.getByText("第 3 / 4 页")).toBeInTheDocument();
     expect(within(componentList).getAllByText("后端服务")).toHaveLength(10);
-    expect(screen.getByRole("button", { name: "下一页" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "下一页" })).toBeEnabled();
     expect(within(componentList).getByRole("row", { name: /AgentScope Java\s+2[.]0[.]0-RC4/u })).toHaveTextContent(
       "Apache License 2.0",
     );
     expect(within(componentList).getByRole("row", { name: /JT400\s+21[.]0[.]6/u })).toHaveTextContent(
       "IBM Public License 1.0",
+    );
+
+    await user.click(screen.getByRole("button", { name: "下一页" }));
+    expect(screen.getByText("第 4 / 4 页")).toBeInTheDocument();
+    expect(within(componentList).getAllByText("后端服务")).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "下一页" })).toBeDisabled();
+    expect(within(componentList).getByRole("row", { name: /H2 Database\s+2[.]3[.]232/u })).toHaveTextContent(
+      "H2 Database",
     );
     expect(screen.queryByRole("region", { name: "许可证全文" })).not.toBeInTheDocument();
 

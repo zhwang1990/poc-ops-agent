@@ -38,7 +38,9 @@
   display: grid;
   flex: 1 1 auto;
   min-height: 0;
-  gap: 10px;
+  grid-auto-rows: max-content;
+  align-content: start;
+  gap: clamp(0.375rem, 0.75vh, 0.5rem);
   overflow-x: hidden;
   overflow-y: auto;
   padding-right: 2px;
@@ -54,20 +56,25 @@
   --nav-color: var(--color-info);
   --nav-mark: var(--nav-color);
   --nav-soft: color-mix(in srgb, var(--nav-color) 9%, var(--color-surface-subtle));
+  --nav-item-height: clamp(3rem, 4.75vh, 3.125rem);
+  --nav-icon-column: clamp(2.75rem, 4.45vh, 3rem);
+  --nav-icon-size: clamp(2.25rem, 3.55vh, 2.375rem);
+  --nav-symbol-size: clamp(1.25rem, 2.05vh, 1.375rem);
+  --nav-glyph-size: clamp(1.0625rem, 1.75vh, 1.1875rem);
   --nav-icon-radius: 14px;
   --nav-symbol-radius: 10px;
   --nav-detail-radius: 999px;
-  --nav-spark-x: 17px;
-  --nav-spark-y: 5px;
+  --nav-spark-x: 0.875rem;
+  --nav-spark-y: 0.25rem;
   position: relative;
   display: grid;
-  min-height: 60px;
-  grid-template-columns: 54px minmax(0, 1fr) 12px;
+  min-height: var(--nav-item-height);
+  grid-template-columns: var(--nav-icon-column) minmax(0, 1fr) 0.625rem;
   align-items: center;
   gap: 8px;
   isolation: isolate;
   overflow: hidden;
-  padding: 7px 11px;
+  padding: 0.3125rem 0.6875rem;
   border: 1px solid rgba(166, 64, 92, 0.12);
   border-radius: 8px;
   background:
@@ -100,10 +107,10 @@
 }
 
 .iconOnlyShell .navLink {
-  grid-template-columns: 54px;
+  grid-template-columns: var(--nav-icon-column);
   justify-content: center;
   gap: 0;
-  padding: 7px;
+  padding: 0.3125rem;
 }
 
 .iconOnlyShell .navLabel,
@@ -146,8 +153,8 @@
   z-index: 1;
   position: relative;
   display: grid;
-  width: 44px;
-  height: 44px;
+  width: var(--nav-icon-size);
+  height: var(--nav-icon-size);
   place-items: center;
   border: 1px solid color-mix(in srgb, var(--nav-color) 34%, #dfe7ee);
   border-radius: var(--nav-icon-radius);
@@ -174,7 +181,7 @@
 }
 
 .navIcon::before {
-  inset: 7px;
+  inset: clamp(0.3125rem, 0.58vh, 0.375rem);
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0)),
     color-mix(in srgb, var(--nav-color) 12%, #fff);
@@ -184,7 +191,7 @@
 }
 
 .navIcon::after {
-  inset: 4px;
+  inset: 0.25rem;
   border: 1px solid transparent;
   border-top-color: color-mix(in srgb, var(--nav-color) 26%, transparent);
   border-right-color: color-mix(in srgb, var(--nav-color) 18%, transparent);
@@ -195,8 +202,8 @@
 .navSymbol {
   position: absolute;
   z-index: 1;
-  width: 25px;
-  height: 25px;
+  width: var(--nav-symbol-size);
+  height: var(--nav-symbol-size);
   border-radius: var(--nav-symbol-radius);
   background: var(--nav-mark);
   box-shadow:
@@ -217,7 +224,7 @@
 }
 
 .navSymbol::before {
-  inset: 6px;
+  inset: clamp(0.25rem, 0.46vh, 0.3125rem);
   border: 2px solid rgba(255, 255, 255, 0.72);
   border-radius: var(--nav-detail-radius);
 }
@@ -225,21 +232,21 @@
 .navSymbol::after {
   top: var(--nav-spark-y);
   left: var(--nav-spark-x);
-  width: 6px;
-  height: 6px;
+  width: 0.3125rem;
+  height: 0.3125rem;
   border: 1px solid rgba(255, 255, 255, 0.74);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.92);
   box-shadow:
-    -13px 11px 0 -1px rgba(255, 255, 255, 0.62),
-    0 0 0 3px rgba(255, 255, 255, 0.13);
+    -0.6875rem 0.625rem 0 -0.0625rem rgba(255, 255, 255, 0.62),
+    0 0 0 0.1875rem rgba(255, 255, 255, 0.13);
 }
 
 .navGlyph {
   position: relative;
   z-index: 2;
-  width: 22px;
-  height: 22px;
+  width: var(--nav-glyph-size);
+  height: var(--nav-glyph-size);
   color: #fff;
   shape-rendering: geometricPrecision;
 }
@@ -247,8 +254,8 @@
 .navPulse {
   position: relative;
   z-index: 1;
-  width: 7px;
-  height: 7px;
+  width: 0.4375rem;
+  height: 0.4375rem;
   border-radius: 999px;
   background: color-mix(in srgb, var(--nav-color) 46%, #cbd6df);
   transition:
@@ -262,8 +269,8 @@
   --nav-icon-radius: 999px;
   --nav-symbol-radius: 999px;
   --nav-detail-radius: 999px;
-  --nav-spark-x: 16px;
-  --nav-spark-y: 5px;
+  --nav-spark-x: 0.875rem;
+  --nav-spark-y: 0.25rem;
 }
 
 .navToneinfo {
@@ -272,8 +279,8 @@
   --nav-icon-radius: 13px;
   --nav-symbol-radius: 9px;
   --nav-detail-radius: 5px;
-  --nav-spark-x: 16px;
-  --nav-spark-y: 5px;
+  --nav-spark-x: 0.875rem;
+  --nav-spark-y: 0.25rem;
 }
 
 .navToneteal {
@@ -282,8 +289,8 @@
   --nav-icon-radius: 999px 14px 999px 14px;
   --nav-symbol-radius: 8px 12px 8px 12px;
   --nav-detail-radius: 3px 8px 3px 8px;
-  --nav-spark-x: 17px;
-  --nav-spark-y: 4px;
+  --nav-spark-x: 0.875rem;
+  --nav-spark-y: 0.25rem;
 }
 
 .navTonedeep {
@@ -292,8 +299,8 @@
   --nav-icon-radius: 999px;
   --nav-symbol-radius: 999px;
   --nav-detail-radius: 999px;
-  --nav-spark-x: 17px;
-  --nav-spark-y: 6px;
+  --nav-spark-x: 0.875rem;
+  --nav-spark-y: 0.3125rem;
 }
 
 .navTonewarning {
@@ -302,8 +309,8 @@
   --nav-icon-radius: 14px;
   --nav-symbol-radius: 6px 12px 6px 12px;
   --nav-detail-radius: 999px 3px 999px 3px;
-  --nav-spark-x: 16px;
-  --nav-spark-y: 4px;
+  --nav-spark-x: 0.875rem;
+  --nav-spark-y: 0.25rem;
 }
 
 .navTonegreen {
@@ -312,8 +319,8 @@
   --nav-icon-radius: 14px 7px 14px 7px;
   --nav-symbol-radius: 9px 4px 9px 4px;
   --nav-detail-radius: 4px 999px 4px 999px;
-  --nav-spark-x: 17px;
-  --nav-spark-y: 5px;
+  --nav-spark-x: 0.875rem;
+  --nav-spark-y: 0.25rem;
 }
 
 .navToneslate {
@@ -322,8 +329,8 @@
   --nav-icon-radius: 12px;
   --nav-symbol-radius: 999px;
   --nav-detail-radius: 5px;
-  --nav-spark-x: 16px;
-  --nav-spark-y: 5px;
+  --nav-spark-x: 0.875rem;
+  --nav-spark-y: 0.25rem;
 }
 
 .navTonemeeting {
@@ -332,8 +339,8 @@
   --nav-icon-radius: 999px 14px 14px 999px;
   --nav-symbol-radius: 999px;
   --nav-detail-radius: 999px;
-  --nav-spark-x: 16px;
-  --nav-spark-y: 5px;
+  --nav-spark-x: 0.875rem;
+  --nav-spark-y: 0.25rem;
 }
 
 .navToneas400 {
@@ -342,8 +349,8 @@
   --nav-icon-radius: 12px;
   --nav-symbol-radius: 6px;
   --nav-detail-radius: 4px;
-  --nav-spark-x: 16px;
-  --nav-spark-y: 4px;
+  --nav-spark-x: 0.875rem;
+  --nav-spark-y: 0.25rem;
 }
 
 .navTonequick {
@@ -352,8 +359,8 @@
   --nav-icon-radius: 14px 14px 8px 8px;
   --nav-symbol-radius: 999px 8px 999px 8px;
   --nav-detail-radius: 999px 4px 999px 4px;
-  --nav-spark-x: 17px;
-  --nav-spark-y: 5px;
+  --nav-spark-x: 0.875rem;
+  --nav-spark-y: 0.25rem;
 }
 
 .navTonemodel {
@@ -362,8 +369,8 @@
   --nav-icon-radius: 8px 14px 8px 14px;
   --nav-symbol-radius: 5px 11px 5px 11px;
   --nav-detail-radius: 3px 7px 3px 7px;
-  --nav-spark-x: 17px;
-  --nav-spark-y: 5px;
+  --nav-spark-x: 0.875rem;
+  --nav-spark-y: 0.25rem;
 }
 
 .navTonerelease {
@@ -372,8 +379,8 @@
   --nav-icon-radius: 14px 8px 14px 8px;
   --nav-symbol-radius: 6px 999px 6px 999px;
   --nav-detail-radius: 4px 999px 4px 999px;
-  --nav-spark-x: 17px;
-  --nav-spark-y: 5px;
+  --nav-spark-x: 0.875rem;
+  --nav-spark-y: 0.25rem;
 }
 
 .active {
@@ -382,8 +389,8 @@
   --nav-icon-radius: 13px;
   --nav-symbol-radius: 9px;
   --nav-detail-radius: 5px;
-  --nav-spark-x: 16px;
-  --nav-spark-y: 5px;
+  --nav-spark-x: 0.875rem;
+  --nav-spark-y: 0.25rem;
   border-color: color-mix(in srgb, var(--nav-color) 42%, rgba(166, 64, 92, 0.26));
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(255, 255, 255, 0.56)),
@@ -427,8 +434,8 @@
   border-color: color-mix(in srgb, var(--nav-color) 18%, transparent);
   background: color-mix(in srgb, var(--nav-color) 76%, #fff);
   box-shadow:
-    -13px 11px 0 -1px color-mix(in srgb, var(--nav-color) 48%, #fff),
-    0 0 0 3px color-mix(in srgb, var(--nav-color) 10%, transparent);
+    -0.6875rem 0.625rem 0 -0.0625rem color-mix(in srgb, var(--nav-color) 48%, #fff),
+    0 0 0 0.1875rem color-mix(in srgb, var(--nav-color) 10%, transparent);
 }
 
 .active .navGlyph {

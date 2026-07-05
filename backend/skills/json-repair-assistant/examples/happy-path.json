@@ -1,0 +1,38 @@
+{
+  "caseId": "json-repair-assistant-read-happy-path",
+  "skillId": "json-repair-assistant-read",
+  "version": "1.0.0",
+  "description": "对尾随逗号导致解析失败的 JSON 返回候选修复结果。",
+  "operator": {
+    "subject": "ops-reader-1",
+    "roles": [
+      "ROLE_ops-reader"
+    ]
+  },
+  "targetEnvironment": "development",
+  "input": {
+    "contractVersion": "1.0",
+    "assistantAction": "REPAIR_JSON",
+    "source": "{\"service\":\"queFork\",\"enabled\":true,}",
+    "parseError": "Unexpected token } in JSON",
+    "idempotencyKey": "json-repair-dev-1"
+  },
+  "expected": {
+    "decision": "ALLOW",
+    "status": "SUCCEEDED",
+    "output": {
+      "contractVersion": "1.0",
+      "status": "SUCCEEDED",
+      "assistantAction": "REPAIR_JSON",
+      "summary": "输入对象存在尾随逗号，已移除该语法错误。",
+      "repairedJson": "{\"service\":\"queFork\",\"enabled\":true}",
+      "safetyNotes": [
+        "修复结果必须重新经过本地 JSON 校验。",
+        "本 Skill 不执行输入内容。"
+      ],
+      "validationRequired": true,
+      "skillId": "json-repair-assistant-read",
+      "modelProviderFingerprint": "model-key:test-fingerprint"
+    }
+  }
+}

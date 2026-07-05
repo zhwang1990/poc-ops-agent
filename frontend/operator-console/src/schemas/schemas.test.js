@@ -31,6 +31,10 @@ import {
   sqlQueryRequestSchema,
   sqlValidationReportSchema,
 } from "./sql-schemas.js";
+import {
+  jsonRepairAssistantRequestSchema,
+  jsonRepairAssistantResponseSchema,
+} from "./tool-center-schemas.js";
 
 describe("browserSessionSchema", () => {
   test("accepts the current BrowserSessionResponse", () => {
@@ -245,6 +249,27 @@ describe("SQL schemas", () => {
             rows: [["OD-10500"]],
           },
         ],
+      }),
+    ).toThrow();
+  });
+});
+
+describe("tool center schemas", () => {
+  test("accepts JSON repair assistant contracts and rejects secret fields", () => {
+    expect(jsonRepairAssistantRequestSchema.parse(jsonRepairAssistantRequest).assistantAction).toBe("REPAIR_JSON");
+    expect(jsonRepairAssistantResponseSchema.parse(jsonRepairAssistantResponse).skillId).toBe(
+      "json-repair-assistant-read",
+    );
+    expect(() =>
+      jsonRepairAssistantRequestSchema.parse({
+        ...jsonRepairAssistantRequest,
+        apiKey: "secret",
+      }),
+    ).toThrow();
+    expect(() =>
+      jsonRepairAssistantResponseSchema.parse({
+        ...jsonRepairAssistantResponse,
+        rawProviderResponse: "secret",
       }),
     ).toThrow();
   });
@@ -689,6 +714,27 @@ const sqlAssistantResponse = {
   ],
   safetyNotes: ["Validate before execution."],
   validationRequired: true,
+};
+
+const jsonRepairAssistantRequest = {
+  contractVersion: "1.0",
+  assistantAction: "REPAIR_JSON",
+  source: '{"service":"queFork",}',
+  parseError: "Unexpected token }",
+  idempotencyKey: "json-repair-1",
+};
+
+const jsonRepairAssistantResponse = {
+  contractVersion: "1.0",
+  status: "SUCCEEDED",
+  assistantAction: "REPAIR_JSON",
+  summary: "已移除尾随逗号。",
+  repairedJson: '{"service":"queFork"}',
+  failureReason: null,
+  safetyNotes: ["修复结果必须重新经过本地 JSON 校验。"],
+  validationRequired: true,
+  skillId: "json-repair-assistant-read",
+  modelProviderFingerprint: "provider:fingerprint",
 };
 
 const sqlMetadataResponse = {

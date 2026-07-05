@@ -4,9 +4,11 @@
 
 **Goal:** 在 M09 工具中心的 `JSON Formatter` 内集成 JSON Hero 风格的本地结构浏览器。
 
-**Architecture:** 在 `tool-center-utils.js` 中新增纯前端 JSON 树构建、JSONPath、搜索和复制值序列化函数，React 页面只负责状态、交互和展示。结构浏览器不新增后端接口、不调用外部服务、不写入浏览器存储，继续沿用工具中心 CSS Modules 和现有按钮组件。
+**Architecture:** 在 `tool-center-utils.js` 中保留纯前端 JSON 树构建、JSONPath、搜索和复制值序列化函数，React 页面负责状态、搜索命中选择、复制操作和展示。树形主体由 `react-json-view-lite` 渲染，结构浏览器不新增后端接口、不调用外部服务、不写入浏览器存储，继续沿用工具中心 CSS Modules 和现有按钮组件。
 
-**Tech Stack:** React 19、JavaScript/JSX、JSDoc `checkJs`、CSS Modules、lucide-react、Vitest、React Testing Library。
+**Tech Stack:** React 19、JavaScript/JSX、JSDoc `checkJs`、CSS Modules、lucide-react、react-json-view-lite、Vitest、React Testing Library。
+
+**新增依赖:** `react-json-view-lite@2.5.0`，MIT 许可证，无运行时 dependencies，仅有 React 18/19 peer dependency。用途限定为本地 JSON 对象或数组树形渲染。
 
 ---
 
@@ -22,6 +24,10 @@
   - 职责：补充三栏布局、树形节点、搜索、类型标签和复制状态样式。
 - Modify: `frontend/operator-console/src/features/tool-center/ToolCenterPage.test.jsx`
   - 职责：验证结构浏览器展示、展开折叠、搜索、路径和值复制，以及现有格式化/压缩行为不回退。
+- Modify: `frontend/operator-console/package.json`
+  - 职责：声明 `react-json-view-lite` 前端依赖。
+- Modify: `frontend/operator-console/package-lock.json`
+  - 职责：锁定依赖版本和完整性信息。
 
 ## Task 1: JSON 结构浏览纯函数
 
@@ -426,13 +432,13 @@ npm run test -- ToolCenterPage
 
 Expected: fail because `JSON 结构浏览` region does not exist.
 
-## Task 3: 实现结构浏览器组件和样式
+## Task 3: 接入 react-json-view-lite 结构浏览器组件和样式
 
 **Files:**
 - Modify: `frontend/operator-console/src/features/tool-center/ToolCenterPage.jsx`
 - Modify: `frontend/operator-console/src/features/tool-center/ToolCenterPage.module.css`
 
-- [ ] **Step 1: 接入工具函数和图标**
+- [x] **Step 1: 接入工具函数、图标和第三方树组件**
 
 Modify imports in `ToolCenterPage.jsx`:
 
@@ -440,7 +446,6 @@ Modify imports in `ToolCenterPage.jsx`:
 import {
   Braces,
   Check,
-  ChevronRight,
   Copy,
   ListCollapse,
   ListTree,
@@ -453,6 +458,7 @@ import {
   WandSparkles,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { JsonView, allExpanded, collapseAllNested } from "react-json-view-lite";
 ```
 
 Add imports from `tool-center-utils.js`:
@@ -506,218 +512,35 @@ Replace the returned `styles.toolGrid` wrapper with `styles.jsonHeroGrid` and ap
       />
 ```
 
-- [ ] **Step 3: 新增浏览器组件**
+- [x] **Step 3: 新增浏览器组件**
 
-Add these components after `JsonFormatterPanel`:
+结构树主体由 `JsonView` 渲染。组件外层保留：
 
-```jsx
-/**
- * @param {{
- *   copyStatus: string,
- *   expandedPaths: Set<string>,
- *   onCopyStatus: (value: string) => void,
- *   onExpandedPathsChange: (value: Set<string>) => void,
- *   onSearchQueryChange: (value: string) => void,
- *   onSelectPath: (value: string) => void,
- *   parseResult: ReturnType<typeof parseJsonForHeroView>,
- *   searchQuery: string,
- *   searchResult: ReturnType<typeof findJsonHeroMatches>,
- *   selectedPath: string,
- * }} props
- */
-function JsonHeroBrowserPanel({
-  copyStatus,
-  expandedPaths,
-  onCopyStatus,
-  onExpandedPathsChange,
-  onSearchQueryChange,
-  onSelectPath,
-  parseResult,
-  searchQuery,
-  searchResult,
-  selectedPath,
-}) {
-  const matchingPaths = useMemo(() => new Set(searchResult.matchingPaths), [searchResult.matchingPaths]);
-  const visibleExpandedPaths = useMemo(
-    () => new Set([...expandedPaths, ...searchResult.ancestorPaths]),
-    [expandedPaths, searchResult.ancestorPaths],
-  );
-  const selectedNode = parseResult.ok ? findJsonHeroNodeByPath(parseResult.root, selectedPath) ?? parseResult.root : null;
+- 根类型和字段数量摘要。
+- 搜索框。
+- 当前选中路径。
+- 复制路径和复制值按钮。
+- 展开全部和折叠到根层按钮。
+- 搜索命中列表，用于选择当前路径。
 
-  function expandAll() {
-    if (!parseResult.ok) {
-      return;
-    }
-    onExpandedPathsChange(new Set(collectExpandableJsonHeroPaths(parseResult.root)));
-  }
+`JsonView` 使用 CSS Module style props，不导入第三方全局 CSS；样式统一由工具中心控制。
 
-  function collapseAll() {
-    onExpandedPathsChange(new Set(["$"]));
-  }
+关键实现约束：
 
-  async function copyPath() {
-    if (!selectedNode) {
-      return;
-    }
-    await navigator.clipboard.writeText(selectedNode.path);
-    onCopyStatus("已复制路径");
-  }
+- `JsonView` 只接收已解析的本地对象或数组。
+- 标量根值使用本地 `<pre>` 只读展示。
+- 搜索时使用 `allExpanded` 便于查看上下文。
+- 非搜索状态使用 `collapseAllNested`，根层默认可见。
+- 复制路径和值仍基于本地 `JsonHeroNode`，不依赖第三方 DOM 文本。
 
-  async function copyValue() {
-    if (!selectedNode) {
-      return;
-    }
-    await navigator.clipboard.writeText(formatJsonHeroNodeValue(selectedNode));
-    onCopyStatus("已复制值");
-  }
+当前实现对应：
 
-  return (
-    <aside aria-label="JSON 结构浏览" className={styles.jsonHeroPanel}>
-      <PanelTitle icon={ListTree} title="结构浏览" subtitle="本地树形查看，不发送内容。" />
-      {!parseResult.ok ? (
-        <div className={styles.errorMessage} role="alert">
-          {parseResult.error}
-        </div>
-      ) : (
-        <>
-          <div className={styles.jsonHeroSummary}>
-            <span>{parseResult.root.kind}</span>
-            <strong>{parseResult.root.preview}</strong>
-          </div>
-          <label className={styles.jsonHeroSearch}>
-            <Search aria-hidden="true" size={15} />
-            <span>搜索 JSON 结构</span>
-            <input
-              aria-label="搜索 JSON 结构"
-              onChange={(event) => onSearchQueryChange(event.target.value)}
-              value={searchQuery}
-            />
-          </label>
-          <div className={styles.jsonHeroPathBar}>
-            <span>{selectedNode?.path ?? "$"}</span>
-            {searchQuery.trim() ? <strong>{searchResult.matchingPaths.length} 个命中</strong> : null}
-          </div>
-          <div className={styles.jsonHeroActions}>
-            <button onClick={copyPath} type="button">
-              <Copy aria-hidden="true" size={14} /> 复制路径
-            </button>
-            <button onClick={copyValue} type="button">
-              <Check aria-hidden="true" size={14} /> 复制值
-            </button>
-            <button onClick={expandAll} type="button">
-              <ListTree aria-hidden="true" size={14} /> 全部展开
-            </button>
-            <button onClick={collapseAll} type="button">
-              <ListCollapse aria-hidden="true" size={14} /> 全部折叠
-            </button>
-          </div>
-          {copyStatus ? (
-            <div className={styles.successMessage} role="status">
-              {copyStatus}
-            </div>
-          ) : null}
-          <div className={styles.jsonHeroTree} role="tree">
-            <JsonHeroNodeRow
-              expandedPaths={visibleExpandedPaths}
-              matchingPaths={matchingPaths}
-              node={parseResult.root}
-              onExpandedPathsChange={onExpandedPathsChange}
-              onSelectPath={onSelectPath}
-              selectedPath={selectedPath}
-              userExpandedPaths={expandedPaths}
-            />
-          </div>
-        </>
-      )}
-    </aside>
-  );
-}
-```
+- `JsonHeroBrowserPanel`
+- `findJsonHeroNodeByPath`
+- `isJsonLiteData`
+- `jsonLiteStyles`
 
-Add `JsonHeroNodeRow` and helpers:
-
-```jsx
-function JsonHeroNodeRow({
-  expandedPaths,
-  matchingPaths,
-  node,
-  onExpandedPathsChange,
-  onSelectPath,
-  selectedPath,
-  userExpandedPaths,
-}) {
-  const expandable = node.children.length > 0;
-  const expanded = expandedPaths.has(node.path);
-  const selected = selectedPath === node.path;
-  const matched = matchingPaths.has(node.path);
-
-  function toggleExpanded() {
-    const next = new Set(userExpandedPaths);
-    if (next.has(node.path)) {
-      next.delete(node.path);
-    } else {
-      next.add(node.path);
-    }
-    onExpandedPathsChange(next);
-  }
-
-  return (
-    <div role="treeitem" aria-expanded={expandable ? expanded : undefined}>
-      <button
-        aria-label={`${node.key} ${node.kind} ${node.preview}`}
-        className={`${styles.jsonHeroNode} ${selected ? styles.selectedJsonHeroNode : ""} ${
-          matched ? styles.matchedJsonHeroNode : ""
-        }`}
-        onClick={() => onSelectPath(node.path)}
-        style={{ "--json-node-depth": node.depth }}
-        type="button"
-      >
-        <span className={styles.jsonHeroTwisty} onClick={expandable ? toggleExpanded : undefined}>
-          {expandable ? <ChevronRight aria-hidden="true" size={14} /> : null}
-        </span>
-        <span className={styles.jsonHeroKey}>{node.key}</span>
-        <span className={styles.jsonHeroType}>{node.kind}</span>
-        <span className={styles.jsonHeroPreview}>{node.preview}</span>
-      </button>
-      {expanded
-        ? node.children.map((child) => (
-            <JsonHeroNodeRow
-              expandedPaths={expandedPaths}
-              key={child.path}
-              matchingPaths={matchingPaths}
-              node={child}
-              onExpandedPathsChange={onExpandedPathsChange}
-              onSelectPath={onSelectPath}
-              selectedPath={selectedPath}
-              userExpandedPaths={userExpandedPaths}
-            />
-          ))
-        : null}
-    </div>
-  );
-}
-
-function findJsonHeroNodeByPath(node, path) {
-  if (node.path === path) {
-    return node;
-  }
-  for (const child of node.children) {
-    const result = findJsonHeroNodeByPath(child, path);
-    if (result) {
-      return result;
-    }
-  }
-  return null;
-}
-
-function collectExpandableJsonHeroPaths(node) {
-  const paths = node.children.length > 0 ? [node.path] : [];
-  for (const child of node.children) {
-    paths.push(...collectExpandableJsonHeroPaths(child));
-  }
-  return paths;
-}
-```
+历史手写递归节点组件 `JsonHeroNodeRow` 已移除。
 
 - [ ] **Step 4: 补充 CSS**
 
@@ -982,10 +805,10 @@ Expected: Tool Center focused tests pass.
 Run:
 
 ```powershell
-rg -n "jsonhero|fetch\\(|localStorage|sessionStorage|window\\.open|iframe" frontend/operator-console/src/features/tool-center
+rg -n "react-json-view-lite|jsonhero|jsonHero|fetch\\(|localStorage|sessionStorage|window\\.open|iframe" frontend/operator-console/src/features/tool-center frontend/operator-console/package.json frontend/operator-console/package-lock.json
 ```
 
-Expected: no JSON Formatter implementation uses external JSON Hero, network calls, iframe, or browser storage. Existing unrelated matches must be inspected and explained.
+Expected: only local `react-json-view-lite` dependency declarations/imports and `jsonHero*` local CSS/JS names appear. No JSON Formatter implementation uses external JSON Hero, network calls, iframe, browser storage, or browser navigation.
 
 ## 自检
 

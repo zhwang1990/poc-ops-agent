@@ -113,6 +113,10 @@ describe("operator console routes", () => {
       screen.getByRole("link", { name: "SQL 工作区" }),
     ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "工具中心" })).toHaveAttribute("href", "/tools");
+    expect(screen.getByRole("link", { name: "API Caller 设置" })).toHaveAttribute(
+      "href",
+      "/tools/api-caller-settings",
+    );
     expect(
       screen.getByRole("link", { name: "模型设置" }),
     ).toHaveAttribute("href", "/model-settings");
@@ -240,6 +244,7 @@ describe("operator console routes", () => {
     ["/quick-links", "快捷连接"],
     ["/sql", "SQL 工作台"],
     ["/tools", "工具中心"],
+    ["/tools/api-caller-settings", "API Caller 设置"],
     ["/model-settings", "模型设置"],
     ["/release", "发布中心"],
     ["/help", "帮助"],
@@ -275,9 +280,9 @@ describe("operator console routes", () => {
     await userEvent.click(legalLink);
 
     expect(await screen.findByRole("heading", { name: "第三方组件声明" })).toBeInTheDocument();
-    expect(screen.getByText("前端操作台 14 项")).toBeInTheDocument();
+    expect(screen.getByText("前端操作台 15 项")).toBeInTheDocument();
     expect(screen.getByText("后端服务 16 项")).toBeInTheDocument();
-    expect(screen.getByText("第 1 / 3 页")).toBeInTheDocument();
+    expect(screen.getByText("第 1 / 4 页")).toBeInTheDocument();
     const componentList = screen.getByRole("region", { name: "第三方组件清单" });
     const reactRow = within(componentList).getByRole("row", { name: "React 19.2.7" });
     expect(within(reactRow).getByRole("link", { name: "React 许可证" })).toHaveAttribute(
@@ -569,15 +574,15 @@ describe("operator console routes", () => {
     expect(within(statusBar).queryByText("M05")).not.toBeInTheDocument();
     expect(within(statusBar).queryByText("M07")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "启动诊断" })).not.toBeInTheDocument();
-    expect(appCapsuleRule).toContain("min-height: 84px");
-    expect(appCapsuleRule).toContain("grid-template-columns: minmax(260px, 360px) max-content minmax(0, 1fr) max-content max-content");
+    expect(appCapsuleRule).toContain("min-height: 78px");
+    expect(appCapsuleRule).toContain("grid-template-columns: minmax(236px, 336px) max-content minmax(0, 1fr) max-content max-content");
     expect(appCapsuleRule).toContain("border-radius: 18px");
     expect(appCapsuleRule).toContain("background: oklch");
-    expect(brandPlateRule).toContain("grid-template-columns: 58px minmax(0, 1fr)");
+    expect(brandPlateRule).toContain("grid-template-columns: 56px minmax(0, 1fr)");
     expect(workspaceContextRule).toContain("width: max-content");
-    expect(workspaceContextRule).toContain("grid-template-columns: 38px max-content max-content 68px");
-    expect(signalRailRule).toContain("min-width: 68px");
-    expect(operatorDockRule).toContain("grid-template-columns: 132px minmax(150px, 190px) 92px");
+    expect(workspaceContextRule).toContain("grid-template-columns: 36px max-content max-content 48px");
+    expect(signalRailRule).toContain("min-width: 48px");
+    expect(operatorDockRule).toContain("grid-template-columns: 114px minmax(132px, 176px) 82px");
     expect(operatorProfileRule).toContain("min-width: 0");
     expect(workspaceStatusBarCss).not.toContain(".brandLockup");
     expect(workspaceStatusBarCss).not.toContain(".workspaceTrail");
@@ -635,7 +640,9 @@ describe("operator console routes", () => {
     expect(activeNavRule).toContain("--nav-symbol-radius: 9px");
     expect(activeNavRule).toContain("--nav-detail-radius: 5px");
     expect(appShellCss).toContain(".navSymbol");
-    expect(appShellCss).toContain("width: 22px");
+    expect(appShellCss).toContain("--nav-glyph-size: clamp(1.0625rem, 1.75vh, 1.1875rem)");
+    expect(appShellCss).toContain("width: var(--nav-glyph-size)");
+    expect(appShellCss).not.toContain("width: 22px");
     expect(frameRule).toContain("--workspace-layout-gap: var(--app-shell-gap, 9px)");
     expect(appContentRule).toContain("margin-left: var(--app-content-margin-left)");
     expect(appShellCss).toContain("--app-sidebar-width: 238px");
@@ -702,6 +709,14 @@ describe("operator console routes", () => {
       overviewCss.match(/[.]statusStrip\s*[{][^}]+[}]/u)?.[0] ?? "";
     const entryGridRule =
       overviewCss.match(/[.]entryGrid\s*[{][^}]+[}]/u)?.[0] ?? "";
+    const entryCardRule =
+      overviewCss.match(/[.]entryCard\s*[{][^}]+[}]/u)?.[0] ?? "";
+    const entryStatusRule =
+      [...overviewCss.matchAll(/[.]entryStatus\s*[{][^}]+[}]/gu)]
+        .map((match) => match[0])
+        .find((rule) => rule.includes("position: absolute")) ?? "";
+    const entryTitleRule =
+      overviewCss.match(/[.]entryCard strong\s*[{][^}]+[}]/u)?.[0] ?? "";
     const queueGridRule =
       overviewCss.match(/[.]queueGrid\s*[{][^}]+[}]/u)?.[0] ?? "";
     const guideListRule =
@@ -732,6 +747,16 @@ describe("operator console routes", () => {
     expect(guidePanelRule).not.toContain("border-top");
     expect(entryGridRule).toContain("grid-template-columns: repeat(3, minmax(0, 1fr))");
     expect(entryGridRule).toContain("gap: 14px");
+    expect(entryCardRule).toContain("min-height: 124px");
+    expect(entryCardRule).toContain("height: 124px");
+    expect(entryCardRule).toContain("grid-template-columns: 44px minmax(0, 1fr)");
+    expect(entryCardRule).toContain("gap: 4px 10px");
+    expect(entryCardRule).toContain("padding: 9px 14px");
+    expect(entryTitleRule).toContain("grid-column: 2 / -1");
+    expect(entryStatusRule).toContain("position: absolute");
+    expect(entryStatusRule).toContain("top: 10px");
+    expect(entryStatusRule).toContain("right: 14px");
+    expect(entryStatusRule).toContain("z-index: 2");
     expect(queueGridRule).toContain("grid-template-columns: repeat(3, minmax(0, 1fr))");
     expect(queueGridRule).toContain("gap: 10px");
     expect(overviewCss).not.toContain(".signalGrid");
@@ -748,7 +773,8 @@ describe("operator console routes", () => {
     expect(as400LayoutRule).toContain("grid-template-columns: minmax(0, 1fr) 292px");
     expect(as400LayoutRule).toContain("gap: 12px");
     expect(as400ToolbarRule).toContain("grid-template-columns: auto minmax(0, 1fr) auto auto");
-    expect(pageToolbarSurfaceRule).toContain("border-radius: 14px");
+    expect(pageToolbarSurfaceRule).toContain("min-height: 56px");
+    expect(pageToolbarSurfaceRule).toContain("border-radius: 12px");
     expect(as400ObjectCss).toContain(".candidateSelect");
     expect(as400ObjectCss).not.toContain(".candidateChip");
     expect(skillRegistryCss).toContain(".registryCanvas");

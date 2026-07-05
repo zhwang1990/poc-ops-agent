@@ -75,7 +75,8 @@ describe("WorkspaceStatusBar", () => {
     expect(source).not.toContain("READ_ONLY_TRAIL");
     expect(source).not.toContain("workspaceTrail");
     expect(source).not.toContain("trailItem");
-    expect(css).toContain("grid-template-columns: minmax(260px, 360px) max-content minmax(0, 1fr) max-content max-content");
+    expect(css).toContain("min-height: 78px");
+    expect(css).toContain("grid-template-columns: minmax(236px, 336px) max-content minmax(0, 1fr) max-content max-content");
     expect(css).toContain("background: oklch");
     expect(css).toContain("border-radius: 18px");
     const brandPlateRule = css.match(/[.]brandPlate\s*[{][^}]+[}]/u)?.[0] ?? "";
@@ -87,6 +88,8 @@ describe("WorkspaceStatusBar", () => {
     expect(tokensCss).toContain('--font-heading: Inter, "HarmonyOS Sans SC", MiSans');
     expect(brandPlateRule).toContain("position: relative");
     expect(brandPlateRule).toContain("isolation: isolate");
+    expect(brandPlateRule).toContain("min-height: 60px");
+    expect(brandPlateRule).toContain("grid-template-columns: 56px minmax(0, 1fr)");
     expect(brandPlateRule).toContain("overflow: hidden");
     expect(brandPlateRule).toContain("radial-gradient");
     expect(brandPlateRule).toContain("oklch(0.965 0.012 236 / 0.94)");
@@ -99,7 +102,8 @@ describe("WorkspaceStatusBar", () => {
     expect(brandPlateAfterRule).toContain("opacity: 0.32");
     expect(brandPlateAfterRule).toContain("var(--toolbar-blue)");
     expect(brandNameRule).toContain("font-weight: 830");
-    expect(headingRule).toContain("font-size: 1.06rem");
+    expect(brandNameRule).toContain("font-size: 0.72rem");
+    expect(headingRule).toContain("font-size: 1.08rem");
     expect(headingRule).toContain("font-family: var(--font-heading");
     expect(headingRule).toContain("font-synthesis-weight: none");
     expect(headingRule).toContain("font-weight: 680");
@@ -163,16 +167,16 @@ describe("WorkspaceStatusBar", () => {
 
     expect(source).toContain('aria-label="工作区工具栏"');
     expect(appCapsuleRule).toContain(
-      "grid-template-columns: minmax(260px, 360px) max-content minmax(0, 1fr) max-content max-content",
+      "grid-template-columns: minmax(236px, 336px) max-content minmax(0, 1fr) max-content max-content",
     );
     expect(appCapsuleRule).toContain("minmax(0, 1fr)");
     expect(workspaceContextRule).toContain("width: max-content");
-    expect(workspaceContextRule).toContain("grid-template-columns: 38px max-content max-content 68px");
+    expect(workspaceContextRule).toContain("grid-template-columns: 36px max-content max-content 48px");
     expect(workspaceContextRule).not.toContain("minmax(340px, 430px)");
     expect(workspaceContextRule).not.toContain("minmax(104px, 0.7fr)");
     expect(toolbarRule).toContain("grid-column: 4");
     expect(toolbarRule).toContain("grid-row: 1");
-    expect(toolbarRule).toContain("gap: 8px");
+    expect(toolbarRule).toContain("gap: 7px");
     expect(toolbarRule).toContain("height: 48px");
     expect(toolbarRule).toContain("border: 0");
     expect(toolbarRule).toContain("background: transparent");
@@ -180,12 +184,12 @@ describe("WorkspaceStatusBar", () => {
     expect(toolbarControlRule).toContain("height: 48px");
     expect(toolbarControlRule).toContain("grid-template-columns: 34px");
     expect(toolbarControlRule).toContain("border: 1px solid var(--toolbar-line)");
-    expect(toolbarControlRule).toContain("border-radius: 13px");
-    expect(toolbarControlRule).toContain("box-shadow: 0 9px 18px");
+    expect(toolbarControlRule).toContain("border-radius: 11px");
+    expect(toolbarControlRule).toContain("box-shadow: 0 7px 15px");
     expect(toolbarIconToggleRule).toContain("width: 48px");
     expect(toolbarButtonIconRule).toContain("width: 34px");
     expect(toolbarButtonIconRule).toContain("height: 34px");
-    expect(toolbarButtonIconRule).toContain("border-radius: 11px");
+    expect(toolbarButtonIconRule).toContain("border-radius: 9px");
     expect(toolbarButtonIconRule).toContain("linear-gradient(145deg, var(--toolbar-blue)");
     expect(toolbarButtonIconRule).toContain("color: oklch(0.985 0.006 236)");
     expect(toolbarPressedRule).toContain("border-color: oklch(0.82 0.052 18)");
@@ -205,7 +209,7 @@ describe("WorkspaceStatusBar", () => {
     expect(toolbarButtonRule).toContain("position: relative");
     expect(operatorDockRule).toContain("grid-column: 5");
     expect(operatorDockRule).toContain("grid-row: 1");
-    expect(operatorDockRule).toContain("grid-template-columns: 132px minmax(150px, 190px) 92px");
+    expect(operatorDockRule).toContain("grid-template-columns: 114px minmax(132px, 176px) 82px");
     expect(toolbarRule).not.toContain("grid-column: 1 / -1");
     expect(toolbarRule).not.toMatch(/(^|[\s;])order\s*:/u);
   });

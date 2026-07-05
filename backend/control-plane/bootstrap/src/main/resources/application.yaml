@@ -102,6 +102,9 @@ ops-agent:
       internal.sql-workbench.assistant.use:
         - ROLE_ops-reader
         - ROLE_ops-admin
+      internal.tool-center.json-assistant.repair:
+        - ROLE_ops-reader
+        - ROLE_ops-admin
       internal.sql-workbench.results.read:
         - ROLE_ops-reader
         - ROLE_ops-admin

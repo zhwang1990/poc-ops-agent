@@ -1,3 +1,5 @@
+import { jsonrepair } from "jsonrepair";
+
 const allowedMethods = new Set(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]);
 
 /**
@@ -12,7 +14,21 @@ const allowedMethods = new Set(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD",
  *   maxRequestBytes: number,
  *   maxResponseBytes: number,
  * }} AllowlistDraft
+ * @typedef {"object" | "array" | "string" | "number" | "boolean" | "null"} JsonHeroNodeKind
+ * @typedef {{
+ *   key: string,
+ *   path: string,
+ *   kind: JsonHeroNodeKind,
+ *   depth: number,
+ *   preview: string,
+ *   childCount: number,
+ *   value: unknown,
+ *   children: JsonHeroNode[],
+ * }} JsonHeroNode
+ * @typedef {{ok: true, root: JsonHeroNode} | {ok: false, error: string}} JsonHeroParseResult
  */
+const jsonIdentifierPattern = /^[A-Za-z_$][\w$]*$/u;
+const jsonParseErrorMessage = "JSON 解析失败，请检查对象、数组、逗号和引号。";
 
 /**
  * @param {string} source
@@ -20,6 +36,86 @@ const allowedMethods = new Set(["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD",
  */
 export function formatJsonDocument(source) {
   return transformJson(source, (value) => JSON.stringify(value, null, 2));
+}
+
+/**
+ * @param {string} source
+ * @returns {JsonHeroParseResult}
+ */
+export function parseJsonForHeroView(source) {
+  try {
+    return { ok: true, root: createJsonHeroNode(JSON.parse(source), "$", "$", 0) };
+  } catch {
+    return { ok: false, error: jsonParseErrorMessage };
+  }
+}
+
+/**
+ * Repairs JSON syntax locally with jsonrepair without sending content to the backend.
+ *
+ * @param {string} source
+ * @returns {JsonTransformResult}
+ */
+export function repairJsonDocument(source) {
+  try {
+    const repaired = jsonrepair(source.trim());
+    const parsed = JSON.parse(repaired);
+    return { ok: true, value: JSON.stringify(parsed, null, 2) };
+  } catch {
+    // Keep formatter errors consistent regardless of which local transform failed.
+  }
+  return { ok: false, error: jsonParseErrorMessage };
+}
+
+/**
+ * @param {string} parentPath
+ * @param {string} key
+ * @param {boolean} arrayItem
+ */
+export function createJsonPath(parentPath, key, arrayItem) {
+  if (arrayItem) {
+    return `${parentPath}[${key}]`;
+  }
+  if (jsonIdentifierPattern.test(key)) {
+    return parentPath === "$" ? `$.${key}` : `${parentPath}.${key}`;
+  }
+  return `${parentPath}[${JSON.stringify(key)}]`;
+}
+
+/**
+ * @param {JsonHeroNode} node
+ */
+export function formatJsonHeroNodeValue(node) {
+  return JSON.stringify(node.value, null, 2);
+}
+
+/**
+ * @param {JsonHeroNode} root
+ * @param {string} query
+ * @returns {{ matchingPaths: string[], ancestorPaths: string[] }}
+ */
+export function findJsonHeroMatches(root, query) {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) {
+    return { matchingPaths: [], ancestorPaths: [] };
+  }
+
+  /** @type {string[]} */
+  const matchingPaths = [];
+  /** @type {Set<string>} */
+  const ancestorPaths = new Set();
+
+  visitJsonHeroNodes(root, (node, ancestors) => {
+    const haystack = `${node.key} ${node.path} ${node.kind} ${node.preview}`.toLowerCase();
+    if (haystack.includes(normalizedQuery)) {
+      matchingPaths.push(node.path);
+      for (const ancestor of ancestors) {
+        ancestorPaths.add(ancestor.path);
+      }
+    }
+  });
+
+  return { matchingPaths, ancestorPaths: Array.from(ancestorPaths) };
 }
 
 /**
@@ -39,7 +135,92 @@ function transformJson(source, formatter) {
   try {
     return { ok: true, value: formatter(JSON.parse(source)) };
   } catch {
-    return { ok: false, error: "JSON 解析失败，请检查对象、数组、逗号和引号。" };
+    return { ok: false, error: jsonParseErrorMessage };
+  }
+}
+
+/**
+ * @param {unknown} value
+ * @param {string} key
+ * @param {string} path
+ * @param {number} depth
+ * @returns {JsonHeroNode}
+ */
+function createJsonHeroNode(value, key, path, depth) {
+  const kind = getJsonHeroNodeKind(value);
+  /** @type {Array<[string, unknown]>} */
+  const entries =
+    kind === "object"
+      ? Object.entries(/** @type {Record<string, unknown>} */ (value))
+      : kind === "array"
+        ? /** @type {unknown[]} */ (value).map((item, index) => [String(index), item])
+        : [];
+  const children = entries.map(([childKey, childValue]) =>
+    createJsonHeroNode(childValue, childKey, createJsonPath(path, childKey, kind === "array"), depth + 1),
+  );
+
+  return {
+    key,
+    path,
+    kind,
+    depth,
+    preview: createJsonHeroPreview(value, kind),
+    childCount: children.length,
+    value,
+    children,
+  };
+}
+
+/**
+ * @param {unknown} value
+ * @returns {JsonHeroNodeKind}
+ */
+function getJsonHeroNodeKind(value) {
+  if (value === null) {
+    return "null";
+  }
+  if (Array.isArray(value)) {
+    return "array";
+  }
+  if (typeof value === "object") {
+    return "object";
+  }
+  if (typeof value === "string") {
+    return "string";
+  }
+  if (typeof value === "number") {
+    return "number";
+  }
+  return "boolean";
+}
+
+/**
+ * @param {unknown} value
+ * @param {JsonHeroNodeKind} kind
+ */
+function createJsonHeroPreview(value, kind) {
+  if (kind === "object") {
+    return `${Object.keys(/** @type {Record<string, unknown>} */ (value)).length} fields`;
+  }
+  if (kind === "array") {
+    return `${/** @type {unknown[]} */ (value).length} items`;
+  }
+  const serialized = JSON.stringify(value);
+  if (typeof serialized !== "string") {
+    return String(value);
+  }
+  return serialized.length > 80 ? `${serialized.slice(0, 77)}...` : serialized;
+}
+
+/**
+ * @param {JsonHeroNode} node
+ * @param {(node: JsonHeroNode, ancestors: JsonHeroNode[]) => void} visitor
+ * @param {JsonHeroNode[]} ancestors
+ */
+function visitJsonHeroNodes(node, visitor, ancestors = []) {
+  visitor(node, ancestors);
+  for (const child of node.children) {
+    visitJsonHeroNodes(child, visitor, [...ancestors, node]);
   }
 }
 
@@ -96,10 +277,12 @@ export function validateAllowlistDraft(draft) {
 
 /**
  * @param {string} secret
+ * @param {string} [label]
  */
-export function previewSecretInput(secret) {
+export function previewSecretInput(secret, label = "临时凭据") {
+  const labelPrefix = /^[A-Za-z0-9]/u.test(label) ? ` ${label}` : label;
   if (!secret) {
-    return "未输入临时凭据";
+    return `未输入${labelPrefix}`;
   }
-  return `已输入 ${secret.length} 位临时凭据，本页不会在历史或预览中显示明文。`;
+  return `已输入 ${secret.length} 位${labelPrefix}，本页不会在历史或预览中显示明文。`;
 }
