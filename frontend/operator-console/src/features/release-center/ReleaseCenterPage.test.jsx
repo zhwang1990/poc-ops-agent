@@ -22,7 +22,8 @@ describe("ReleaseCenterPage", () => {
 
     expect(releaseCenterSource).toContain("PageToolbar.module.css");
     expect(releaseCenterSource).toContain("styles.summaryBand} ${toolbarStyles.surface}");
-    expect(pageToolbarSurfaceRule).toContain("border-radius: 14px");
+    expect(pageToolbarSurfaceRule).toContain("min-height: 56px");
+    expect(pageToolbarSurfaceRule).toContain("border-radius: 12px");
     expect(pageToolbarSurfaceRule).toContain("backdrop-filter: blur(18px)");
     expect(summaryRule).not.toContain("background: var(--release-surface)");
     expect(summaryRule).toContain("grid-template-columns: max-content minmax(0, 1fr)");

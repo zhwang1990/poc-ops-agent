@@ -40,6 +40,11 @@ describe("AppShell styles", () => {
 
     expect(navRule).toContain("flex: 1 1 auto");
     expect(navRule).toContain("min-height: 0");
+    expect(navRule).toContain("grid-auto-rows: max-content");
+    expect(navRule).toContain("align-content: start");
+    expect(navRule).toContain("gap: clamp(0.375rem, 0.75vh, 0.5rem)");
+    expect(navRule).not.toContain("align-content: stretch");
+    expect(navRule).not.toContain("gap: 10px");
     expect(navRule).toContain("overflow-y: auto");
     expect(navRule).toContain("transform: translateY(-3px)");
     expect(sidebarFooterRule).toContain("flex: 0 0 auto");
@@ -79,6 +84,8 @@ describe("AppShell styles", () => {
 
   it("recreates the legacy tactile navigation badge while keeping the svg crisp", () => {
     const linkRule = appShellCss.match(/[.]navLink\s*[{][^}]+[}]/u)?.[0] ?? "";
+    const iconOnlyLinkRule =
+      appShellCss.match(/[.]iconOnlyShell\s+[.]navLink\s*[{][^}]+[}]/u)?.[0] ?? "";
     const iconRule = appShellCss.match(/[.]navIcon\s*[{][^}]+[}]/u)?.[0] ?? "";
     const iconInnerLayerRule = appShellCss.match(/[.]navIcon::before\s*[{][^}]+[}]/u)?.[0] ?? "";
     const symbolRule = appShellCss.match(/[.]navSymbol\s*[{][^}]+[}]/u)?.[0] ?? "";
@@ -91,24 +98,48 @@ describe("AppShell styles", () => {
 
     expect(appShellSource).toContain("className={styles.navSymbol}");
     expect(linkRule).toContain("--nav-mark: var(--nav-color)");
+    expect(linkRule).toContain("--nav-item-height: clamp(3rem, 4.75vh, 3.125rem)");
+    expect(linkRule).toContain("--nav-icon-column: clamp(2.75rem, 4.45vh, 3rem)");
+    expect(linkRule).toContain("--nav-icon-size: clamp(2.25rem, 3.55vh, 2.375rem)");
+    expect(linkRule).toContain("--nav-symbol-size: clamp(1.25rem, 2.05vh, 1.375rem)");
+    expect(linkRule).toContain("--nav-glyph-size: clamp(1.0625rem, 1.75vh, 1.1875rem)");
     expect(linkRule).toContain("--nav-symbol-radius: 10px");
-    expect(linkRule).toContain("grid-template-columns: 54px minmax(0, 1fr) 12px");
-    expect(linkRule).toContain("min-height: 60px");
-    expect(iconRule).toContain("width: 44px");
-    expect(iconRule).toContain("height: 44px");
+    expect(linkRule).toContain(
+      "grid-template-columns: var(--nav-icon-column) minmax(0, 1fr) 0.625rem",
+    );
+    expect(linkRule).toContain("min-height: var(--nav-item-height)");
+    expect(linkRule).toContain("padding: 0.3125rem 0.6875rem");
+    expect(linkRule).not.toContain("grid-template-columns: 46px minmax(0, 1fr) 10px");
+    expect(linkRule).not.toContain("grid-template-columns: 54px minmax(0, 1fr) 12px");
+    expect(linkRule).not.toContain("min-height: 48px");
+    expect(linkRule).not.toContain("min-height: 56px");
+    expect(linkRule).not.toContain("min-height: 60px");
+    expect(linkRule).not.toContain("padding: 5px 11px");
+    expect(linkRule).not.toContain("padding: 7px 11px");
+    expect(iconOnlyLinkRule).toContain("grid-template-columns: var(--nav-icon-column)");
+    expect(iconOnlyLinkRule).toContain("padding: 0.3125rem");
+    expect(iconOnlyLinkRule).not.toContain("grid-template-columns: 54px");
+    expect(iconOnlyLinkRule).not.toContain("padding: 5px");
+    expect(iconOnlyLinkRule).not.toContain("padding: 7px");
+    expect(iconRule).toContain("width: var(--nav-icon-size)");
+    expect(iconRule).toContain("height: var(--nav-icon-size)");
+    expect(iconRule).not.toContain("width: 36px");
+    expect(iconRule).not.toContain("height: 36px");
+    expect(iconRule).not.toContain("width: 44px");
+    expect(iconRule).not.toContain("height: 44px");
     expect(iconRule).toContain("box-shadow:");
     expect(iconRule).toContain("inset 0 1px 0");
-    expect(iconInnerLayerRule).toContain("inset: 7px");
-    expect(symbolRule).toContain("width: 25px");
-    expect(symbolRule).toContain("height: 25px");
+    expect(iconInnerLayerRule).toContain("inset: clamp(0.3125rem, 0.58vh, 0.375rem)");
+    expect(symbolRule).toContain("width: var(--nav-symbol-size)");
+    expect(symbolRule).toContain("height: var(--nav-symbol-size)");
     expect(symbolRule).toContain("background: var(--nav-mark)");
     expect(symbolRule).toContain("inset 0 -3px 0 rgba(31, 45, 61, 0.16)");
     expect(symbolDetailRule).toContain("border: 2px solid rgba(255, 255, 255, 0.72)");
     expect(symbolSparkRule).toContain("top: var(--nav-spark-y)");
     expect(symbolSparkRule).toContain("left: var(--nav-spark-x)");
     expect(appShellCss).not.toContain("filter: drop-shadow");
-    expect(glyphRule).toContain("width: 22px");
-    expect(glyphRule).toContain("height: 22px");
+    expect(glyphRule).toContain("width: var(--nav-glyph-size)");
+    expect(glyphRule).toContain("height: var(--nav-glyph-size)");
     expect(glyphRule).toContain("shape-rendering: geometricPrecision");
     expect(appShellSource.indexOf('label: "总览"')).toBeLessThan(
       appShellSource.indexOf('label: "Agent 工作区"'),

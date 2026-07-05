@@ -57,10 +57,11 @@ describe("As400ObjectManagementPage toolbar", () => {
     expect(as400Css).not.toMatch(/(?:^|\n)[.]primaryDisabled\s*[{,]/u);
     expect(modeToolbarRule).toContain("--page-toolbar-accent: var(--agent-blue)");
     expect(pageToolbarCss).toContain(".actionGroup");
-    expect(pageToolbarSurfaceRule).toContain("border-radius: 14px");
+    expect(pageToolbarSurfaceRule).toContain("min-height: 56px");
+    expect(pageToolbarSurfaceRule).toContain("border-radius: 12px");
     expect(pageToolbarSurfaceRule).toContain("backdrop-filter: blur(18px)");
     expect(pageToolbarButtonRule).toContain("height: 38px");
-    expect(pageToolbarButtonRule).toContain("border-radius: 11px");
+    expect(pageToolbarButtonRule).toContain("border-radius: 10px");
   });
 
   test("keeps AS400 workspace expansion controlled by the top toolbar", async () => {
