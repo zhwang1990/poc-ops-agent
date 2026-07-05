@@ -12,7 +12,7 @@ export const auditEventSchema = z
     resource: nonBlankString,
     policyVersion: nonBlankString,
     result: nonBlankString,
-    reason: nonBlankString,
+    reason: z.string(),
     timestamp: z.iso.datetime({ offset: true }),
   })
   .strict();

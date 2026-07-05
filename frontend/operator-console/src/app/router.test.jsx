@@ -469,7 +469,7 @@ describe("operator console routes", () => {
     expect(screen.queryByRole("button", { name: "回放事件" })).not.toBeInTheDocument();
   });
 
-  it("renders the audit records workspace from the prototype while keeping the shared shell", async () => {
+  it("renders the audit records workspace with real audit states while keeping the shared shell", async () => {
     renderAt("/audit");
 
     expect(screen.getByRole("navigation", { name: "主导航" })).toBeVisible();
@@ -482,10 +482,11 @@ describe("operator console routes", () => {
     expect(screen.getByRole("search", { name: "审计记录筛选" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "审计账本" })).toBeInTheDocument();
     expect(screen.getByRole("complementary", { name: "证据详情" })).toBeInTheDocument();
-    expect(screen.getByText("SESSION_AUTHORIZED")).toBeInTheDocument();
-    expect(screen.getByText("POLICY_EVALUATED")).toBeInTheDocument();
-    expect(screen.getByText("AUDIT_SEALED")).toBeInTheDocument();
-    expect(screen.getByText("sha256:e91b")).toBeInTheDocument();
+    expect(await screen.findByText("暂无审计记录")).toBeInTheDocument();
+    expect(screen.queryByText("SESSION_AUTHORIZED")).not.toBeInTheDocument();
+    expect(screen.queryByText("POLICY_EVALUATED")).not.toBeInTheDocument();
+    expect(screen.queryByText("AUDIT_SEALED")).not.toBeInTheDocument();
+    expect(screen.queryByText("sha256:e91b")).not.toBeInTheDocument();
     expect(screen.queryByText("当前页面只展示 P1 只读范围内的占位入口，后续任务再接入真实接口。")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "执行写操作" })).not.toBeInTheDocument();
   });

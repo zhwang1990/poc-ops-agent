@@ -10,99 +10,44 @@ import { WorkspacePageFrame } from "../../components/layout/WorkspacePageFrame.j
 import { WorkspaceStatusBar } from "../../components/layout/WorkspaceStatusBar.jsx";
 import styles from "./AuditRecordsPage.module.css";
 
-const auditEntries = [
-  {
-    color: "blue",
-    eventType: "SESSION_AUTHORIZED",
-    hash: "sha256:a18c",
-    result: "ALLOW",
-    sequence: 1,
-    summary: "operator=ops.reader@company.internal / role=agent-reader",
-    time: "10:42:11",
-  },
-  {
-    color: "red",
-    eventType: "POLICY_EVALUATED",
-    hash: "sha256:bc72",
-    result: "DENY_WRITE",
-    sequence: 2,
-    summary: "policy-v1 返回 READ_ONLY，禁止写操作和脚本执行",
-    time: "10:42:13",
-  },
-  {
-    color: "green",
-    eventType: "SKILL_SELECTED",
-    hash: "sha256:73df",
-    result: "VALIDATED",
-    sequence: 3,
-    summary: "node-health-read@1.1.0 / schema 与签名校验通过",
-    time: "10:42:15",
-  },
-  {
-    color: "yellow",
-    eventType: "WORKER_ACCEPTED",
-    hash: "sha256:98aa",
-    result: "ACCEPTED",
-    sequence: 4,
-    summary: "受限 Worker 接收只读执行请求，幂等键已锁定",
-    time: "10:42:18",
-  },
-  {
-    color: "dark",
-    eventType: "AUDIT_SEALED",
-    hash: "sha256:e91b",
-    result: "SEALED",
-    sequence: 5,
-    summary: "结果摘要、traceId 与参数哈希写入审计账本",
-    time: "10:42:26",
-  },
-];
+const ALL_ACTIONS = "全部 action";
+const ALL_RESULTS = "全部结果";
+const ALL_TIME = "全部时间";
+const LAST_24_HOURS = "最近 24 小时";
+const LAST_7_DAYS = "最近 7 天";
 
-const proofItems = [
-  { color: "blue", label: "Operator", value: "ops.reader@company.internal" },
-  { color: "red", label: "Policy Version", value: "policy-v1 / READ_ONLY" },
-  { color: "green", label: "Skill Version", value: "node-health-read@1.1.0" },
-  { color: "yellow", label: "Parameter Hash", value: "node-a / development / sha256:73df" },
-  { color: "dark", label: "Retention", value: "保留 180 天，支持导出与复核" },
-];
-
-const eventFilterOptions = ["全部", "SESSION", "POLICY", "SKILL", "WORKER", "AUDIT"];
-const resultFilterOptions = ["全部", "ALLOW", "DENY_WRITE", "VALIDATED", "ACCEPTED", "SEALED"];
+const timeFilterOptions = [ALL_TIME, LAST_24_HOURS, LAST_7_DAYS];
 
 export function AuditRecordsPage() {
   const [query, setQuery] = useState("");
+  const [actionFilter, setActionFilter] = useState(ALL_ACTIONS);
+  const [resultFilter, setResultFilter] = useState(ALL_RESULTS);
+  const [timeFilter, setTimeFilter] = useState(ALL_TIME);
   const auditQuery = useQuery({
     queryKey: ["audit-events", 200],
     queryFn: () => loadRecentAuditEvents({ limit: 200 }),
   });
-  const liveEntries = auditQuery.data?.events.map(toAuditEntry) ?? [];
-  const displayedEntries = liveEntries.length > 0 ? liveEntries : auditEntries;
-  const [eventFilter, setEventFilter] = useState("全部");
-  const [resultFilter, setResultFilter] = useState("全部");
-  const skillAuditEntries = useMemo(
-    () => displayedEntries.filter(isSkillExecutionAudit).slice(0, 3),
-    [displayedEntries],
+  const entries = useMemo(
+    () => auditQuery.data?.events.map(toAuditEntry) ?? [],
+    [auditQuery.data?.events],
   );
-
-  const filteredEntries = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
-
-    return displayedEntries.filter((entry) => {
-      const matchesQuery =
-        normalizedQuery.length === 0 ||
-        [entry.eventType, entry.hash, entry.result, entry.summary, entry.time]
-          .join(" ")
-          .toLowerCase()
-          .includes(normalizedQuery);
-      const matchesEvent =
-        eventFilter === "全部" || entry.eventType.startsWith(eventFilter);
-      const matchesResult = resultFilter === "全部" || entry.result === resultFilter;
-
-      return matchesQuery && matchesEvent && matchesResult;
-    });
-  }, [displayedEntries, eventFilter, query, resultFilter]);
-
-  const missingCount = displayedEntries.length - filteredEntries.length;
+  const actionOptions = useMemo(
+    () => [ALL_ACTIONS, ...uniqueSorted(entries.map((entry) => entry.action))],
+    [entries],
+  );
+  const resultOptions = useMemo(
+    () => [ALL_RESULTS, ...uniqueSorted(entries.map((entry) => entry.result))],
+    [entries],
+  );
+  const filteredEntries = useMemo(
+    () => filterEntries(entries, { actionFilter, query, resultFilter, timeFilter }),
+    [actionFilter, entries, query, resultFilter, timeFilter],
+  );
+  const skillAuditEntries = useMemo(
+    () => filteredEntries.filter(isSkillExecutionAudit).slice(0, 3),
+    [filteredEntries],
+  );
+  const latestEntry = filteredEntries[0] ?? entries[0] ?? null;
 
   return (
     <WorkspacePageFrame className={styles.auditCanvas}>
@@ -117,36 +62,36 @@ export function AuditRecordsPage() {
         >
           <label className={styles.searchBox}>
             <Search aria-hidden="true" size={15} strokeWidth={2.5} />
-            <span className={styles.visuallyHidden}>搜索 workflow / operator / traceId</span>
+            <span className={styles.visuallyHidden}>搜索操作者、action、resource、traceId</span>
             <input
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="搜索 workflow / operator / traceId"
+              placeholder="搜索操作者、action、resource、traceId"
               type="search"
               value={query}
             />
           </label>
 
           <FilterSelect
-            label="事件"
-            onChange={setEventFilter}
-            options={eventFilterOptions}
-            value={eventFilter}
+            label="Action"
+            onChange={setActionFilter}
+            options={actionOptions}
+            value={actionFilter}
           />
           <FilterSelect
             label="结果"
             onChange={setResultFilter}
-            options={resultFilterOptions}
+            options={resultOptions}
             value={resultFilter}
           />
           <FilterSelect
             label="时间"
-            onChange={() => {}}
-            options={["近 24h"]}
-            value="近 24h"
+            onChange={setTimeFilter}
+            options={timeFilterOptions}
+            value={timeFilter}
           />
 
           <span className={styles.filterCount}>
-            {filteredEntries.length} 条记录 / {missingCount} 缺失
+            {filteredEntries.length} 条记录 / {entries.length} 总量
           </span>
         </form>
 
@@ -156,47 +101,58 @@ export function AuditRecordsPage() {
 
         <div className={styles.auditLayout}>
           <section
+            aria-label="审计账本"
             aria-labelledby="audit-ledger-title"
             className={styles.ledger}
           >
             <h2 id="audit-ledger-title">审计账本</h2>
             <div className={styles.auditChain}>
-              {filteredEntries.map((entry) => (
-                <article
-                  className={`${styles.auditEntry} ${styles[entry.color]}`}
-                  key={`${entry.sequence}-${entry.hash}`}
-                >
-                  <div className={styles.auditTime}>
-                    <strong>{entry.time}</strong>
-                    <span>sequence {entry.sequence}</span>
-                  </div>
-                  <div className={styles.auditMain}>
-                    <strong>{entry.eventType}</strong>
-                    <span>{entry.summary}</span>
-                  </div>
-                  <span className={styles.auditHash}>{entry.hash}</span>
-                  <span className={styles.auditHash}>{entry.result}</span>
-                </article>
-              ))}
+              {auditQuery.isLoading ? (
+                <AuditSkeleton />
+              ) : null}
+              {auditQuery.isError ? (
+                <StateMessage title="审计记录读取失败" />
+              ) : null}
+              {!auditQuery.isLoading && !auditQuery.isError && entries.length === 0 ? (
+                <StateMessage title="暂无审计记录" />
+              ) : null}
+              {!auditQuery.isLoading && !auditQuery.isError && entries.length > 0 && filteredEntries.length === 0 ? (
+                <StateMessage title="暂无匹配记录" />
+              ) : null}
+              {!auditQuery.isLoading && !auditQuery.isError
+                ? filteredEntries.map((entry) => (
+                    <article
+                      className={`${styles.auditEntry} ${styles[entry.color]}`}
+                      key={entry.eventId}
+                    >
+                      <div className={styles.auditTime}>
+                        <strong>{entry.time}</strong>
+                        <span>{entry.date}</span>
+                      </div>
+                      <div className={styles.auditMain}>
+                        <strong>{entry.action}</strong>
+                        <span>{entry.resource}</span>
+                        <small>{entry.subject}</small>
+                      </div>
+                      <span className={styles.auditHash}>{entry.traceId}</span>
+                      <span className={styles.auditHash}>{entry.result}</span>
+                    </article>
+                  ))
+                : null}
             </div>
           </section>
 
           <aside aria-label="证据详情" className={styles.detail}>
             <h2>证据详情</h2>
-            <div className={styles.proofList}>
-              {proofItems.map((item) => (
-                <article
-                  className={`${styles.proofItem} ${styles[item.color]}`}
-                  key={item.label}
-                >
-                  <strong>{item.label}</strong>
-                  <span>{item.value}</span>
-                </article>
-              ))}
+            <div className={styles.detailRows}>
+              <DetailRow label="Operator" value={latestEntry?.subject ?? "-"} />
+              <DetailRow label="Policy" value={latestEntry?.policyVersion ?? "-"} />
+              <DetailRow label="Request" value={latestEntry?.requestId ?? "-"} />
+              <DetailRow label="Reason" value={latestEntry?.reason || "-"} />
             </div>
             <div className={styles.retentionNote}>
               <LockKeyhole aria-hidden="true" size={16} strokeWidth={2.5} />
-              <span>仅展示审计证据，不开放生产写执行。</span>
+              <span>统一审计链路只读展示，授权结果以服务端策略为准。</span>
             </div>
           </aside>
         </div>
@@ -213,18 +169,18 @@ function SkillAuditHighlights({ entries }) {
     <section aria-label="最近 Skill 执行审计" className={styles.skillAuditHighlights}>
       <div className={styles.skillAuditTitle}>
         <strong>最近 Skill 执行审计</strong>
-        <span>优先展示 Agent Tool 执行授权结果</span>
+        <span>Agent Tool 授权结果</span>
       </div>
       <div className={styles.skillAuditList}>
         {entries.map((entry) => (
           <article
             className={`${styles.skillAuditItem} ${styles[entry.color]}`}
-            key={`${entry.sequence}-${entry.hash}-highlight`}
+            key={`${entry.eventId}-highlight`}
           >
-            <strong>{entry.summary}</strong>
-            <span>{entry.eventType}</span>
+            <strong>{entry.resource}</strong>
+            <span>{entry.action}</span>
             <span>{entry.result}</span>
-            <small>{entry.hash}</small>
+            <small>{entry.traceId}</small>
           </article>
         ))}
       </div>
@@ -232,19 +188,54 @@ function SkillAuditHighlights({ entries }) {
   );
 }
 
+function AuditSkeleton() {
+  return [0, 1, 2].map((item) => (
+    <div aria-hidden="true" className={styles.skeletonEntry} key={item} />
+  ));
+}
+
+/**
+ * @param {{ title: string }} props
+ */
+function StateMessage({ title }) {
+  return (
+    <div className={styles.emptyState}>
+      <strong>{title}</strong>
+    </div>
+  );
+}
+
+/**
+ * @param {{ label: string, value: string }} props
+ */
+function DetailRow({ label, value }) {
+  return (
+    <div className={styles.detailRow}>
+      <strong>{label}</strong>
+      <span>{value}</span>
+    </div>
+  );
+}
+
 /**
  * @param {import("../../schemas/audit-schemas.js").AuditEvent} event
- * @param {number} index
  */
-function toAuditEntry(event, index) {
+function toAuditEntry(event) {
+  const occurredAt = new Date(event.timestamp);
   return {
+    action: event.action,
     color: auditTone(event.result),
-    eventType: event.action,
-    hash: event.traceId,
+    date: formatAuditDate(occurredAt),
+    eventId: event.eventId,
+    occurredAt,
+    policyVersion: event.policyVersion,
+    reason: event.reason,
+    requestId: event.requestId,
+    resource: event.resource,
     result: event.result,
-    sequence: index + 1,
-    summary: event.resource,
-    time: formatAuditTime(event.timestamp),
+    subject: event.subject,
+    time: formatAuditTime(occurredAt, event.timestamp),
+    traceId: event.traceId,
   };
 }
 
@@ -262,17 +253,103 @@ function auditTone(result) {
  */
 function isSkillExecutionAudit(entry) {
   return (
-    entry.eventType === "internal.agent.tool.execute" ||
-    entry.eventType.endsWith(".tool.execute")
+    entry.action === "internal.agent.tool.execute" ||
+    entry.action.endsWith(".tool.execute")
   );
 }
 
 /**
- * @param {string} timestamp
+ * @param {ReturnType<typeof toAuditEntry>[]} entries
+ * @param {{
+ *   actionFilter: string,
+ *   query: string,
+ *   resultFilter: string,
+ *   timeFilter: string,
+ * }} filters
  */
-function formatAuditTime(timestamp) {
-  const time = timestamp.match(/T(\d{2}:\d{2}:\d{2})/u);
-  return time?.[1] ?? timestamp;
+function filterEntries(entries, filters) {
+  const normalizedQuery = filters.query.trim().toLowerCase();
+  return entries.filter((entry) => {
+    const matchesQuery = normalizedQuery.length === 0 ||
+      [
+        entry.action,
+        entry.resource,
+        entry.result,
+        entry.subject,
+        entry.traceId,
+        entry.requestId,
+        entry.reason,
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(normalizedQuery);
+    const matchesAction = filters.actionFilter === ALL_ACTIONS ||
+      entry.action === filters.actionFilter;
+    const matchesResult = filters.resultFilter === ALL_RESULTS ||
+      entry.result === filters.resultFilter;
+    const matchesTime = isWithinTimeRange(entry.occurredAt, filters.timeFilter);
+
+    return matchesQuery && matchesAction && matchesResult && matchesTime;
+  });
+}
+
+/**
+ * @param {Date} occurredAt
+ * @param {string} timeFilter
+ */
+function isWithinTimeRange(occurredAt, timeFilter) {
+  if (timeFilter === ALL_TIME) {
+    return true;
+  }
+  if (Number.isNaN(occurredAt.getTime())) {
+    return false;
+  }
+  const ageMs = Date.now() - occurredAt.getTime();
+  if (timeFilter === LAST_24_HOURS) {
+    return ageMs >= 0 && ageMs <= 24 * 60 * 60 * 1000;
+  }
+  if (timeFilter === LAST_7_DAYS) {
+    return ageMs >= 0 && ageMs <= 7 * 24 * 60 * 60 * 1000;
+  }
+  return true;
+}
+
+/**
+ * @param {Date} occurredAt
+ * @param {string} fallback
+ */
+function formatAuditTime(occurredAt, fallback) {
+  if (Number.isNaN(occurredAt.getTime())) {
+    return fallback;
+  }
+  return new Intl.DateTimeFormat("zh-CN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).format(occurredAt);
+}
+
+/**
+ * @param {Date} occurredAt
+ */
+function formatAuditDate(occurredAt) {
+  if (Number.isNaN(occurredAt.getTime())) {
+    return "-";
+  }
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+  }).format(occurredAt);
+}
+
+/**
+ * @param {string[]} values
+ */
+function uniqueSorted(values) {
+  return Array.from(new Set(values.filter(Boolean))).sort((left, right) =>
+    left.localeCompare(right),
+  );
 }
 
 /**
@@ -288,7 +365,7 @@ function FilterSelect({ label, onChange, options, value }) {
     <label className={styles.filterSelect}>
       <span>{label}</span>
       <select
-        aria-label={`${label}筛选`}
+        aria-label={label === "Action" ? "Action 筛选" : `${label}筛选`}
         onChange={(event) => onChange(event.target.value)}
         value={value}
       >
