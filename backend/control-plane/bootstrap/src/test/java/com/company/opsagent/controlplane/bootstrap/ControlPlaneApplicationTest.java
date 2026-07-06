@@ -250,6 +250,7 @@ class ControlPlaneApplicationTest {
         .expectStatus().isOk();
 
     AuditEvent event = auditTrail.latest().orElseThrow();
+    Assertions.assertEquals(1, auditTrail.snapshot().size());
     Assertions.assertEquals("alice", event.subject());
     Assertions.assertEquals("internal.health.read", event.action());
     Assertions.assertEquals("/internal/healthz", event.resource());

@@ -51,18 +51,32 @@ describe("AuditRecordsPage", () => {
     const skillAuditPanel = await screen.findByLabelText("最近 Skill 执行审计");
     const ledger = screen.getByRole("region", { name: "审计账本" });
 
-    expect(within(skillAuditPanel).getByText("internal.agent.tool.execute")).toBeInTheDocument();
-    expect(within(ledger).getByText("internal.agent.tool.execute")).toBeInTheDocument();
-    expect(screen.getAllByText("weather-current-read:1.0.0")).toHaveLength(2);
-    expect(screen.getAllByText("ALLOW").length).toBeGreaterThanOrEqual(2);
-    expect(screen.getAllByText("trace-weather-1")).toHaveLength(2);
+    expect(within(skillAuditPanel).getByText("Skill 执行授权")).toBeInTheDocument();
+    expect(within(ledger).getByText("Skill 执行授权")).toBeInTheDocument();
+    expect(screen.getAllByText("weather-current-read:1.0.0").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText("允许").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText("trace-weather-1").length).toBeGreaterThanOrEqual(2);
+  });
+
+  test("labels audited objects and collapses adjacent duplicate events", async () => {
+    renderPage();
+
+    const ledger = screen.getByRole("region", { name: "审计账本" });
+    const weatherRecords = await within(ledger).findAllByRole("button", {
+      name: /weather-current-read:1\.0\.0/u,
+    });
+
+    expect(weatherRecords).toHaveLength(1);
+    expect(weatherRecords[0]).toHaveTextContent("Skill 执行授权");
+    expect(weatherRecords[0]).toHaveTextContent("合并 ×2");
+    expect(screen.getByText("3 / 4 总量 · 合并 1")).toBeInTheDocument();
   });
 
   test("surfaces recent Skill execution audits above noisy read events", async () => {
     server.use(
       http.get("/internal/audit/events", () =>
         HttpResponse.json({
-          total: 4,
+          total: auditEvents.length + 1,
           events: [
             {
               eventId: "audit-read-1",
@@ -86,10 +100,28 @@ describe("AuditRecordsPage", () => {
 
     const skillAuditPanel = await screen.findByLabelText("最近 Skill 执行审计");
 
-    expect(skillAuditPanel).toHaveTextContent("internal.agent.tool.execute");
+    expect(skillAuditPanel).toHaveTextContent("Skill 执行授权");
     expect(skillAuditPanel).toHaveTextContent("weather-current-read:1.0.0");
-    expect(skillAuditPanel).toHaveTextContent("ALLOW");
+    expect(skillAuditPanel).toHaveTextContent("允许");
     expect(skillAuditPanel).toHaveTextContent("trace-weather-1");
+  });
+
+  test("updates evidence details when an audit ledger record is selected", async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    const detail = await screen.findByLabelText("证据详情");
+    expect(await within(detail).findByText("request-weather-1")).toBeInTheDocument();
+    expect(within(detail).getByText("weather-current-read:1.0.0")).toBeInTheDocument();
+    expect(within(detail).getByText("role is allowed")).toBeInTheDocument();
+
+    const ledger = screen.getByRole("region", { name: "审计账本" });
+    const agentRecord = within(ledger).getByRole("button", { name: /trace-agent-1/u });
+    await user.click(agentRecord);
+
+    expect(within(detail).getByText("request-agent-1")).toBeInTheDocument();
+    expect(within(detail).getByText("trace-agent-1")).toBeInTheDocument();
+    expect(within(detail).getByText("/api/v1/agent/diagnostics")).toBeInTheDocument();
   });
 
   test("shows an empty state instead of prototype records when no audit events exist", async () => {
@@ -123,7 +155,7 @@ describe("AuditRecordsPage", () => {
     await user.clear(screen.getByPlaceholderText("搜索操作者、action、resource、traceId"));
     await user.selectOptions(screen.getByLabelText("结果筛选"), "DENY");
 
-    expect(within(ledger).getByText("release.plan.execute")).toBeInTheDocument();
+    expect(within(ledger).getByText("发布计划执行")).toBeInTheDocument();
     expect(within(ledger).queryByText("weather-current-read:1.0.0")).not.toBeInTheDocument();
 
     await user.selectOptions(screen.getByLabelText("结果筛选"), "全部结果");
@@ -150,6 +182,18 @@ const auditEvents = [
     result: "ALLOW",
     reason: "role is allowed",
     timestamp: "2026-06-24T10:00:01Z",
+  },
+  {
+    eventId: "audit-weather-duplicate-1",
+    requestId: "request-weather-1",
+    traceId: "trace-weather-1",
+    subject: "operator-1",
+    action: "internal.agent.tool.execute",
+    resource: "weather-current-read:1.0.0",
+    policyVersion: "rbac-v1",
+    result: "ALLOW",
+    reason: "role is allowed",
+    timestamp: "2026-06-24T10:00:00.998Z",
   },
   {
     eventId: "audit-agent-1",

@@ -8,6 +8,9 @@
   --audit-yellow: oklch(58% 0.126 72deg);
   --audit-dark: oklch(31% 0.027 247deg);
   --audit-surface: oklch(98% 0.006 230deg);
+  --audit-sidebar-width: 324px;
+  --audit-count-width: calc(var(--audit-sidebar-width) / 2);
+  --audit-layout-gap: 9px;
   grid-template-rows: auto minmax(0, 1fr);
   overflow: auto;
 }
@@ -17,11 +20,12 @@
 }
 
 .workspaceBody {
-  display: grid;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
   min-height: 0;
-  grid-template-rows: auto auto minmax(0, 1fr);
-  gap: 20px;
-  padding: 20px 24px 24px;
+  gap: var(--audit-layout-gap);
+  padding: 0;
 }
 
 .filterBar,
@@ -135,11 +139,21 @@
 }
 
 .filterBar {
-  display: flex;
+  display: grid;
   min-height: 78px;
   align-items: center;
+  grid-template-columns: minmax(0, 1fr) var(--audit-count-width);
+  column-gap: var(--audit-layout-gap);
+  row-gap: 12px;
+  padding: 18px 0;
+}
+
+.filterControls {
+  display: flex;
+  min-width: 0;
+  align-items: center;
   gap: 12px;
-  padding: 18px 20px;
+  padding-left: 20px;
 }
 
 .searchBox {
@@ -174,6 +188,7 @@
 
 .filterSelect {
   display: grid;
+  flex: 0 0 140px;
   width: 140px;
   min-width: 120px;
   grid-template-columns: auto minmax(0, 1fr);
@@ -184,6 +199,11 @@
   border: 1px solid color-mix(in srgb, var(--audit-blue) 18%, transparent);
   border-radius: 8px;
   background: color-mix(in srgb, var(--audit-surface) 78%, transparent);
+}
+
+.actionFilterSelect {
+  flex-basis: 302px;
+  width: 302px;
 }
 
 .filterSelect span {
@@ -204,11 +224,16 @@
 }
 
 .filterCount {
+  position: relative;
+  left: 1px;
   display: inline-flex;
-  flex: 0 0 auto;
+  width: 100%;
   align-items: center;
+  justify-content: center;
+  justify-self: stretch;
   gap: 8px;
   min-height: 34px;
+  min-width: 0;
   padding: 0 14px;
   border: 1px solid color-mix(in srgb, var(--audit-dark) 12%, transparent);
   border-radius: 999px;
@@ -230,15 +255,28 @@
 
 .auditLayout {
   display: grid;
+  flex: 1 1 auto;
   min-height: 0;
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 324px);
-  gap: var(--workspace-layout-gap);
+  grid-template-columns: minmax(0, 1fr) var(--audit-sidebar-width);
+  gap: var(--audit-layout-gap);
 }
 
 .ledger,
 .detail {
   padding: 22px;
   overflow: hidden;
+}
+
+.ledger {
+  display: grid;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.detail {
+  display: grid;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
 .ledger h2::after,
@@ -253,16 +291,22 @@
 .auditChain {
   position: relative;
   display: grid;
+  min-height: 0;
+  align-content: start;
   gap: 14px;
   margin-top: 20px;
-  padding-left: 22px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 4px 18px 0;
+  scrollbar-gutter: stable;
 }
 
 .auditChain::before {
   position: absolute;
-  top: 9px;
-  bottom: 9px;
-  left: 7px;
+  top: 16px;
+  bottom: 16px;
+  left: 19px;
   width: 2px;
   border-radius: 999px;
   background: linear-gradient(180deg, color-mix(in srgb, var(--audit-blue) 28%, transparent), color-mix(in srgb, var(--audit-green) 28%, transparent), color-mix(in srgb, var(--audit-red) 22%, transparent));
@@ -271,30 +315,55 @@
 
 .auditEntry {
   --entry-color: var(--audit-blue);
+  appearance: none;
   position: relative;
   display: grid;
-  grid-template-columns: minmax(86px, 0.34fr) minmax(0, 1fr) auto;
+  width: 100%;
+  grid-template-columns: minmax(86px, 108px) minmax(0, 1fr) max-content max-content;
   gap: 16px;
   align-items: center;
-  min-height: 66px;
-  padding: 12px 14px;
+  min-height: 74px;
+  padding: 12px 14px 12px 42px;
   border: 1px solid color-mix(in srgb, var(--entry-color) 18%, var(--audit-border));
   border-radius: 8px;
   background:
     radial-gradient(circle at 0% 20%, color-mix(in srgb, var(--entry-color) 12%, transparent), transparent 9rem),
     color-mix(in srgb, var(--audit-surface) 82%, transparent);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
 }
 
 .auditEntry::before {
   position: absolute;
-  left: -22px;
-  top: 24px;
+  left: 15px;
+  top: 50%;
   width: 10px;
   height: 10px;
+  transform: translateY(-50%);
   border-radius: 50%;
   background: var(--entry-color);
   box-shadow: 0 0 0 7px color-mix(in srgb, var(--entry-color) 12%, transparent);
   content: "";
+}
+
+.auditEntry:hover {
+  border-color: color-mix(in srgb, var(--entry-color) 32%, var(--audit-border));
+  background:
+    radial-gradient(circle at 0% 20%, color-mix(in srgb, var(--entry-color) 16%, transparent), transparent 9rem),
+    color-mix(in srgb, var(--audit-surface) 88%, transparent);
+}
+
+.auditEntry:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--entry-color) 34%, transparent);
+  outline-offset: 2px;
+}
+
+.auditEntrySelected {
+  border-color: color-mix(in srgb, var(--entry-color) 46%, var(--audit-border));
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--entry-color) 10%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--audit-surface) 90%, transparent);
 }
 
 .auditTime {
@@ -319,6 +388,7 @@
 
 .auditMain strong,
 .auditMain span,
+.auditMain small,
 .auditHash {
   min-width: 0;
   overflow: hidden;
@@ -338,7 +408,23 @@
   font-weight: 760;
 }
 
+.auditMain small {
+  color: color-mix(in srgb, var(--audit-muted) 86%, var(--audit-ink));
+  font-size: 11px;
+  font-weight: 760;
+}
+
+.auditBadges {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
 .auditHash {
+  justify-self: end;
+  max-width: 156px;
   padding: 7px 9px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--entry-color) 10%, var(--audit-surface));
@@ -348,10 +434,30 @@
   font-weight: 900;
 }
 
+.auditDuplicate {
+  flex: 0 0 auto;
+  padding: 6px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--entry-color) 16%, var(--audit-surface));
+  color: color-mix(in srgb, var(--entry-color) 78%, var(--audit-ink));
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.auditEntry > .auditHash:last-child {
+  min-width: 58px;
+  text-align: center;
+}
+
 .detailRows {
   display: grid;
+  min-height: 0;
   gap: 10px;
   margin-top: 20px;
+  overflow-y: auto;
+  padding-right: 2px;
+  scrollbar-gutter: stable;
 }
 
 .detailRow {
@@ -457,6 +563,7 @@
 }
 
 @media (max-width: 1180px) {
+  .filterBar,
   .skillAuditHighlights,
   .auditLayout {
     grid-template-columns: 1fr;
@@ -466,27 +573,55 @@
     grid-template-columns: 1fr;
   }
 
-  .filterBar {
+  .filterControls {
     flex-wrap: wrap;
   }
 
   .filterCount {
-    margin-left: auto;
+    left: 0;
+    margin-right: 20px;
+    width: max-content;
+    justify-self: end;
   }
 }
 
 @media (max-width: 760px) {
   .workspaceBody {
-    padding: 18px;
+    padding: 0;
   }
 
   .auditEntry {
     grid-template-columns: 1fr;
+    padding: 38px 14px 14px;
+  }
+
+  .auditEntry::before {
+    top: 18px;
+    transform: none;
+  }
+
+  .auditHash {
+    justify-self: start;
   }
 
   .filterSelect,
   .searchBox {
     width: 100%;
     flex-basis: 100%;
+  }
+
+  .filterControls,
+  .filterCount {
+    width: 100%;
+  }
+
+  .filterControls {
+    padding: 0 18px;
+  }
+
+  .filterCount {
+    width: calc(100% - 36px);
+    margin-right: 0;
+    justify-self: stretch;
   }
 }

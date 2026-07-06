@@ -132,8 +132,7 @@ public class SecurityConfiguration {
   /**
    * 构建统一的策略执行过滤器。
    */
-  @Bean
-  PolicyEnforcementWebFilter policyEnforcementWebFilter(
+  private PolicyEnforcementWebFilter policyEnforcementWebFilter(
       PolicyDecisionService policyDecisionService,
       AuditTrail auditTrail,
       ApiErrorResponseWriter apiErrorResponseWriter,
@@ -160,10 +159,24 @@ public class SecurityConfiguration {
   @Bean
   SecurityWebFilterChain securityWebFilterChain(
       ServerHttpSecurity http,
-      PolicyEnforcementWebFilter policyEnforcementWebFilter,
+      PolicyDecisionService policyDecisionService,
+      AuditTrail auditTrail,
+      ApiErrorResponseWriter apiErrorResponseWriter,
+      OperatorIdentityAuthenticator operatorIdentityAuthenticator,
+      AuthenticatedPrincipalOperatorIdentityResolver authenticatedPrincipalOperatorIdentityResolver,
+      ObjectProvider<IdentitySessionQueryService> identitySessionQueryServiceProvider,
+      ObjectProvider<BuiltInIdentityProperties> builtInIdentityPropertiesProvider,
       SecurityProperties securityProperties,
       ObjectProvider<ReactiveClientRegistrationRepository> clientRegistrationRepositoryProvider,
       ObjectProvider<LocalOidcProviderProperties> localOidcProviderPropertiesProvider) {
+    PolicyEnforcementWebFilter policyEnforcementWebFilter = policyEnforcementWebFilter(
+        policyDecisionService,
+        auditTrail,
+        apiErrorResponseWriter,
+        operatorIdentityAuthenticator,
+        authenticatedPrincipalOperatorIdentityResolver,
+        identitySessionQueryServiceProvider,
+        builtInIdentityPropertiesProvider);
     http
         .csrf(ServerHttpSecurity.CsrfSpec::disable)
         .httpBasic(ServerHttpSecurity.HttpBasicSpec::disable)
