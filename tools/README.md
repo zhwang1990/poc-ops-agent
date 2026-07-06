@@ -30,3 +30,8 @@ node tools/release/package-release.mjs --skip-tests
 ```cmd
 node tools\release\package-release.mjs --skip-tests --maven-command C:\tools\apache-maven\bin\mvn.cmd
 ```
+
+## SQL 凭据工具
+
+- `tools/sql-credentials/put-sql-credential.cmd`：使用 `cmd.exe` 和 JDK `java.exe` 将 SQL 工作台数据库密码写入 Worker 本地 `JCEKS` KeyStore。该工具不依赖 PowerShell 或 Maven Wrapper，成功时只输出凭据别名和 KeyStore 路径，不输出密码。
+- `tools/sql-credentials/test-sql-credential-tool.mjs`：验证 `.cmd` 入口可写入与 Worker 读取逻辑兼容的 `JCEKS` 凭据。

@@ -72,33 +72,22 @@ ops-agent:
 
 ## SQL 凭据 KeyStore 写入工具
 
-真实数据库密码必须先写入 Worker 本地 `JCEKS` KeyStore，操作台和控制面只引用 `credentialAlias`。当前仓库提供 `SqlCredentialKeyStoreTool` 写入工具；不要使用 `keytool -importpass` 手工导入数据库密码，因为当前 Worker 读取逻辑要求别名内容与 `JavaKeyStorePasswordProvider` 的 UTF-8 密码读取方式兼容。
+真实数据库密码必须先写入 Worker 本地 `JCEKS` KeyStore，操作台和控制面只引用 `credentialAlias`。当前仓库提供 `tools/sql-credentials/put-sql-credential.cmd` 写入工具；不要使用 `keytool -importpass` 手工导入数据库密码，因为当前 Worker 读取逻辑要求别名内容与 `JavaKeyStorePasswordProvider` 的 UTF-8 密码读取方式兼容。
 
-Windows 本地联调示例：
+Windows 本地联调示例。该入口不依赖 PowerShell 或 Maven Wrapper，只要求可用的 JDK `java.exe`：
 
-```powershell
-backend\mvnw.cmd -f backend\pom.xml -pl execution-worker-sqlworkbench -DskipTests compile
+```cmd
+set OPS_AGENT_SQL_KEYSTORE_PASSWORD=<由部署系统或受控密钥系统注入的 KeyStore 解锁口令>
+set KEYSTORE_PATH=C:\secure\ops-agent\sql-credentials.jceks
+set CREDENTIAL_ALIAS=as400-dev-readonly
 
-$env:OPS_AGENT_SQL_KEYSTORE_PASSWORD = "<由部署系统或受控密钥系统注入的 KeyStore 解锁口令>"
-$keyStorePath = "C:\secure\ops-agent\sql-credentials.jceks"
-$credentialAlias = "as400-dev-readonly"
-$secret = Read-Host "输入 AS/400 只读账号密码" -AsSecureString
-$secretPtr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secret)
-try {
-  $plainSecret = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($secretPtr)
-  $plainSecret | java -cp backend\execution-worker-sqlworkbench\target\classes `
-    com.company.opsagent.executionworker.sqlworkbench.SqlCredentialKeyStoreTool `
-    put `
-    --store $keyStorePath `
-    --alias $credentialAlias `
-    --store-password-env OPS_AGENT_SQL_KEYSTORE_PASSWORD `
-    --secret-stdin
-} finally {
-  if ($secretPtr -ne [IntPtr]::Zero) {
-    [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($secretPtr)
-  }
-  Remove-Variable plainSecret -ErrorAction SilentlyContinue
-}
+tools\sql-credentials\put-sql-credential.cmd put --store "%KEYSTORE_PATH%" --alias "%CREDENTIAL_ALIAS%" --store-password-env OPS_AGENT_SQL_KEYSTORE_PASSWORD
+```
+
+如果 JDK 不在 `PATH` 中，可在同一个 `cmd.exe` 会话中先设置：
+
+```cmd
+set OPS_AGENT_JDK_BIN=C:\tools\jdk-21\bin
 ```
 
 工具成功后只输出别名和 KeyStore 路径，不输出数据库密码。随后 Worker 启动时必须通过 `ops-agent.worker.sql-credentials.key-store-path` 和 `ops-agent.worker.sql-credentials.store-password` 指向同一个 KeyStore 和解锁口令；`sql-egress.connections[].credential-alias` 与操作台新建连接中的 `credentialAlias` 必须一致。
