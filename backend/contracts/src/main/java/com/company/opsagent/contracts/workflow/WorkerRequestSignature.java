@@ -9,10 +9,14 @@ import com.company.opsagent.contracts.sqlworkbench.SqlDmlPreflightExecutionReque
 import com.company.opsagent.contracts.sqlworkbench.SqlDmlPreviewSelection;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryExecutionRequest;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryRequest;
+import com.company.opsagent.contracts.sqlworkbench.SqlTypedParameter;
+import com.fasterxml.jackson.databind.JsonNode;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.List;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 
@@ -133,7 +137,7 @@ public final class WorkerRequestSignature {
     OperatorContext operator = request.operator();
     PolicyDecisionReference policyDecision = request.policyDecision();
     TraceContext trace = request.trace();
-    return String.join("\n",
+    return canonicalFields(
         SIGNATURE_VERSION,
         "sql-dml-preflight-execution-v1",
         keyId,
@@ -174,7 +178,7 @@ public final class WorkerRequestSignature {
     OperatorContext operator = request.operator();
     PolicyDecisionReference policyDecision = request.policyDecision();
     TraceContext trace = request.trace();
-    return String.join("\n",
+    return canonicalFields(
         SIGNATURE_VERSION,
         "sql-controlled-dml-execution-v1",
         keyId,
@@ -318,7 +322,7 @@ public final class WorkerRequestSignature {
   }
 
   private static String canonicalSqlQueryFields(SqlQueryRequest query) {
-    return String.join("\n",
+    return canonicalFields(
         query.contractVersion(),
         query.connectionId(),
         query.targetEnvironment(),
@@ -329,15 +333,60 @@ public final class WorkerRequestSignature {
         String.valueOf(query.limits().maxBytes()),
         String.valueOf(query.limits().timeoutSeconds()),
         sha256Hex(query.sql()),
-        sha256Hex(query.parameters().toString()));
+        sha256Hex(canonicalSqlParameters(query.parameters())));
   }
 
-  private static String canonicalStringList(java.util.List<String> values) {
-    StringBuilder payload = new StringBuilder().append(values.size()).append(':');
+  private static String canonicalSqlParameters(List<SqlTypedParameter> parameters) {
+    List<String> canonicalParameters = new ArrayList<>(parameters.size());
+    for (SqlTypedParameter parameter : parameters) {
+      canonicalParameters.add(canonicalFields(
+          parameter.name(),
+          parameter.type(),
+          canonicalJson(parameter.value())));
+    }
+    return canonicalStringList(canonicalParameters);
+  }
+
+  private static String canonicalJson(JsonNode value) {
+    if (value.isObject()) {
+      List<String> fieldNames = new ArrayList<>();
+      value.fieldNames().forEachRemaining(fieldNames::add);
+      fieldNames.sort(String::compareTo);
+      List<String> fields = new ArrayList<>(fieldNames.size());
+      for (String fieldName : fieldNames) {
+        fields.add(canonicalFields(fieldName, canonicalJson(value.get(fieldName))));
+      }
+      return canonicalFields("OBJECT", canonicalStringList(fields));
+    }
+    if (value.isArray()) {
+      List<String> elements = new ArrayList<>(value.size());
+      for (JsonNode element : value) {
+        elements.add(canonicalJson(element));
+      }
+      return canonicalFields("ARRAY", canonicalStringList(elements));
+    }
+    return canonicalFields(value.getNodeType().name(), value.toString());
+  }
+
+  private static String canonicalStringList(List<String> values) {
+    StringBuilder payload = new StringBuilder();
+    appendCanonicalField(payload, String.valueOf(values.size()));
     for (String value : values) {
-      payload.append(value.length()).append(':').append(value);
+      appendCanonicalField(payload, value);
     }
     return payload.toString();
+  }
+
+  private static String canonicalFields(String... values) {
+    StringBuilder payload = new StringBuilder();
+    for (String value : values) {
+      appendCanonicalField(payload, value);
+    }
+    return payload.toString();
+  }
+
+  private static void appendCanonicalField(StringBuilder payload, String value) {
+    payload.append(value.length()).append(':').append(value);
   }
 
   private static void requireText(String value, String name) {

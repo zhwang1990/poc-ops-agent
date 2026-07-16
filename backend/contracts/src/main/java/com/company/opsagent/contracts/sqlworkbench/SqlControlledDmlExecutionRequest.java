@@ -32,6 +32,9 @@ public record SqlControlledDmlExecutionRequest(
     if (commitRequest.query().action() != SqlQueryAction.COMMIT_DML) {
       throw new IllegalArgumentException("controlled DML only accepts COMMIT_DML");
     }
+    if (commitRequest.confirmation() == null) {
+      throw new IllegalArgumentException("commitRequest confirmation is required");
+    }
     if (binding == null) {
       throw new IllegalArgumentException("binding is required");
     }

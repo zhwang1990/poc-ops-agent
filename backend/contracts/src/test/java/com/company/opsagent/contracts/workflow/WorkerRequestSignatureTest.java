@@ -1,5 +1,6 @@
 package com.company.opsagent.contracts.workflow;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -99,6 +100,64 @@ class WorkerRequestSignatureTest {
   }
 
   @Test
+  void controlledDmlPayloadDistinguishesShiftedNewlineInEnvelopeFields() {
+    SqlControlledDmlExecutionRequest firstRequest = controlledDml(
+        "controlled-execution-1\nworkflow-1", "workflow-2");
+    SqlControlledDmlExecutionRequest secondRequest = controlledDml(
+        "controlled-execution-1", "workflow-1\nworkflow-2");
+
+    String firstPayload = WorkerRequestSignature.canonicalControlledSqlDmlPayload(
+        KEY_ID, TIMESTAMP, firstRequest);
+    String secondPayload = WorkerRequestSignature.canonicalControlledSqlDmlPayload(
+        KEY_ID, TIMESTAMP, secondRequest);
+
+    assertNotEquals(firstPayload, secondPayload);
+    assertNotEquals(
+        WorkerRequestSignature.sign(SECRET, firstPayload),
+        WorkerRequestSignature.sign(SECRET, secondPayload));
+  }
+
+  @Test
+  void preflightDmlPayloadDistinguishesShiftedNewlineInEnvelopeFields() {
+    SqlDmlPreviewSelection selection = new SqlDmlPreviewSelection(
+        "1.0", List.of("customer_id"), List.of());
+    SqlDmlPreflightExecutionRequest firstRequest = preflightDml(
+        selection, "preflight-execution-1\nworkflow-1", "workflow-2");
+    SqlDmlPreflightExecutionRequest secondRequest = preflightDml(
+        selection, "preflight-execution-1", "workflow-1\nworkflow-2");
+
+    String firstPayload = WorkerRequestSignature.canonicalSqlDmlPreflightPayload(
+        KEY_ID, TIMESTAMP, firstRequest);
+    String secondPayload = WorkerRequestSignature.canonicalSqlDmlPreflightPayload(
+        KEY_ID, TIMESTAMP, secondRequest);
+
+    assertNotEquals(firstPayload, secondPayload);
+    assertNotEquals(
+        WorkerRequestSignature.sign(SECRET, firstPayload),
+        WorkerRequestSignature.sign(SECRET, secondPayload));
+  }
+
+  @Test
+  void controlledDmlPayloadCanonicalizesObjectParameterFieldOrder() {
+    var firstValue = JsonNodeFactory.instance.objectNode()
+        .put("status", "ACTIVE")
+        .put("source", "operator-console");
+    var secondValue = JsonNodeFactory.instance.objectNode()
+        .put("source", "operator-console")
+        .put("status", "ACTIVE");
+    SqlControlledDmlExecutionRequest firstRequest = controlledDmlWithParameters(List.of(
+        new SqlTypedParameter("details", "JSON", firstValue),
+        new SqlTypedParameter("customer_id", "INTEGER", JsonNodeFactory.instance.numberNode(7))));
+    SqlControlledDmlExecutionRequest secondRequest = controlledDmlWithParameters(List.of(
+        new SqlTypedParameter("details", "JSON", secondValue),
+        new SqlTypedParameter("customer_id", "INTEGER", JsonNodeFactory.instance.numberNode(7))));
+
+    assertEquals(
+        WorkerRequestSignature.canonicalControlledSqlDmlPayload(KEY_ID, TIMESTAMP, firstRequest),
+        WorkerRequestSignature.canonicalControlledSqlDmlPayload(KEY_ID, TIMESTAMP, secondRequest));
+  }
+
+  @Test
   void readOnlyCanonicalPayloadKeepsReadOnlyDiscriminator() {
     String payload = WorkerRequestSignature.canonicalSqlPayload(
         KEY_ID, TIMESTAMP, readOnlyRequest());
@@ -113,17 +172,8 @@ class WorkerRequestSignatureTest {
   }
 
   private String preflightSignature(SqlDmlPreviewSelection selection) {
-    SqlDmlPreflightExecutionRequest request = new SqlDmlPreflightExecutionRequest(
-        "1.0",
-        "preflight-execution-1",
-        "workflow-1",
-        query(SqlQueryAction.PREFLIGHT_DML, "ACTIVE"),
-        "validation-hash",
-        selection,
-        operator(),
-        policy("policy-v1"),
-        trace(),
-        expiresAt());
+    SqlDmlPreflightExecutionRequest request = preflightDml(
+        selection, "preflight-execution-1", "workflow-1");
     return WorkerRequestSignature.sign(
         SECRET,
         WorkerRequestSignature.canonicalSqlDmlPreflightPayload(KEY_ID, TIMESTAMP, request));
@@ -135,6 +185,37 @@ class WorkerRequestSignatureTest {
       String confirmationCode,
       String policyVersion,
       String confirmationHash) {
+    return controlledDml(
+        sql,
+        status,
+        confirmationCode,
+        policyVersion,
+        confirmationHash,
+        "controlled-execution-1",
+        "workflow-1");
+  }
+
+  private SqlControlledDmlExecutionRequest controlledDml(
+      String executionRequestId,
+      String workflowId) {
+    return controlledDml(
+        "UPDATE customer SET status = ? WHERE customer_id = ?",
+        "ACTIVE",
+        SqlDmlConfirmation.RISK_CONFIRMATION_CODE,
+        "policy-v1",
+        "confirmation-hash",
+        executionRequestId,
+        workflowId);
+  }
+
+  private SqlControlledDmlExecutionRequest controlledDml(
+      String sql,
+      String status,
+      String confirmationCode,
+      String policyVersion,
+      String confirmationHash,
+      String executionRequestId,
+      String workflowId) {
     SqlDmlCommitRequest commitRequest = new SqlDmlCommitRequest(
         "1.0",
         query(SqlQueryAction.COMMIT_DML, sql, status),
@@ -145,8 +226,8 @@ class WorkerRequestSignatureTest {
             confirmationCode));
     return new SqlControlledDmlExecutionRequest(
         "1.0",
-        "controlled-execution-1",
-        "workflow-1",
+        executionRequestId,
+        workflowId,
         commitRequest,
         new SqlDmlExecutionBinding(
             "binding-hash",
@@ -155,6 +236,49 @@ class WorkerRequestSignatureTest {
             confirmationHash),
         operator(),
         policy(policyVersion),
+        trace(),
+        expiresAt());
+  }
+
+  private SqlControlledDmlExecutionRequest controlledDmlWithParameters(
+      List<SqlTypedParameter> parameters) {
+    SqlDmlCommitRequest commitRequest = new SqlDmlCommitRequest(
+        "1.0",
+        queryWithParameters(SqlQueryAction.COMMIT_DML, parameters),
+        new SqlDmlConfirmation(
+            "1.0",
+            "sql-hash",
+            List.of("UPDATE_WITHOUT_WHERE"),
+            SqlDmlConfirmation.RISK_CONFIRMATION_CODE));
+    return new SqlControlledDmlExecutionRequest(
+        "1.0",
+        "controlled-execution-1",
+        "workflow-1",
+        commitRequest,
+        new SqlDmlExecutionBinding(
+            "binding-hash",
+            "parameters-hash",
+            "preflight-hash",
+            "confirmation-hash"),
+        operator(),
+        policy("policy-v1"),
+        trace(),
+        expiresAt());
+  }
+
+  private SqlDmlPreflightExecutionRequest preflightDml(
+      SqlDmlPreviewSelection selection,
+      String executionRequestId,
+      String workflowId) {
+    return new SqlDmlPreflightExecutionRequest(
+        "1.0",
+        executionRequestId,
+        workflowId,
+        query(SqlQueryAction.PREFLIGHT_DML, "ACTIVE"),
+        "validation-hash",
+        selection,
+        operator(),
+        policy("policy-v1"),
         trace(),
         expiresAt());
   }
@@ -177,6 +301,19 @@ class WorkerRequestSignatureTest {
   }
 
   private SqlQueryRequest query(SqlQueryAction action, String sql, String status) {
+    return queryWithParameters(action, List.of(
+        new SqlTypedParameter("status", "VARCHAR", JsonNodeFactory.instance.textNode(status)),
+        new SqlTypedParameter("customer_id", "INTEGER", JsonNodeFactory.instance.numberNode(7))), sql);
+  }
+
+  private SqlQueryRequest queryWithParameters(SqlQueryAction action, List<SqlTypedParameter> parameters) {
+    return queryWithParameters(action, parameters, "UPDATE customer SET status = ? WHERE customer_id = ?");
+  }
+
+  private SqlQueryRequest queryWithParameters(
+      SqlQueryAction action,
+      List<SqlTypedParameter> parameters,
+      String sql) {
     return new SqlQueryRequest(
         "1.0",
         "connection-1",
@@ -184,9 +321,7 @@ class WorkerRequestSignatureTest {
         "APP",
         action,
         sql,
-        List.of(
-            new SqlTypedParameter("status", "VARCHAR", JsonNodeFactory.instance.textNode(status)),
-            new SqlTypedParameter("customer_id", "INTEGER", JsonNodeFactory.instance.numberNode(7))),
+        parameters,
         new SqlQueryLimits(100, 10_000, 30),
         "idempotency-1");
   }

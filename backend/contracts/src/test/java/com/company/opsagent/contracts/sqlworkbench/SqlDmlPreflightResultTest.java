@@ -59,6 +59,16 @@ class SqlDmlPreflightResultTest {
   }
 
   @Test
+  void controlledDmlExecutionRequiresConfirmation() {
+    SqlDmlCommitRequest commitWithoutConfirmation = new SqlDmlCommitRequest(
+        "1.0", query(SqlQueryAction.COMMIT_DML), null);
+
+    assertThrows(IllegalArgumentException.class, () -> new SqlControlledDmlExecutionRequest(
+        "1.0", "execution-1", "workflow-1", commitWithoutConfirmation, binding(),
+        operator(), policy(), trace(), expiresAt()));
+  }
+
+  @Test
   void impactPreviewRequiresRowsToMatchSelectedColumns() {
     assertThrows(IllegalArgumentException.class, () -> new SqlDmlImpactPreview(
         "1.0",
