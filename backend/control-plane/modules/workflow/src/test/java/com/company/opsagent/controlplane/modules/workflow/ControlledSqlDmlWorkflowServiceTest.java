@@ -20,6 +20,7 @@ import com.company.opsagent.contracts.workflow.TraceContext;
 import com.company.opsagent.controlplane.modules.audit.AuditEvent;
 import com.company.opsagent.controlplane.modules.audit.R2dbcAuditTrail;
 import io.r2dbc.spi.ConnectionFactories;
+import java.lang.reflect.Proxy;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -31,6 +32,7 @@ import org.springframework.core.io.ClassPathResource;
 import org.springframework.r2dbc.connection.init.ConnectionFactoryInitializer;
 import org.springframework.r2dbc.connection.init.ResourceDatabasePopulator;
 import org.springframework.r2dbc.core.DatabaseClient;
+import reactor.core.publisher.Mono;
 
 class ControlledSqlDmlWorkflowServiceTest {
 
@@ -176,8 +178,47 @@ class ControlledSqlDmlWorkflowServiceTest {
     assertEquals(1, gateway.requests.size());
   }
 
+  @Test
+  void mapsWorkflowLookupInfrastructureFailureWithoutCallingWorker() {
+    ControlledSqlDmlWorkflowService unavailable = serviceWithFailingLookup(
+        new IllegalStateException("workflow database is unavailable"));
+
+    ControlledSqlDmlWorkflowService.WorkflowException exception = assertThrows(
+        ControlledSqlDmlWorkflowService.WorkflowException.class,
+        () -> unavailable.execute(request(BINDING_HASH)));
+
+    assertEquals("SQL_DML_WORKFLOW_PERSISTENCE_FAILED", exception.code());
+    assertEquals(0, gateway.requests.size());
+  }
+
+  @Test
+  void mapsMissingTransactionalAuditDuringWorkflowLookupWithoutCallingWorker() {
+    ControlledSqlDmlWorkflowService unavailable = serviceWithFailingLookup(
+        new ControlledSqlDmlWorkflowStore.TransactionalAuditRequiredException());
+
+    ControlledSqlDmlWorkflowService.WorkflowException exception = assertThrows(
+        ControlledSqlDmlWorkflowService.WorkflowException.class,
+        () -> unavailable.execute(request(BINDING_HASH)));
+
+    assertEquals("SQL_DML_TRANSACTIONAL_AUDIT_REQUIRED", exception.code());
+    assertEquals(0, gateway.requests.size());
+  }
+
   private ControlledSqlDmlWorkflow persisted() {
     return store.findByIdempotency("dml-key-1", "operator-1", "sit").block();
+  }
+
+  private ControlledSqlDmlWorkflowService serviceWithFailingLookup(RuntimeException failure) {
+    ControlledSqlDmlWorkflowStore failingStore = (ControlledSqlDmlWorkflowStore) Proxy.newProxyInstance(
+        getClass().getClassLoader(),
+        new Class<?>[] {ControlledSqlDmlWorkflowStore.class},
+        (proxy, method, arguments) -> {
+          if ("assertCompatible".equals(method.getName())) {
+            return Mono.error(failure);
+          }
+          throw new AssertionError("Unexpected workflow-store call: " + method.getName());
+        });
+    return new ControlledSqlDmlWorkflowService(failingStore, gateway, CLOCK);
   }
 
   private ControlledSqlDmlWorkflowRequest request(String bindingHash) {
