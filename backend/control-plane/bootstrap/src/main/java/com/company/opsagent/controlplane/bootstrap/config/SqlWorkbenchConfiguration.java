@@ -4,6 +4,7 @@ import com.company.opsagent.controlplane.bootstrap.service.WebClientSqlWorkbench
 import com.company.opsagent.controlplane.bootstrap.service.ModelProviderSqlAssistantClient;
 import com.company.opsagent.controlplane.modules.agentruntime.ModelProviderSecretCodec;
 import com.company.opsagent.controlplane.modules.agentruntime.ModelProviderStore;
+import com.company.opsagent.controlplane.modules.audit.AuditTrail;
 import com.company.opsagent.controlplane.modules.sqlworkbench.CalciteSqlValidationService;
 import com.company.opsagent.controlplane.modules.sqlworkbench.CalciteSqlDmlAnalysis;
 import com.company.opsagent.controlplane.modules.sqlworkbench.ControlledSqlDmlPolicy;
@@ -15,6 +16,8 @@ import com.company.opsagent.controlplane.modules.sqlworkbench.SqlConnectionCatal
 import com.company.opsagent.controlplane.modules.sqlworkbench.SqlValidationService;
 import com.company.opsagent.controlplane.modules.sqlworkbench.SqlWorkbenchWorkerClient;
 import com.company.opsagent.controlplane.modules.sqlworkbench.SqlWorkbenchService;
+import com.company.opsagent.contracts.sqlworkbench.SqlTargetEnvironments;
+import com.company.opsagent.controlplane.modules.workflow.ControlledSqlDmlWorkflowService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.r2dbc.spi.ConnectionFactory;
 import java.net.http.HttpClient;
@@ -79,12 +82,26 @@ public class SqlWorkbenchConfiguration {
       SqlConnectionCatalog sqlConnectionCatalog,
       SqlValidationService sqlValidationService,
       SqlWorkbenchWorkerClient sqlWorkbenchWorkerClient,
-      SqlAssistantClient sqlAssistantClient) {
+      SqlAssistantClient sqlAssistantClient,
+      ControlledSqlDmlPolicy controlledSqlDmlPolicy,
+      ControlledSqlDmlProperties controlledSqlDmlProperties,
+      ControlledSqlDmlWorkflowService controlledSqlDmlWorkflowService,
+      AuditTrail auditTrail,
+      ConnectionFactory connectionFactory) {
+    boolean transactionalAuditAvailable =
+        auditTrail.supportsTransactionalParticipation(connectionFactory);
     return new DefaultSqlWorkbenchService(
         sqlConnectionCatalog,
         sqlValidationService,
         sqlWorkbenchWorkerClient,
         sqlAssistantClient,
+        controlledSqlDmlPolicy,
+        controlledSqlDmlWorkflowService::execute,
+        environment -> controlledSqlDmlProperties.getEnabledEnvironments().stream()
+            .map(SqlTargetEnvironments::normalize)
+            .anyMatch(SqlTargetEnvironments.normalize(environment)::equals)
+            && sqlWorkbenchWorkerClient.supportsControlledDml(environment),
+        transactionalAuditAvailable,
         Clock.systemUTC());
   }
 

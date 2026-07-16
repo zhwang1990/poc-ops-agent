@@ -11,6 +11,8 @@ import com.company.opsagent.controlplane.modules.agentrouting.SkillRoutingServic
 import com.company.opsagent.controlplane.modules.workflow.AgentDiagnosticWorkflowService;
 import com.company.opsagent.controlplane.modules.workflow.AgentWorkflowStore;
 import com.company.opsagent.controlplane.modules.workflow.ControlledSqlDmlWorkflowStore;
+import com.company.opsagent.controlplane.modules.workflow.ControlledSqlDmlWorkerGateway;
+import com.company.opsagent.controlplane.modules.workflow.ControlledSqlDmlWorkflowService;
 import com.company.opsagent.controlplane.modules.workflow.ReadOnlyDiagnosticWorkflowService;
 import com.company.opsagent.controlplane.modules.workflow.ReadOnlyWorkflowRecoveryService;
 import com.company.opsagent.controlplane.modules.workflow.ReadOnlyWorkflowStore;
@@ -21,6 +23,7 @@ import com.company.opsagent.controlplane.modules.workflow.RetryableFailureClassi
 import com.company.opsagent.controlplane.modules.workflow.WorkerGateway;
 import com.company.opsagent.controlplane.modules.workflow.WorkflowBackedAgentToolExecutor;
 import com.company.opsagent.controlplane.modules.workflow.WorkflowAgentRuntimeProgressSink;
+import com.company.opsagent.controlplane.modules.sqlworkbench.SqlWorkbenchWorkerClient;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Clock;
 import org.springframework.boot.ApplicationRunner;
@@ -67,6 +70,22 @@ public class WorkflowConfiguration {
       DatabaseClient databaseClient,
       AuditTrail auditTrail) {
     return new R2dbcControlledSqlDmlWorkflowStore(databaseClient, auditTrail);
+  }
+
+  @Bean
+  ControlledSqlDmlWorkerGateway controlledSqlDmlWorkerGateway(
+      SqlWorkbenchWorkerClient sqlWorkbenchWorkerClient) {
+    return sqlWorkbenchWorkerClient::executeControlledDml;
+  }
+
+  @Bean
+  ControlledSqlDmlWorkflowService controlledSqlDmlWorkflowService(
+      ControlledSqlDmlWorkflowStore controlledSqlDmlWorkflowStore,
+      ControlledSqlDmlWorkerGateway controlledSqlDmlWorkerGateway) {
+    return new ControlledSqlDmlWorkflowService(
+        controlledSqlDmlWorkflowStore,
+        controlledSqlDmlWorkerGateway,
+        Clock.systemUTC());
   }
 
   @Bean

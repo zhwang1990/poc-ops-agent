@@ -14,6 +14,8 @@ import com.company.opsagent.contracts.sqlworkbench.SqlAssistantStatus;
 import com.company.opsagent.contracts.sqlworkbench.SqlAssistantSuggestion;
 import com.company.opsagent.contracts.sqlworkbench.SqlDatabaseMetadata;
 import com.company.opsagent.contracts.sqlworkbench.SqlDmlCommitRequest;
+import com.company.opsagent.contracts.sqlworkbench.SqlDmlImpactPreview;
+import com.company.opsagent.contracts.sqlworkbench.SqlDmlPreflightResult;
 import com.company.opsagent.contracts.sqlworkbench.SqlMetadataColumn;
 import com.company.opsagent.contracts.sqlworkbench.SqlMetadataIndex;
 import com.company.opsagent.contracts.sqlworkbench.SqlMetadataObject;
@@ -224,6 +226,28 @@ class SqlWorkbenchControllerTest {
   }
 
   @Test
+  void passesDmlPreflightWithExecutionContextThroughServiceBoundary() {
+    SqlQueryRequest request = new SqlQueryRequest(
+        "1.0",
+        "as400-dev",
+        "dev",
+        "ORDERS",
+        com.company.opsagent.contracts.sqlworkbench.SqlQueryAction.PREFLIGHT_DML,
+        "update ORDERS.ORDERS set status = 'READY' where order_id = 1",
+        List.of(),
+        new com.company.opsagent.contracts.sqlworkbench.SqlQueryLimits(500, 5_000_000, 30),
+        "preflight-key-1");
+
+    StepVerifier.create(controller.preflight(request, exchange()))
+        .assertNext(response -> assertEquals(1L, response.impactPreview().affectedRows()))
+        .verifyComplete();
+
+    assertEquals(1, service.preflightCount.get());
+    assertEquals("operator-1", service.lastPreflightOperator.operatorId());
+    assertEquals("policy-v1", service.lastPreflightPolicy.policyVersion());
+  }
+
+  @Test
   void rejectsUnknownDmlCommitFieldsBeforeServiceLayer() throws Exception {
     var request = objectMapper.readTree("""
         {
@@ -284,12 +308,15 @@ class SqlWorkbenchControllerTest {
     private final AtomicInteger assistCount = new AtomicInteger();
     private final AtomicInteger metadataCount = new AtomicInteger();
     private final AtomicInteger commitCount = new AtomicInteger();
+    private final AtomicInteger preflightCount = new AtomicInteger();
     private String lastUpdateConnectionId;
     private SqlConnectionUpdateRequest lastUpdateRequest;
     private String lastDeleteConnectionId;
     private SqlAssistantRequest lastAssistantRequest;
     private String lastMetadataConnectionId;
     private String lastMetadataSchema;
+    private OperatorContext lastPreflightOperator;
+    private PolicyDecisionReference lastPreflightPolicy;
 
     @Override
     public List<SqlConnectionSummary> listConnections() {
@@ -365,6 +392,29 @@ class SqlWorkbenchControllerTest {
         PolicyDecisionReference policyDecision,
         TraceContext trace) {
       throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public SqlDmlPreflightResult preflightControlledDml(
+        SqlQueryRequest request,
+        OperatorContext operator,
+        PolicyDecisionReference policyDecision,
+        TraceContext trace) {
+      preflightCount.incrementAndGet();
+      lastPreflightOperator = operator;
+      lastPreflightPolicy = policyDecision;
+      return new SqlDmlPreflightResult(
+          "1.0",
+          new SqlValidationReport(
+              "1.0",
+              com.company.opsagent.contracts.sqlworkbench.SqlStatementType.UPDATE,
+              com.company.opsagent.contracts.sqlworkbench.SqlValidationLevel.VALIDATED,
+              "sha256:test",
+              List.of("ORDERS.ORDERS"),
+              List.of(),
+              List.of(),
+              List.of()),
+          new SqlDmlImpactPreview("1.0", 1L, List.of(), List.of(), List.of()));
     }
 
     @Override

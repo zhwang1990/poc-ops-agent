@@ -1,6 +1,7 @@
 package com.company.opsagent.controlplane.modules.sqlworkbench;
 
 import com.company.opsagent.contracts.sqlworkbench.SqlDmlPreviewSelection;
+import com.company.opsagent.contracts.sqlworkbench.SqlConnectionSummary;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryAction;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryRequest;
 import com.company.opsagent.contracts.sqlworkbench.SqlStatementType;
@@ -58,6 +59,17 @@ public final class ControlledSqlDmlPolicy {
         .orElseThrow(ControlledSqlDmlPolicy::denied);
     statement.verifyAllowedBy(rule);
     return rule.previewSelection();
+  }
+
+  public boolean supports(SqlConnectionSummary connection) {
+    Objects.requireNonNull(connection, "connection");
+    if (!properties.isEnabledFor(connection.targetEnvironment())) {
+      return false;
+    }
+    return properties.getRules().stream().anyMatch(rule ->
+        rule.getConnectionId().equals(connection.connectionId())
+            && connection.allowedSchemas().stream()
+                .anyMatch(schema -> schema.equalsIgnoreCase(rule.getSchema())));
   }
 
   private static boolean isDml(SqlStatementType statementType) {

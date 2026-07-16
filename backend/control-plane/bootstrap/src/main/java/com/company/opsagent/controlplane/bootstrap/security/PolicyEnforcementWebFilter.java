@@ -328,6 +328,9 @@ public class PolicyEnforcementWebFilter implements WebFilter {
       if (method == HttpMethod.POST && "/internal/sql-workbench/queries/validate".equals(path)) {
         return new ActionDescriptor("internal.sql-workbench.queries.validate", path);
       }
+      if (method == HttpMethod.POST && "/internal/sql-workbench/queries/preflight".equals(path)) {
+        return new ActionDescriptor("internal.sql-workbench.queries.validate", path);
+      }
       if (method == HttpMethod.POST && "/internal/sql-workbench/queries/run".equals(path)) {
         return new ActionDescriptor("internal.sql-workbench.queries.run", path);
       }

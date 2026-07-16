@@ -8,6 +8,7 @@ import com.company.opsagent.contracts.sqlworkbench.SqlAssistantRequest;
 import com.company.opsagent.contracts.sqlworkbench.SqlAssistantResponse;
 import com.company.opsagent.contracts.sqlworkbench.SqlDatabaseMetadata;
 import com.company.opsagent.contracts.sqlworkbench.SqlDmlCommitRequest;
+import com.company.opsagent.contracts.sqlworkbench.SqlDmlPreflightResult;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryExecutionResult;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryRequest;
 import com.company.opsagent.contracts.sqlworkbench.SqlResultPage;
@@ -37,6 +38,12 @@ public interface SqlWorkbenchService {
   SqlAssistantResponse assist(SqlAssistantRequest request);
 
   SqlQueryExecutionResult runReadOnlyQuery(
+      SqlQueryRequest request,
+      OperatorContext operator,
+      PolicyDecisionReference policyDecision,
+      TraceContext trace);
+
+  SqlDmlPreflightResult preflightControlledDml(
       SqlQueryRequest request,
       OperatorContext operator,
       PolicyDecisionReference policyDecision,

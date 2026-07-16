@@ -15,6 +15,10 @@ import com.company.opsagent.contracts.sqlworkbench.SqlAssistantStatus;
 import com.company.opsagent.contracts.sqlworkbench.SqlAssistantSuggestion;
 import com.company.opsagent.contracts.sqlworkbench.SqlDmlCommitRequest;
 import com.company.opsagent.contracts.sqlworkbench.SqlDmlConfirmation;
+import com.company.opsagent.contracts.sqlworkbench.SqlDmlImpactPreview;
+import com.company.opsagent.contracts.sqlworkbench.SqlDmlPreflightExecutionRequest;
+import com.company.opsagent.contracts.sqlworkbench.SqlDmlPreflightResult;
+import com.company.opsagent.contracts.sqlworkbench.SqlControlledDmlExecutionRequest;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryAction;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryExecutionRequest;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryExecutionResult;
@@ -30,12 +34,17 @@ import com.company.opsagent.contracts.sqlworkbench.SqlValidationLevel;
 import com.company.opsagent.contracts.workflow.OperatorContext;
 import com.company.opsagent.contracts.workflow.PolicyDecisionReference;
 import com.company.opsagent.contracts.workflow.TraceContext;
+import com.company.opsagent.controlplane.modules.workflow.ControlledSqlDmlWorkflowRequest;
+import com.company.opsagent.controlplane.modules.workflow.ControlledSqlDmlWorkflowService;
+import com.company.opsagent.controlplane.modules.workflow.ControlledSqlDmlWorkflowStore;
 import com.fasterxml.jackson.databind.node.TextNode;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Set;
+import java.util.function.Function;
 import org.junit.jupiter.api.Test;
 
 class DefaultSqlWorkbenchServiceTest {
@@ -43,6 +52,7 @@ class DefaultSqlWorkbenchServiceTest {
   private static final Clock CLOCK = Clock.fixed(Instant.parse("2026-06-27T00:00:00Z"), ZoneOffset.UTC);
   private final RecordingSqlWorkbenchWorkerClient workerClient = new RecordingSqlWorkbenchWorkerClient();
   private final RecordingSqlAssistantClient assistantClient = new RecordingSqlAssistantClient();
+  private final RecordingControlledSqlDmlExecutor dmlExecutor = new RecordingControlledSqlDmlExecutor();
   private final DefaultSqlWorkbenchService service = new DefaultSqlWorkbenchService(
       new InMemorySqlConnectionCatalog(List.of(new SqlConnectionSummary(
           "1.0",
@@ -59,6 +69,10 @@ class DefaultSqlWorkbenchServiceTest {
       new CalciteSqlValidationService(),
       workerClient,
       assistantClient,
+      controlledDmlPolicy(),
+      dmlExecutor,
+      environment -> true,
+      true,
       CLOCK);
 
   @Test
@@ -241,23 +255,121 @@ class DefaultSqlWorkbenchServiceTest {
   }
 
   @Test
-  void commitControlledDmlRequiresPersistentWorkflowGateBeforeWorkerSubmission() {
+  void commitControlledDmlDelegatesConfirmedRequestToPersistentWorkflow() {
     SqlQueryRequest request = request(
         "ORDERS",
         SqlQueryAction.COMMIT_DML,
         "update ORDERS.ORDERS set status = 'READY' where order_id = 42");
+    String sqlHash = service.validate(request).sqlHash();
+
+    SqlQueryExecutionResult result = service.commitControlledDml(
+        new SqlDmlCommitRequest(
+            "1.0",
+            request,
+            new SqlDmlConfirmation(
+                "1.0",
+                sqlHash,
+                List.of("CONTROLLED_DML_CONFIRMED"),
+                SqlDmlConfirmation.RISK_CONFIRMATION_CODE)),
+        operator(),
+        policy(),
+        trace());
+
+    assertEquals("SUCCEEDED", result.status());
+    assertEquals(1, dmlExecutor.executeCount);
+    assertEquals("operator-1", dmlExecutor.lastRequest.operator().operatorId());
+    assertEquals(sqlHash.substring("sha256:".length()), dmlExecutor.lastRequest.sqlHash());
+    assertEquals(0, workerClient.executeCount);
+  }
+
+  @Test
+  void preflightControlledDmlUsesServerPolicySelectionAndWorkerPreview() {
+    SqlQueryRequest request = request(
+        "ORDERS",
+        SqlQueryAction.PREFLIGHT_DML,
+        "update ORDERS.ORDERS set status = 'READY' where order_id = 42");
+
+    SqlDmlPreflightResult result = service.preflightControlledDml(
+        request, operator(), policy(), trace());
+
+    assertEquals(3L, result.impactPreview().affectedRows());
+    assertEquals(1, workerClient.preflightCount);
+    assertEquals(List.of("ORDER_ID"), workerClient.lastPreflightRequest.previewSelection().sampleColumns());
+    assertEquals("operator-1", workerClient.lastPreflightRequest.operator().operatorId());
+  }
+
+  @Test
+  void mapsStableWorkflowErrorsAtSqlWorkbenchBoundary() {
+    SqlQueryRequest request = request(
+        "ORDERS",
+        SqlQueryAction.COMMIT_DML,
+        "update ORDERS.ORDERS set status = 'READY' where order_id = 42");
+    String sqlHash = service.validate(request).sqlHash();
+    SqlDmlCommitRequest commitRequest = new SqlDmlCommitRequest(
+        "1.0",
+        request,
+        new SqlDmlConfirmation(
+            "1.0",
+            sqlHash,
+            List.of("CONTROLLED_DML_CONFIRMED"),
+            SqlDmlConfirmation.RISK_CONFIRMATION_CODE));
+    dmlExecutor.failure = new ControlledSqlDmlWorkflowService.WorkflowException(
+        "SQL_DML_RESULT_UNKNOWN", "DML result requires human handoff");
 
     SqlWorkbenchException exception = assertThrows(
         SqlWorkbenchException.class,
-        () -> service.commitControlledDml(
-            new SqlDmlCommitRequest("1.0", request, null),
+        () -> service.commitControlledDml(commitRequest, operator(), policy(), trace()));
+
+    assertEquals("SQL_DML_RESULT_UNKNOWN", exception.code());
+  }
+
+  @Test
+  void removesDmlCapabilitiesAndRejectsDirectDmlWhenTransactionalAuditIsUnavailable() {
+    DefaultSqlWorkbenchService unavailable = new DefaultSqlWorkbenchService(
+        new InMemorySqlConnectionCatalog(service.listConnections()),
+        new CalciteSqlValidationService(),
+        workerClient,
+        assistantClient,
+        controlledDmlPolicy(),
+        dmlExecutor,
+        environment -> true,
+        false,
+        CLOCK);
+    SqlConnectionSummary connection = unavailable.listConnections().getFirst();
+
+    assertEquals(
+        List.of(SqlQueryAction.VALIDATE, SqlQueryAction.RUN_READ_ONLY),
+        connection.capabilities());
+    SqlWorkbenchException exception = assertThrows(
+        SqlWorkbenchException.class,
+        () -> unavailable.preflightControlledDml(
+            request(
+                "ORDERS",
+                SqlQueryAction.PREFLIGHT_DML,
+                "update ORDERS.ORDERS set status = 'READY' where order_id = 42"),
             operator(),
             policy(),
             trace()));
+    assertEquals("SQL_DML_TRANSACTIONAL_AUDIT_REQUIRED", exception.code());
+    assertEquals(0, workerClient.preflightCount);
+  }
 
-    assertEquals("SQL_DML_WORKFLOW_REQUIRED", exception.code());
-    assertTrue(exception.getMessage().contains("M05 workflow"));
-    assertEquals(0, workerClient.executeCount);
+  @Test
+  void removesDmlCapabilitiesWhenWorkerDmlTransportIsUnavailable() {
+    DefaultSqlWorkbenchService unavailable = new DefaultSqlWorkbenchService(
+        new InMemorySqlConnectionCatalog(service.listConnections()),
+        new CalciteSqlValidationService(),
+        workerClient,
+        assistantClient,
+        controlledDmlPolicy(),
+        dmlExecutor,
+        environment -> false,
+        true,
+        CLOCK);
+
+    assertEquals(
+        List.of(SqlQueryAction.VALIDATE, SqlQueryAction.RUN_READ_ONLY),
+        unavailable.listConnections().getFirst().capabilities());
   }
 
   @Test
@@ -281,29 +393,28 @@ class DefaultSqlWorkbenchServiceTest {
   }
 
   @Test
-  void commitControlledDmlRejectsAfterMatchingSecondConfirmationUntilWorkflowGateExists() {
+  void commitControlledDmlAcceptsMatchingSecondConfirmation() {
     SqlQueryRequest request = request(
         "ORDERS",
         SqlQueryAction.COMMIT_DML,
         "update ORDERS.ORDERS set status = 'READY'");
     String sqlHash = service.validate(request).sqlHash();
 
-    SqlWorkbenchException exception = assertThrows(
-        SqlWorkbenchException.class,
-        () -> service.commitControlledDml(
-            new SqlDmlCommitRequest(
+    SqlQueryExecutionResult result = service.commitControlledDml(
+        new SqlDmlCommitRequest(
+            "1.0",
+            request,
+            new SqlDmlConfirmation(
                 "1.0",
-                request,
-                new SqlDmlConfirmation(
-                    "1.0",
-                    sqlHash,
-                    List.of("UPDATE_WITHOUT_WHERE"),
-                    SqlDmlConfirmation.RISK_CONFIRMATION_CODE)),
-            operator(),
-            policy(),
-            trace()));
+                sqlHash,
+                List.of("UPDATE_WITHOUT_WHERE"),
+                SqlDmlConfirmation.RISK_CONFIRMATION_CODE)),
+        operator(),
+        policy(),
+        trace());
 
-    assertEquals("SQL_DML_WORKFLOW_REQUIRED", exception.code());
+    assertEquals("SUCCEEDED", result.status());
+    assertEquals(1, dmlExecutor.executeCount);
     assertEquals(0, workerClient.executeCount);
   }
 
@@ -413,6 +524,30 @@ class DefaultSqlWorkbenchServiceTest {
     return new TraceContext("trace-1", "request-1");
   }
 
+  private static ControlledSqlDmlPolicy controlledDmlPolicy() {
+    var properties = new ControlledSqlDmlProperties();
+    properties.setEnabledEnvironments(Set.of("dev"));
+    var scopedUpdate = updateRule(Set.of("ORDER_ID"), Set.of("EQUALS"));
+    var unscopedUpdate = updateRule(Set.of(), Set.of());
+    properties.setRules(List.of(scopedUpdate, unscopedUpdate));
+    return new ControlledSqlDmlPolicy(properties, new CalciteSqlDmlAnalysis());
+  }
+
+  private static ControlledSqlDmlProperties.Rule updateRule(
+      Set<String> predicateColumns, Set<String> operators) {
+    var rule = new ControlledSqlDmlProperties.Rule();
+    rule.setConnectionId("as400-development");
+    rule.setSchema("ORDERS");
+    rule.setTable("ORDERS");
+    rule.setStatementType(com.company.opsagent.contracts.sqlworkbench.SqlStatementType.UPDATE);
+    rule.setChangedColumns(Set.of("STATUS"));
+    rule.setPredicateColumns(predicateColumns);
+    rule.setOperators(operators);
+    rule.setPreviewSampleColumns(List.of("ORDER_ID"));
+    rule.setMaskedPreviewColumns(List.of());
+    return rule;
+  }
+
   private SqlAssistantRequest assistantRequest(
       SqlAssistantAction action,
       String sql,
@@ -459,11 +594,13 @@ class DefaultSqlWorkbenchServiceTest {
     private int readCount;
     private int probeCount;
     private int metadataCount;
+    private int preflightCount;
     private String probeStatus = "READY";
     private SqlConnectionSummary lastProbeConnection;
     private SqlConnectionSummary lastMetadataConnection;
     private String lastMetadataSchema;
     private SqlQueryExecutionRequest lastExecutionRequest;
+    private SqlDmlPreflightExecutionRequest lastPreflightRequest;
 
     @Override
     public SqlConnectionProbeResult probe(SqlConnectionSummary connection) {
@@ -492,6 +629,18 @@ class DefaultSqlWorkbenchServiceTest {
           null,
           null,
           request.query().action() == SqlQueryAction.COMMIT_DML ? 3 : null);
+    }
+
+    @Override
+    public SqlDmlImpactPreview preflightDml(SqlDmlPreflightExecutionRequest request) {
+      preflightCount++;
+      lastPreflightRequest = request;
+      return new SqlDmlImpactPreview("1.0", 3L, List.of(), List.of(), List.of());
+    }
+
+    @Override
+    public SqlQueryExecutionResult executeControlledDml(SqlControlledDmlExecutionRequest request) {
+      throw new AssertionError("M09 must submit controlled DML through M05");
     }
 
     @Override
@@ -524,6 +673,32 @@ class DefaultSqlWorkbenchServiceTest {
               List.of(new SqlMetadataIndex("PRIMARY_KEY_ORDERS", true, List.of("ORDER_ID"))))),
           false,
           OffsetDateTime.now(CLOCK));
+    }
+  }
+
+  private static final class RecordingControlledSqlDmlExecutor
+      implements Function<ControlledSqlDmlWorkflowRequest, SqlQueryExecutionResult> {
+
+    private int executeCount;
+    private ControlledSqlDmlWorkflowRequest lastRequest;
+    private RuntimeException failure;
+
+    @Override
+    public SqlQueryExecutionResult apply(ControlledSqlDmlWorkflowRequest request) {
+      executeCount++;
+      lastRequest = request;
+      if (failure != null) {
+        throw failure;
+      }
+      return new SqlQueryExecutionResult(
+          "1.0",
+          "execution-1",
+          "workflow-1",
+          "SUCCEEDED",
+          null,
+          null,
+          null,
+          3);
     }
   }
 }
