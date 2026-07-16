@@ -271,10 +271,12 @@ git commit -m "Persist controlled SQL DML workflows"
 - 修改：`backend/execution-worker-sqlworkbench/src/main/java/com/company/opsagent/executionworker/sqlworkbench/SqlWorkbenchWorkerConfiguration.java`
 - 测试：`backend/execution-worker-sqlworkbench/src/test/java/com/company/opsagent/executionworker/sqlworkbench/JdbcSqlDmlImpactPreviewExecutorTest.java`
 - 测试：`backend/execution-worker-sqlworkbench/src/test/java/com/company/opsagent/executionworker/sqlworkbench/RestrictedSqlQueryExecutionWorkerTest.java`
+- 测试：`backend/execution-worker-sqlworkbench/src/test/java/com/company/opsagent/executionworker/sqlworkbench/SqlQueryExecutionControllerTest.java`
 
 **接口：**
 
 - 新增受签名端点 `POST /internal/executions/sql-query/dml-preflight`，请求类型为 `SqlDmlPreflightExecutionRequest`，只接受 `PREFLIGHT_DML`；新增 `POST /internal/executions/sql-query/dml-commit`，请求类型为 `SqlControlledDmlExecutionRequest`，只接受 `COMMIT_DML`。既有只读执行端点和 `SqlQueryExecutionRequest` 不变。
+- 既有 `POST /internal/executions/sql-query` 只接受 `RUN_READ_ONLY`；即使传输签名有效，也必须在访问数据库前拒绝旧 `SqlQueryExecutionRequest` 中的 `COMMIT_DML`，错误码为 `SQL_DML_LEGACY_ENVELOPE_REJECTED`。
 - `UPDATE`、`DELETE` 返回只读 `COUNT(*)` 和最多 20 条按 `SqlDmlPreviewSelection` 选列和掩码处理的样本；未选列时样本为空；值列表 `INSERT` 返回预估影响行数 `1` 和不可验证项。
 - Worker 连接新增 `dml-enabled` 与 `dml-credential-alias`。任一未配置时提交返回 `SQL_DML_WORKER_DISABLED`，读取仍使用只读凭据。
 
@@ -297,6 +299,11 @@ void returnsNoSamplesWhenPolicyDoesNotSelectPreviewColumns() {
 @Test
 void rejectsCommitWhenWriteCapabilityIsDisabled() {
   assertEquals("SQL_DML_WORKER_DISABLED", worker.executeControlledDml(commitRequest()).errorCode());
+}
+
+@Test
+void rejectsCommitDmlAtLegacyReadEndpointBeforeDatabaseAccess() {
+  assertEquals("SQL_DML_LEGACY_ENVELOPE_REJECTED", worker.execute(legacyCommitRequest()).errorCode());
 }
 ~~~
 
