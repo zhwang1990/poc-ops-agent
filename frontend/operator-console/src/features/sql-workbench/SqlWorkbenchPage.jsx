@@ -1985,6 +1985,10 @@ function ResultPanel({
     : null;
   const visibleErrorMessage = executionErrorMessage ?? errorMessage;
 
+  if (execution?.status === "UNKNOWN_REQUIRES_HANDOFF") {
+    return <DmlHandoffOutcome workflowId={execution.workflowId} />;
+  }
+
   if (sessionMode === "natural-language") {
     return (
       <NaturalLanguageGenerationResult
@@ -1994,10 +1998,6 @@ function ResultPanel({
         state={naturalLanguage}
       />
     );
-  }
-
-  if (execution?.status === "UNKNOWN_REQUIRES_HANDOFF") {
-    return <DmlHandoffOutcome workflowId={execution.workflowId} />;
   }
 
   return (

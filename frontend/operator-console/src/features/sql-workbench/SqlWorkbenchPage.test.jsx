@@ -551,6 +551,70 @@ describe("SqlWorkbenchPage", () => {
     expect(screen.queryByRole("table", { name: "SQL SELECT 查询结果" })).not.toBeInTheDocument();
   });
 
+  test("prioritizes unknown DML handoff after the session mode changes during a pending commit", async () => {
+    const user = userEvent.setup();
+    /** @type {() => void} */
+    let releaseCommit = () => {};
+    /** @type {() => void} */
+    let markCommitStarted = () => {};
+    const commitGate = new Promise((resolve) => {
+      releaseCommit = () => resolve(undefined);
+    });
+    const commitStarted = new Promise((resolve) => {
+      markCommitStarted = () => resolve(undefined);
+    });
+
+    server.use(
+      http.get("/internal/sql-workbench/connections", () =>
+        HttpResponse.json(sqlConnections),
+      ),
+      http.post("/internal/sql-workbench/queries/preflight", () =>
+        HttpResponse.json(preflightWithoutRisk()),
+      ),
+      http.post("/internal/sql-workbench/queries/commit", async () => {
+        markCommitStarted();
+        await commitGate;
+        return HttpResponse.json({
+          contractVersion: "1.0",
+          executionRequestId: "execution-dml-unknown-after-mode-switch",
+          workflowId: "workflow-dml-unknown-after-mode-switch",
+          status: "UNKNOWN_REQUIRES_HANDOFF",
+          resultId: null,
+          errorCode: "SQL_DML_RESULT_UNKNOWN",
+          errorMessage: null,
+          affectedRows: null,
+        });
+      }),
+    );
+
+    renderAt("/sql");
+
+    await screen.findByText("已连接 · development");
+    await replaceSqlText(user, "update ORDERS.ORDERS set status = 'READY' where order_id = 4");
+    const transactionControls = screen.getByRole("group", { name: "SQL 事务控制" });
+    await user.click(within(transactionControls).getByRole("button", { name: "事务模式" }));
+    await user.click(
+      within(transactionControls).getByRole("button", { name: "提交当前受控 DML" }),
+    );
+    await commitStarted;
+
+    await user.click(screen.getByRole("tab", { name: "自然语言" }));
+    expect(screen.getByRole("heading", { name: "生成结果" })).toBeInTheDocument();
+
+    releaseCommit();
+
+    expect(await screen.findByLabelText("DML 人工接管结果")).toBeInTheDocument();
+    expect(screen.getByText("需要人工接管以确认 DML 执行结果。")).toBeInTheDocument();
+    expect(screen.getAllByText("workflow-dml-unknown-after-mode-switch")).toHaveLength(1);
+    expect(screen.queryByText("执行事实")).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "生成结果" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "查询结果" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tablist", { name: "SQL 执行结果" })).not.toBeInTheDocument();
+    expect(screen.queryByText("execution-dml-unknown-after-mode-switch")).not.toBeInTheDocument();
+    expect(screen.queryByText("resultId")).not.toBeInTheDocument();
+    expect(screen.queryByRole("table", { name: "SQL SELECT 查询结果" })).not.toBeInTheDocument();
+  });
+
   test("shows SQL session modes as functional tabs", async () => {
     server.use(
       http.get("/internal/sql-workbench/connections", () =>
