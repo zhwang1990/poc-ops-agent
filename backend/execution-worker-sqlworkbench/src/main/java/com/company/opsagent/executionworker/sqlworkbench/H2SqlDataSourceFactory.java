@@ -13,15 +13,27 @@ import org.h2.jdbcx.JdbcDataSource;
 public final class H2SqlDataSourceFactory {
 
   private final ConcurrentMap<String, DataSource> dataSources = new ConcurrentHashMap<>();
+  private final ConcurrentMap<String, DataSource> initializedDatabases = new ConcurrentHashMap<>();
 
   public DataSource create(WorkerSqlConnectionDescriptor descriptor) {
-    return dataSources.computeIfAbsent(descriptor.connectionId(), this::createInitializedDataSource);
+    return dataSources.computeIfAbsent(
+        dataSourceKey(descriptor.connectionId(), "read"),
+        ignored -> createDataSource(descriptor.connectionId()));
   }
 
-  private DataSource createInitializedDataSource(String connectionId) {
+  public DataSource createWrite(WorkerSqlConnectionDescriptor descriptor) {
+    return dataSources.computeIfAbsent(
+        dataSourceKey(descriptor.connectionId(), "write"),
+        ignored -> createDataSource(descriptor.connectionId()));
+  }
+
+  private DataSource createDataSource(String connectionId) {
     JdbcDataSource dataSource = new JdbcDataSource();
     dataSource.setURL("jdbc:h2:mem:" + databaseName(connectionId) + ";DB_CLOSE_DELAY=-1;DATABASE_TO_UPPER=TRUE");
-    initialize(dataSource);
+    initializedDatabases.computeIfAbsent(connectionId, ignored -> {
+      initialize(dataSource);
+      return dataSource;
+    });
     return dataSource;
   }
 
@@ -113,5 +125,9 @@ public final class H2SqlDataSourceFactory {
       return "ops_agent_sql";
     }
     return normalized;
+  }
+
+  private String dataSourceKey(String connectionId, String role) {
+    return connectionId + "|" + role;
   }
 }

@@ -1,6 +1,7 @@
 package com.company.opsagent.executionworker.sqlworkbench;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.company.opsagent.contracts.sqlworkbench.SqlControlledDmlExecutionRequest;
@@ -31,6 +32,7 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
 import org.springframework.web.server.ResponseStatusException;
@@ -63,6 +65,19 @@ class SqlQueryExecutionControllerTest {
   }
 
   @Test
+  void rejectsCorrectlySignedLegacyCommitDmlBeforeExecutorAccess() {
+    AtomicBoolean executorAccessed = new AtomicBoolean();
+    var request = legacyCommitDmlRequest();
+    var controller = controller(executorAccessed);
+
+    var result = controller.execute(signedExecutionHeaders(request), request).block();
+
+    assertEquals("REJECTED", result.status());
+    assertEquals("SQL_DML_LEGACY_ENVELOPE_REJECTED", result.errorCode());
+    assertFalse(executorAccessed.get());
+  }
+
+  @Test
   void acceptsOnlySignedDmlPreflightEnvelope() {
     var request = preflightRequest();
     var controller = controller();
@@ -75,6 +90,30 @@ class SqlQueryExecutionControllerTest {
         signedPreflightHeaders(request),
         request).block();
     assertEquals(2L, preview.affectedRows());
+  }
+
+  @Test
+  void rejectsCorrectlySignedDmlPreflightWhenWriteCapabilityIsDisabled() {
+    AtomicBoolean previewAccessed = new AtomicBoolean();
+    var request = preflightRequest();
+    var worker = new RestrictedSqlQueryExecutionWorker(
+        new CalciteSqlReadOnlyGuard(),
+        new CalciteSqlDmlGuard(),
+        executor(),
+        ignored -> {
+          previewAccessed.set(true);
+          return reactor.core.publisher.Mono.empty();
+        },
+        new WorkerSqlDmlExecutionPolicy(List.of(disabledDmlDescriptor())),
+        CLOCK);
+    var controller = controller(worker, new InMemorySqlResultStore(CLOCK));
+
+    WorkerSqlEgressException exception = assertThrows(
+        WorkerSqlEgressException.class,
+        () -> controller.preflightDml(signedPreflightHeaders(request), request).block());
+
+    assertEquals("SQL_DML_WORKER_DISABLED", exception.errorCode());
+    assertFalse(previewAccessed.get());
   }
 
   @Test
@@ -146,26 +185,50 @@ class SqlQueryExecutionControllerTest {
   }
 
   private SqlQueryExecutionController controller(SqlResultStore store) {
+    return controller(store, null);
+  }
+
+  private SqlQueryExecutionController controller(AtomicBoolean executorAccessed) {
+    return controller(new InMemorySqlResultStore(CLOCK), executorAccessed);
+  }
+
+  private SqlQueryExecutionController controller(SqlResultStore store, AtomicBoolean executorAccessed) {
     var worker = new RestrictedSqlQueryExecutionWorker(
         new CalciteSqlReadOnlyGuard(),
         new CalciteSqlDmlGuard(),
-        executor(),
+        executor(executorAccessed),
         request -> reactor.core.publisher.Mono.just(new SqlDmlImpactPreview(
             "1.0", 2L, List.of(), List.of(), List.of())),
         new WorkerSqlDmlExecutionPolicy(List.of(dmlDescriptor())),
         CLOCK);
+    return controller(worker, store);
+  }
+
+  private SqlQueryExecutionController controller(
+      RestrictedSqlQueryExecutionWorker worker,
+      SqlResultStore store) {
     return new SqlQueryExecutionController(worker, store, authenticator(), probeWorker(), metadataReader());
   }
 
   private SqlQueryExecutor executor() {
+    return executor(null);
+  }
+
+  private SqlQueryExecutor executor(AtomicBoolean executorAccessed) {
     return new SqlQueryExecutor() {
       @Override
       public String execute(SqlQueryExecutionRequest request) {
+        if (executorAccessed != null) {
+          executorAccessed.set(true);
+        }
         return "result-1";
       }
 
       @Override
       public int executeDml(SqlQueryExecutionRequest request) {
+        if (executorAccessed != null) {
+          executorAccessed.set(true);
+        }
         return 2;
       }
     };
@@ -183,6 +246,20 @@ class SqlQueryExecutionControllerTest {
         true,
         true,
         "as400-dev-writer");
+  }
+
+  private WorkerSqlConnectionDescriptor disabledDmlDescriptor() {
+    return new WorkerSqlConnectionDescriptor(
+        "as400-development",
+        "dev",
+        "DB2_FOR_I",
+        "as400-dev.internal",
+        446,
+        "as400-dev-readonly",
+        "as400-dev-readonly",
+        true,
+        false,
+        null);
   }
 
   private SqlConnectionProbeWorker probeWorker() {
@@ -331,6 +408,29 @@ class SqlQueryExecutionControllerTest {
         query,
         "validation-hash-1",
         new OperatorContext("operator-1", List.of("ROLE_ops-reader")),
+        new PolicyDecisionReference("decision-1", "policy-v1", "ALLOW"),
+        new TraceContext("trace-1", "request-1"),
+        OffsetDateTime.now(CLOCK).plusSeconds(30));
+  }
+
+  private SqlQueryExecutionRequest legacyCommitDmlRequest() {
+    var query = new SqlQueryRequest(
+        "1.0",
+        "as400-development",
+        "dev",
+        "ORDERS",
+        SqlQueryAction.COMMIT_DML,
+        "update ORDERS.ORDERS set STATUS = 'READY' where ORDER_ID = 42",
+        List.of(),
+        new SqlQueryLimits(500, 10_000_000, 30),
+        "legacy-dml-idempotency-1");
+    return new SqlQueryExecutionRequest(
+        "1.0",
+        "legacy-dml-execution-1",
+        "workflow-1",
+        query,
+        "validation-hash-1",
+        new OperatorContext("operator-1", List.of("ROLE_sql-operator")),
         new PolicyDecisionReference("decision-1", "policy-v1", "ALLOW"),
         new TraceContext("trace-1", "request-1"),
         OffsetDateTime.now(CLOCK).plusSeconds(30));

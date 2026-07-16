@@ -134,13 +134,15 @@ public class SqlWorkbenchWorkerConfiguration {
       Clock workerClock,
       SqlQueryExecutor sqlQueryExecutor,
       SqlDmlImpactPreviewExecutor sqlDmlImpactPreviewExecutor,
-      WorkerSqlDmlExecutionPolicy workerSqlDmlExecutionPolicy) {
+      WorkerSqlDmlExecutionPolicy workerSqlDmlExecutionPolicy,
+      ConfiguredSqlDataSourceRegistry sqlDataSourceRegistry) {
     return new RestrictedSqlQueryExecutionWorker(
         new CalciteSqlReadOnlyGuard(),
         new CalciteSqlDmlGuard(),
         sqlQueryExecutor,
         sqlDmlImpactPreviewExecutor,
         workerSqlDmlExecutionPolicy,
+        sqlDataSourceRegistry,
         workerClock);
   }
 }

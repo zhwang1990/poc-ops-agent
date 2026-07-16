@@ -24,6 +24,7 @@ public class RestrictedSqlQueryExecutionWorker {
   private final SqlQueryExecutor executor;
   private final SqlDmlImpactPreviewExecutor previewExecutor;
   private final WorkerSqlDmlExecutionPolicy dmlExecutionPolicy;
+  private final SqlDmlWriteCapabilityValidator dmlWriteCapabilityValidator;
   private final Clock clock;
 
   public RestrictedSqlQueryExecutionWorker(
@@ -44,6 +45,7 @@ public class RestrictedSqlQueryExecutionWorker {
         executor,
         request -> Mono.error(new UnsupportedOperationException("SQL DML preview is not configured")),
         new WorkerSqlDmlExecutionPolicy(List.of()),
+        SqlDmlWriteCapabilityValidator.noOp(),
         clock);
   }
 
@@ -54,11 +56,30 @@ public class RestrictedSqlQueryExecutionWorker {
       SqlDmlImpactPreviewExecutor previewExecutor,
       WorkerSqlDmlExecutionPolicy dmlExecutionPolicy,
       Clock clock) {
+    this(
+        readOnlyGuard,
+        dmlGuard,
+        executor,
+        previewExecutor,
+        dmlExecutionPolicy,
+        SqlDmlWriteCapabilityValidator.noOp(),
+        clock);
+  }
+
+  public RestrictedSqlQueryExecutionWorker(
+      SqlReadOnlyGuard readOnlyGuard,
+      SqlDmlGuard dmlGuard,
+      SqlQueryExecutor executor,
+      SqlDmlImpactPreviewExecutor previewExecutor,
+      WorkerSqlDmlExecutionPolicy dmlExecutionPolicy,
+      SqlDmlWriteCapabilityValidator dmlWriteCapabilityValidator,
+      Clock clock) {
     this.readOnlyGuard = readOnlyGuard;
     this.dmlGuard = dmlGuard;
     this.executor = executor;
     this.previewExecutor = previewExecutor;
     this.dmlExecutionPolicy = dmlExecutionPolicy;
+    this.dmlWriteCapabilityValidator = dmlWriteCapabilityValidator;
     this.clock = clock;
   }
 
@@ -94,8 +115,10 @@ public class RestrictedSqlQueryExecutionWorker {
   public Mono<SqlDmlImpactPreview> preflightDml(SqlDmlPreflightExecutionRequest request) {
     return Mono.defer(() -> {
       assertNotExpired(request.expiresAt());
+      dmlExecutionPolicy.assertEnabled(request);
       assertDmlEnvironment(request.query().targetEnvironment());
       assertControlledDml(request.query().sql());
+      dmlWriteCapabilityValidator.assertPreflightAllowed(request);
       return previewExecutor.preview(request);
     });
   }
@@ -119,6 +142,7 @@ public class RestrictedSqlQueryExecutionWorker {
             "SQL_NOT_CONTROLLED_DML",
             "Worker accepts exactly one controlled INSERT, UPDATE, or DELETE statement");
       }
+      dmlWriteCapabilityValidator.assertCommitAllowed(request);
       int affectedRows = executor.executeDml(legacyRequest(request));
       return new SqlQueryExecutionResult(
           "1.0",

@@ -13,6 +13,8 @@ import com.company.opsagent.contracts.sqlworkbench.SqlControlledDmlExecutionRequ
 import com.company.opsagent.contracts.sqlworkbench.SqlDmlCommitRequest;
 import com.company.opsagent.contracts.sqlworkbench.SqlDmlConfirmation;
 import com.company.opsagent.contracts.sqlworkbench.SqlDmlExecutionBinding;
+import com.company.opsagent.contracts.sqlworkbench.SqlDmlPreflightExecutionRequest;
+import com.company.opsagent.contracts.sqlworkbench.SqlDmlPreviewSelection;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryAction;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryExecutionRequest;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryLimits;
@@ -133,6 +135,82 @@ class RestrictedSqlQueryExecutionWorkerTest {
     assertEquals("REJECTED", result.status());
     assertEquals("SQL_DML_WORKER_DISABLED", result.errorCode());
     assertFalse(databaseAccessed.get());
+  }
+
+  @Test
+  void rejectsDisabledDmlPreflightBeforeInsertPreview() {
+    AtomicBoolean previewAccessed = new AtomicBoolean();
+    var worker = new RestrictedSqlQueryExecutionWorker(
+        new CalciteSqlReadOnlyGuard(),
+        new CalciteSqlDmlGuard(),
+        executor(1),
+        request -> {
+          previewAccessed.set(true);
+          return reactor.core.publisher.Mono.empty();
+        },
+        new WorkerSqlDmlExecutionPolicy(List.of(descriptor(false, null))),
+        CLOCK);
+
+    WorkerSqlEgressException exception = assertThrows(
+        WorkerSqlEgressException.class,
+        () -> worker.preflightDml(preflightDmlRequest(
+            "insert into ORDERS.ORDERS (ORDER_ID, STATUS) values (42, 'READY')")).block());
+
+    assertEquals("SQL_DML_WORKER_DISABLED", exception.errorCode());
+    assertFalse(previewAccessed.get());
+  }
+
+  @Test
+  void rejectsMissingWriteCredentialDmlPreflightBeforeInsertPreview() {
+    AtomicBoolean previewAccessed = new AtomicBoolean();
+    var worker = new RestrictedSqlQueryExecutionWorker(
+        new CalciteSqlReadOnlyGuard(),
+        new CalciteSqlDmlGuard(),
+        executor(1),
+        request -> {
+          previewAccessed.set(true);
+          return reactor.core.publisher.Mono.empty();
+        },
+        new WorkerSqlDmlExecutionPolicy(List.of(descriptor(true, null))),
+        CLOCK);
+
+    WorkerSqlEgressException exception = assertThrows(
+        WorkerSqlEgressException.class,
+        () -> worker.preflightDml(preflightDmlRequest(
+            "insert into ORDERS.ORDERS (ORDER_ID, STATUS) values (42, 'READY')")).block());
+
+    assertEquals("SQL_DML_WORKER_DISABLED", exception.errorCode());
+    assertFalse(previewAccessed.get());
+  }
+
+  @Test
+  void rejectsEgressDeniedDmlPreflightBeforeInsertPreview() {
+    AtomicBoolean previewAccessed = new AtomicBoolean();
+    WorkerSqlConnectionDescriptor descriptor = descriptor(true, "as400-sit-writer");
+    SqlDmlWriteCapabilityValidator writeCapabilityValidator = new ConfiguredSqlDataSourceRegistry(
+        new WorkerSqlEgressPolicy(List.of(descriptor), List.of()),
+        alias -> "database-password".toCharArray(),
+        new Jt400DataSourceFactory(),
+        new H2SqlDataSourceFactory());
+    var worker = new RestrictedSqlQueryExecutionWorker(
+        new CalciteSqlReadOnlyGuard(),
+        new CalciteSqlDmlGuard(),
+        executor(1),
+        request -> {
+          previewAccessed.set(true);
+          return reactor.core.publisher.Mono.empty();
+        },
+        enabledDmlPolicy(),
+        writeCapabilityValidator,
+        CLOCK);
+
+    WorkerSqlEgressException exception = assertThrows(
+        WorkerSqlEgressException.class,
+        () -> worker.preflightDml(preflightDmlRequest(
+            "insert into ORDERS.ORDERS (ORDER_ID, STATUS) values (42, 'READY')")).block());
+
+    assertEquals("SQL_EGRESS_NOT_ALLOWED", exception.errorCode());
+    assertFalse(previewAccessed.get());
   }
 
   @Test
@@ -425,6 +503,20 @@ class RestrictedSqlQueryExecutionWorkerTest {
         new PolicyDecisionReference("decision-1", "policy-v1", "ALLOW"),
         new TraceContext("trace-1", "request-1"),
         OffsetDateTime.now(CLOCK).plusSeconds(expiresInSeconds));
+  }
+
+  private SqlDmlPreflightExecutionRequest preflightDmlRequest(String sql) {
+    return new SqlDmlPreflightExecutionRequest(
+        "1.0",
+        "preflight-execution-1",
+        "workflow-1",
+        query(sql, "sit", SqlQueryAction.PREFLIGHT_DML),
+        "sha256:validation",
+        new SqlDmlPreviewSelection("1.0", List.of(), List.of()),
+        new OperatorContext("operator-1", List.of("ROLE_sql-operator")),
+        new PolicyDecisionReference("decision-1", "policy-v1", "ALLOW"),
+        new TraceContext("trace-1", "request-1"),
+        OffsetDateTime.now(CLOCK).plusSeconds(30));
   }
 
   private SqlQueryExecutionRequest legacyExecutionRequest(SqlControlledDmlExecutionRequest request) {

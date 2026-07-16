@@ -1,6 +1,7 @@
 package com.company.opsagent.executionworker.sqlworkbench;
 
 import com.company.opsagent.contracts.sqlworkbench.SqlControlledDmlExecutionRequest;
+import com.company.opsagent.contracts.sqlworkbench.SqlDmlPreflightExecutionRequest;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -36,8 +37,15 @@ public final class WorkerSqlDmlExecutionPolicy {
   }
 
   public void assertEnabled(SqlControlledDmlExecutionRequest request) {
-    WorkerSqlConnectionDescriptor descriptor =
-        descriptorsByConnectionId.get(request.commitRequest().query().connectionId());
+    assertEnabled(request.commitRequest().query().connectionId());
+  }
+
+  public void assertEnabled(SqlDmlPreflightExecutionRequest request) {
+    assertEnabled(request.query().connectionId());
+  }
+
+  private void assertEnabled(String connectionId) {
+    WorkerSqlConnectionDescriptor descriptor = descriptorsByConnectionId.get(connectionId);
     if (descriptor == null
         || !descriptor.enabled()
         || !descriptor.dmlEnabled()
