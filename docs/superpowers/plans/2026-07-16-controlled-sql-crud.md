@@ -35,7 +35,7 @@
 | `backend/execution-worker-sqlworkbench/.../JdbcSqlDmlImpactPreviewExecutor.java` | 用只读语句执行影响计数和受限样本预览。 |
 | `frontend/operator-console/src/features/sql-workbench/SqlWorkbenchPage.jsx` | 消费真实预检结果、开关后的连接能力和执行状态。 |
 
-## 任务 1：定义预检、绑定和 Worker 传输契约
+## Task 1：定义预检、绑定和 Worker 传输契约
 
 **文件：**
 
@@ -107,7 +107,7 @@ git add backend/contracts
 git commit -m "Add controlled SQL DML contracts"
 ~~~
 
-## 任务 2：实现默认拒绝的服务端 DML 策略和静态分析
+## Task 2：实现默认拒绝的服务端 DML 策略和静态分析
 
 **文件：**
 
@@ -176,7 +176,7 @@ git add backend/control-plane/modules/sqlworkbench backend/control-plane/bootstr
 git commit -m "Add controlled SQL DML policy gate"
 ~~~
 
-## 任务 3：建立 M05 DML 工作流、幂等和审计事实源
+## Task 3：建立 M05 DML 工作流、幂等和审计事实源
 
 **文件：**
 
@@ -255,7 +255,7 @@ git add backend/control-plane/modules/workflow backend/control-plane/bootstrap/s
 git commit -m "Persist controlled SQL DML workflows"
 ~~~
 
-## 任务 4：实现 Worker 影响预览、写凭据和短事务门禁
+## Task 4：实现 Worker 影响预览、写凭据和短事务门禁
 
 **文件：**
 
@@ -334,7 +334,7 @@ git add backend/execution-worker-sqlworkbench
 git commit -m "Add controlled SQL DML worker guards"
 ~~~
 
-## 任务 5：将 M05 工作流接入 M09 控制面
+## Task 5：将 M05 工作流接入 M09 控制面
 
 **文件：**
 
@@ -421,7 +421,7 @@ git add backend/control-plane/modules/workflow backend/control-plane/modules/sql
 git commit -m "Execute controlled SQL DML workflows"
 ~~~
 
-## 任务 6：接入操作台真实预检、能力与执行状态
+## Task 6：接入操作台真实预检、能力与执行状态
 
 **文件：**
 
@@ -487,7 +487,7 @@ git add frontend/operator-console
 git commit -m "Show controlled SQL DML preflight state"
 ~~~
 
-## 任务 7：配置、运行手册、计划状态和端到端验收
+## Task 7：配置、运行手册、计划状态和端到端验收
 
 **文件：**
 
