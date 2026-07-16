@@ -8,9 +8,10 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.r2dbc.connection.R2dbcTransactionManager;
 import org.springframework.r2dbc.core.DatabaseClient;
+import org.springframework.transaction.reactive.TransactionalOperator;
 import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
 
 /** 基于 R2DBC 的受控 SQL DML 工作流事实源。 */
 public final class R2dbcControlledSqlDmlWorkflowStore implements ControlledSqlDmlWorkflowStore {
@@ -21,41 +22,51 @@ public final class R2dbcControlledSqlDmlWorkflowStore implements ControlledSqlDm
   private static final String ACTION_SUCCEEDED = "SQL_DML_SUCCEEDED";
   private static final String ACTION_FAILED = "SQL_DML_FAILED";
   private static final String ACTION_HANDOFF_REQUIRED = "SQL_DML_HANDOFF_REQUIRED";
+  private static final Pattern SHA_256_HEX = Pattern.compile("[0-9a-f]{64}");
   private static final Pattern SAFE_FAILURE_CODE = Pattern.compile("[A-Z][A-Z0-9_]{0,127}");
 
   private final DatabaseClient databaseClient;
   private final AuditTrail auditTrail;
+  private final TransactionalOperator transactions;
 
   public R2dbcControlledSqlDmlWorkflowStore(
       DatabaseClient databaseClient,
       AuditTrail auditTrail) {
     this.databaseClient = Objects.requireNonNull(databaseClient, "databaseClient");
     this.auditTrail = Objects.requireNonNull(auditTrail, "auditTrail");
+    this.transactions = TransactionalOperator.create(
+        new R2dbcTransactionManager(databaseClient.getConnectionFactory()));
   }
 
   @Override
   public Mono<ControlledSqlDmlWorkflow> create(ControlledSqlDmlWorkflow workflow) {
+    if (!hasValidPersistedHashes(workflow)) {
+      return Mono.error(new IllegalArgumentException(
+          "controlled SQL DML persisted hash is invalid"));
+    }
     if (workflow.status() != ControlledSqlDmlWorkflow.Status.CREATED
         || workflow.attemptCount() != 0
         || workflow.affectedRowCount() != null
         || workflow.failureCode() != null
+        || workflow.confirmedAt() != null
         || workflow.completedAt() != null) {
       return Mono.error(new IllegalArgumentException(
           "controlled SQL DML workflow has invalid initial state"));
     }
-    return assertCompatible(
-            workflow.idempotencyKey(),
-            workflow.operatorId(),
-            workflow.targetEnvironment(),
-            workflow.bindingHash())
-        .switchIfEmpty(Mono.defer(() -> insert(workflow)
-            .onErrorResume(DataIntegrityViolationException.class, error ->
-                assertCompatible(
-                        workflow.idempotencyKey(),
-                        workflow.operatorId(),
-                        workflow.targetEnvironment(),
-                        workflow.bindingHash())
-                    .switchIfEmpty(Mono.error(error)))));
+    Mono<ControlledSqlDmlWorkflow> existing = assertCompatible(
+        workflow.idempotencyKey(),
+        workflow.operatorId(),
+        workflow.targetEnvironment(),
+        workflow.bindingHash());
+    Mono<ControlledSqlDmlWorkflow> create = transactions.transactional(insert(workflow))
+        .onErrorResume(DataIntegrityViolationException.class, error ->
+            assertCompatible(
+                    workflow.idempotencyKey(),
+                    workflow.operatorId(),
+                    workflow.targetEnvironment(),
+                    workflow.bindingHash())
+                .switchIfEmpty(Mono.error(error)));
+    return existing.switchIfEmpty(Mono.defer(() -> create));
   }
 
   @Override
@@ -83,6 +94,10 @@ public final class R2dbcControlledSqlDmlWorkflowStore implements ControlledSqlDm
       String operatorId,
       String targetEnvironment,
       String bindingHash) {
+    if (!isSha256Hex(bindingHash)) {
+      return Mono.error(new IllegalArgumentException(
+          "controlled SQL DML binding hash is invalid"));
+    }
     return findByIdempotency(idempotencyKey, operatorId, targetEnvironment)
         .flatMap(existing -> Objects.equals(existing.bindingHash(), bindingHash)
             ? Mono.just(existing)
@@ -93,11 +108,15 @@ public final class R2dbcControlledSqlDmlWorkflowStore implements ControlledSqlDm
   public Mono<ControlledSqlDmlWorkflow> markConfirmed(
       String workflowId,
       OffsetDateTime confirmedAt) {
-    return databaseClient.sql("""
+    return transactions.transactional(databaseClient.sql("""
             update controlled_sql_dml_workflow
-            set updated_at = :updatedAt
-            where workflow_id = :workflowId and status = :status
+            set confirmed_at = :confirmedAt,
+                updated_at = :updatedAt
+            where workflow_id = :workflowId
+              and status = :status
+              and confirmed_at is null
             """)
+        .bind("confirmedAt", confirmedAt)
         .bind("updatedAt", confirmedAt)
         .bind("workflowId", workflowId)
         .bind("status", ControlledSqlDmlWorkflow.Status.CREATED.name())
@@ -108,21 +127,22 @@ public final class R2dbcControlledSqlDmlWorkflowStore implements ControlledSqlDm
             workflow,
             ACTION_CONFIRMED,
             "CONFIRMED",
-            "workflowId=" + workflow.workflowId()
-                + ";confirmationHash=" + workflow.confirmationHash(),
-            confirmedAt));
+            "status=" + workflow.status().name(),
+            confirmedAt)));
   }
 
   @Override
   public Mono<ControlledSqlDmlWorkflow> markSubmitted(
       String workflowId,
       OffsetDateTime submittedAt) {
-    return databaseClient.sql("""
+    return transactions.transactional(databaseClient.sql("""
             update controlled_sql_dml_workflow
             set status = :runningStatus,
                 attempt_count = attempt_count + 1,
                 updated_at = :updatedAt
-            where workflow_id = :workflowId and status = :createdStatus
+            where workflow_id = :workflowId
+              and status = :createdStatus
+              and confirmed_at is not null
             """)
         .bind("runningStatus", ControlledSqlDmlWorkflow.Status.RUNNING.name())
         .bind("updatedAt", submittedAt)
@@ -135,9 +155,9 @@ public final class R2dbcControlledSqlDmlWorkflowStore implements ControlledSqlDm
             workflow,
             ACTION_SUBMITTED,
             ControlledSqlDmlWorkflow.Status.RUNNING.name(),
-            "workflowId=" + workflow.workflowId()
+            "status=" + workflow.status().name()
                 + ";attemptCount=" + workflow.attemptCount(),
-            submittedAt));
+            submittedAt)));
   }
 
   @Override
@@ -214,6 +234,7 @@ public final class R2dbcControlledSqlDmlWorkflowStore implements ControlledSqlDm
               attempt_count,
               affected_row_count,
               failure_code,
+              confirmed_at,
               created_at,
               updated_at,
               completed_at
@@ -238,6 +259,7 @@ public final class R2dbcControlledSqlDmlWorkflowStore implements ControlledSqlDm
               :attemptCount,
               :affectedRowCount,
               :failureCode,
+              :confirmedAt,
               :createdAt,
               :updatedAt,
               :completedAt
@@ -265,6 +287,7 @@ public final class R2dbcControlledSqlDmlWorkflowStore implements ControlledSqlDm
         .bind("updatedAt", workflow.updatedAt());
     spec = bindNullable(spec, "affectedRowCount", workflow.affectedRowCount(), Integer.class);
     spec = bindNullable(spec, "failureCode", workflow.failureCode(), String.class);
+    spec = bindNullable(spec, "confirmedAt", workflow.confirmedAt(), OffsetDateTime.class);
     spec = bindNullable(spec, "completedAt", workflow.completedAt(), OffsetDateTime.class);
     return spec.fetch()
         .rowsUpdated()
@@ -273,8 +296,7 @@ public final class R2dbcControlledSqlDmlWorkflowStore implements ControlledSqlDm
             created,
             ACTION_CREATED,
             ControlledSqlDmlWorkflow.Status.CREATED.name(),
-            "workflowId=" + created.workflowId()
-                + ";bindingHash=" + created.bindingHash(),
+            "status=" + created.status().name(),
             created.createdAt()));
   }
 
@@ -302,15 +324,15 @@ public final class R2dbcControlledSqlDmlWorkflowStore implements ControlledSqlDm
         .bind("runningStatus", ControlledSqlDmlWorkflow.Status.RUNNING.name());
     spec = bindNullable(spec, "affectedRowCount", affectedRowCount, Integer.class);
     spec = bindNullable(spec, "failureCode", failureCode, String.class);
-    return spec.fetch()
+    return transactions.transactional(spec.fetch()
         .rowsUpdated()
         .flatMap(rows -> requireUpdated(rows, workflowId, "complete as " + status.name()))
         .flatMap(workflow -> recordAudit(
             workflow,
             action,
             status.name(),
-            "workflowId=" + workflow.workflowId() + ";" + safeResultFact,
-            completedAt));
+            "status=" + workflow.status().name() + ";" + safeResultFact,
+            completedAt)));
   }
 
   private Mono<ControlledSqlDmlWorkflow> requireUpdated(
@@ -357,6 +379,7 @@ public final class R2dbcControlledSqlDmlWorkflowStore implements ControlledSqlDm
         valueOrZero(row.get("attempt_count", Integer.class)),
         row.get("affected_row_count", Integer.class),
         row.get("failure_code", String.class),
+        row.get("confirmed_at", OffsetDateTime.class),
         row.get("created_at", OffsetDateTime.class),
         row.get("updated_at", OffsetDateTime.class),
         row.get("completed_at", OffsetDateTime.class));
@@ -381,9 +404,7 @@ public final class R2dbcControlledSqlDmlWorkflowStore implements ControlledSqlDm
         result,
         reason,
         timestamp);
-    return Mono.fromRunnable(() -> auditTrail.record(event))
-        .subscribeOn(Schedulers.boundedElastic())
-        .thenReturn(workflow);
+    return auditTrail.recordReactive(event).thenReturn(workflow);
   }
 
   private DatabaseClient.GenericExecuteSpec bindNullable(
@@ -400,5 +421,17 @@ public final class R2dbcControlledSqlDmlWorkflowStore implements ControlledSqlDm
 
   private boolean isSafeFailureCode(String failureCode) {
     return failureCode != null && SAFE_FAILURE_CODE.matcher(failureCode).matches();
+  }
+
+  private boolean hasValidPersistedHashes(ControlledSqlDmlWorkflow workflow) {
+    return isSha256Hex(workflow.bindingHash())
+        && isSha256Hex(workflow.sqlHash())
+        && isSha256Hex(workflow.parametersHash())
+        && isSha256Hex(workflow.preflightHash())
+        && isSha256Hex(workflow.confirmationHash());
+  }
+
+  private boolean isSha256Hex(String value) {
+    return value != null && SHA_256_HEX.matcher(value).matches();
   }
 }

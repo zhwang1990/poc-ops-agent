@@ -29,6 +29,7 @@ public record ControlledSqlDmlWorkflow(
     int attemptCount,
     Integer affectedRowCount,
     String failureCode,
+    OffsetDateTime confirmedAt,
     OffsetDateTime createdAt,
     OffsetDateTime updatedAt,
     OffsetDateTime completedAt) {

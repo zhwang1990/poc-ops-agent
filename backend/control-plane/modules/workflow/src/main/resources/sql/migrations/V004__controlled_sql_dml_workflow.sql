@@ -19,6 +19,7 @@ create table if not exists controlled_sql_dml_workflow (
   attempt_count integer not null,
   affected_row_count integer,
   failure_code varchar(128),
+  confirmed_at timestamp with time zone,
   created_at timestamp with time zone not null,
   updated_at timestamp with time zone not null,
   completed_at timestamp with time zone
@@ -26,3 +27,6 @@ create table if not exists controlled_sql_dml_workflow (
 
 create unique index if not exists ux_controlled_sql_dml_idempotency
   on controlled_sql_dml_workflow (idempotency_key, operator_id, target_environment);
+
+alter table if exists controlled_sql_dml_workflow
+  add column if not exists confirmed_at timestamp with time zone;
