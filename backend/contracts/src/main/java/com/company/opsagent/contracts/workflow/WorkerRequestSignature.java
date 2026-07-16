@@ -1,6 +1,12 @@
 package com.company.opsagent.contracts.workflow;
 
 import com.company.opsagent.contracts.sqlworkbench.SqlConnectionSummary;
+import com.company.opsagent.contracts.sqlworkbench.SqlControlledDmlExecutionRequest;
+import com.company.opsagent.contracts.sqlworkbench.SqlDmlCommitRequest;
+import com.company.opsagent.contracts.sqlworkbench.SqlDmlConfirmation;
+import com.company.opsagent.contracts.sqlworkbench.SqlDmlExecutionBinding;
+import com.company.opsagent.contracts.sqlworkbench.SqlDmlPreflightExecutionRequest;
+import com.company.opsagent.contracts.sqlworkbench.SqlDmlPreviewSelection;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryExecutionRequest;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryRequest;
 import java.nio.charset.StandardCharsets;
@@ -108,6 +114,92 @@ public final class WorkerRequestSignature {
         trace.requestId(),
         sha256Hex(query.sql()),
         sha256Hex(query.parameters().toString()));
+  }
+
+  /**
+   * 构造 SQL 工作台 DML 预检执行请求的 canonical payload。
+   */
+  public static String canonicalSqlDmlPreflightPayload(
+      String keyId,
+      String timestamp,
+      SqlDmlPreflightExecutionRequest request) {
+    requireText(keyId, "keyId");
+    requireText(timestamp, "timestamp");
+    if (request == null) {
+      throw new IllegalArgumentException("request is required");
+    }
+    SqlQueryRequest query = request.query();
+    SqlDmlPreviewSelection previewSelection = request.previewSelection();
+    OperatorContext operator = request.operator();
+    PolicyDecisionReference policyDecision = request.policyDecision();
+    TraceContext trace = request.trace();
+    return String.join("\n",
+        SIGNATURE_VERSION,
+        "sql-dml-preflight-execution-v1",
+        keyId,
+        timestamp,
+        request.contractVersion(),
+        request.executionRequestId(),
+        request.workflowId(),
+        request.validationHash(),
+        request.expiresAt().toString(),
+        canonicalSqlQueryFields(query),
+        previewSelection.contractVersion(),
+        canonicalStringList(previewSelection.sampleColumns()),
+        canonicalStringList(previewSelection.maskedSampleColumns()),
+        operator.operatorId(),
+        canonicalStringList(operator.roles()),
+        policyDecision.decisionId(),
+        policyDecision.policyVersion(),
+        policyDecision.decision(),
+        trace.traceId(),
+        trace.requestId());
+  }
+
+  /**
+   * 构造 SQL 工作台受控 DML 提交请求的 canonical payload。
+   */
+  public static String canonicalControlledSqlDmlPayload(
+      String keyId,
+      String timestamp,
+      SqlControlledDmlExecutionRequest request) {
+    requireText(keyId, "keyId");
+    requireText(timestamp, "timestamp");
+    if (request == null) {
+      throw new IllegalArgumentException("request is required");
+    }
+    SqlDmlCommitRequest commitRequest = request.commitRequest();
+    SqlDmlConfirmation confirmation = commitRequest.confirmation();
+    SqlDmlExecutionBinding binding = request.binding();
+    OperatorContext operator = request.operator();
+    PolicyDecisionReference policyDecision = request.policyDecision();
+    TraceContext trace = request.trace();
+    return String.join("\n",
+        SIGNATURE_VERSION,
+        "sql-controlled-dml-execution-v1",
+        keyId,
+        timestamp,
+        request.contractVersion(),
+        request.executionRequestId(),
+        request.workflowId(),
+        request.expiresAt().toString(),
+        commitRequest.contractVersion(),
+        canonicalSqlQueryFields(commitRequest.query()),
+        confirmation.contractVersion(),
+        confirmation.sqlHash(),
+        canonicalStringList(confirmation.confirmedRisks()),
+        confirmation.confirmationCode(),
+        binding.bindingHash(),
+        binding.parametersHash(),
+        binding.preflightHash(),
+        binding.confirmationHash(),
+        operator.operatorId(),
+        canonicalStringList(operator.roles()),
+        policyDecision.decisionId(),
+        policyDecision.policyVersion(),
+        policyDecision.decision(),
+        trace.traceId(),
+        trace.requestId());
   }
 
   /**
@@ -223,6 +315,29 @@ public final class WorkerRequestSignature {
     } catch (NoSuchAlgorithmException exception) {
       throw new IllegalStateException("SHA-256 is not available", exception);
     }
+  }
+
+  private static String canonicalSqlQueryFields(SqlQueryRequest query) {
+    return String.join("\n",
+        query.contractVersion(),
+        query.connectionId(),
+        query.targetEnvironment(),
+        query.schema(),
+        query.action().name(),
+        query.idempotencyKey(),
+        String.valueOf(query.limits().maxRows()),
+        String.valueOf(query.limits().maxBytes()),
+        String.valueOf(query.limits().timeoutSeconds()),
+        sha256Hex(query.sql()),
+        sha256Hex(query.parameters().toString()));
+  }
+
+  private static String canonicalStringList(java.util.List<String> values) {
+    StringBuilder payload = new StringBuilder().append(values.size()).append(':');
+    for (String value : values) {
+      payload.append(value.length()).append(':').append(value);
+    }
+    return payload.toString();
   }
 
   private static void requireText(String value, String name) {
