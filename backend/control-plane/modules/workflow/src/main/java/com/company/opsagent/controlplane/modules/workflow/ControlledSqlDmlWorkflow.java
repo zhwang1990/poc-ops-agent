@@ -32,6 +32,7 @@ public record ControlledSqlDmlWorkflow(
     OffsetDateTime confirmedAt,
     OffsetDateTime createdAt,
     OffsetDateTime updatedAt,
+    OffsetDateTime executionExpiresAt,
     OffsetDateTime completedAt) {
 
   public enum Status {

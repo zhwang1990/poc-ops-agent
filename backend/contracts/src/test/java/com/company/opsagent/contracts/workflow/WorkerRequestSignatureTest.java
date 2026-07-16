@@ -9,6 +9,7 @@ import com.company.opsagent.contracts.sqlworkbench.SqlDmlCommitRequest;
 import com.company.opsagent.contracts.sqlworkbench.SqlDmlConfirmation;
 import com.company.opsagent.contracts.sqlworkbench.SqlDmlExecutionBinding;
 import com.company.opsagent.contracts.sqlworkbench.SqlDmlPreflightExecutionRequest;
+import com.company.opsagent.contracts.sqlworkbench.SqlDmlPreflightReceipt;
 import com.company.opsagent.contracts.sqlworkbench.SqlDmlPreviewSelection;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryAction;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryExecutionRequest;
@@ -163,6 +164,21 @@ class WorkerRequestSignatureTest {
         KEY_ID, TIMESTAMP, readOnlyRequest());
 
     assertTrue(payload.contains("\nsql-query-execution-v1\n"));
+  }
+
+  @Test
+  void receiptSignatureChangesWhenOperatorOrPolicySelectionChanges() {
+    SqlDmlPreflightReceipt first = receipt("operator-1", "d".repeat(64));
+    SqlDmlPreflightReceipt second = receipt("operator-2", "e".repeat(64));
+
+    String firstSignature = WorkerRequestSignature.sign(
+        SECRET,
+        WorkerRequestSignature.canonicalSqlDmlPreflightReceiptPayload(KEY_ID, first));
+    String secondSignature = WorkerRequestSignature.sign(
+        SECRET,
+        WorkerRequestSignature.canonicalSqlDmlPreflightReceiptPayload(KEY_ID, second));
+
+    assertNotEquals(firstSignature, secondSignature);
   }
 
   private String signature(SqlControlledDmlExecutionRequest request) {
@@ -340,5 +356,26 @@ class WorkerRequestSignatureTest {
 
   private OffsetDateTime expiresAt() {
     return OffsetDateTime.parse("2026-07-16T12:30:00Z");
+  }
+
+  private SqlDmlPreflightReceipt receipt(String operatorId, String policySelectionDigest) {
+    return new SqlDmlPreflightReceipt(
+        "1.0",
+        "receipt-1",
+        KEY_ID,
+        OffsetDateTime.parse("2026-07-16T12:00:00Z"),
+        OffsetDateTime.parse("2026-07-16T12:05:00Z"),
+        operatorId,
+        "a".repeat(64),
+        "connection-1",
+        "dev",
+        "APP",
+        "b".repeat(64),
+        "c".repeat(64),
+        "policy-v1",
+        policySelectionDigest,
+        "d".repeat(64),
+        "e".repeat(64),
+        "signature");
   }
 }

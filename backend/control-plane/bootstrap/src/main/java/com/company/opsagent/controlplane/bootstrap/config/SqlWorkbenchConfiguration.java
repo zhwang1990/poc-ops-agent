@@ -13,6 +13,8 @@ import com.company.opsagent.controlplane.modules.sqlworkbench.DefaultSqlWorkbenc
 import com.company.opsagent.controlplane.modules.sqlworkbench.R2dbcSqlConnectionCatalog;
 import com.company.opsagent.controlplane.modules.sqlworkbench.SqlAssistantClient;
 import com.company.opsagent.controlplane.modules.sqlworkbench.SqlConnectionCatalog;
+import com.company.opsagent.controlplane.modules.sqlworkbench.SqlDmlPreflightReceiptProperties;
+import com.company.opsagent.controlplane.modules.sqlworkbench.SqlDmlPreflightReceiptService;
 import com.company.opsagent.controlplane.modules.sqlworkbench.SqlValidationService;
 import com.company.opsagent.controlplane.modules.sqlworkbench.SqlWorkbenchWorkerClient;
 import com.company.opsagent.controlplane.modules.sqlworkbench.SqlWorkbenchService;
@@ -71,6 +73,18 @@ public class SqlWorkbenchConfiguration {
   }
 
   @Bean
+  @ConfigurationProperties(prefix = "ops-agent.controlled-sql-dml.preflight-receipt")
+  SqlDmlPreflightReceiptProperties sqlDmlPreflightReceiptProperties() {
+    return new SqlDmlPreflightReceiptProperties();
+  }
+
+  @Bean
+  SqlDmlPreflightReceiptService sqlDmlPreflightReceiptService(
+      SqlDmlPreflightReceiptProperties sqlDmlPreflightReceiptProperties) {
+    return new SqlDmlPreflightReceiptService(sqlDmlPreflightReceiptProperties, Clock.systemUTC());
+  }
+
+  @Bean
   ControlledSqlDmlPolicy controlledSqlDmlPolicy(
       ControlledSqlDmlProperties controlledSqlDmlProperties,
       CalciteSqlDmlAnalysis calciteSqlDmlAnalysis) {
@@ -85,6 +99,7 @@ public class SqlWorkbenchConfiguration {
       SqlAssistantClient sqlAssistantClient,
       ControlledSqlDmlPolicy controlledSqlDmlPolicy,
       ControlledSqlDmlProperties controlledSqlDmlProperties,
+      SqlDmlPreflightReceiptService sqlDmlPreflightReceiptService,
       ControlledSqlDmlWorkflowService controlledSqlDmlWorkflowService,
       AuditTrail auditTrail,
       ConnectionFactory connectionFactory) {
@@ -96,11 +111,13 @@ public class SqlWorkbenchConfiguration {
         sqlWorkbenchWorkerClient,
         sqlAssistantClient,
         controlledSqlDmlPolicy,
+        sqlDmlPreflightReceiptService,
         controlledSqlDmlWorkflowService::execute,
         environment -> controlledSqlDmlProperties.getEnabledEnvironments().stream()
             .map(SqlTargetEnvironments::normalize)
             .anyMatch(SqlTargetEnvironments.normalize(environment)::equals)
-            && sqlWorkbenchWorkerClient.supportsControlledDml(environment),
+            && sqlWorkbenchWorkerClient.supportsControlledDml(environment)
+            && sqlDmlPreflightReceiptService.isAvailable(),
         transactionalAuditAvailable,
         Clock.systemUTC());
   }

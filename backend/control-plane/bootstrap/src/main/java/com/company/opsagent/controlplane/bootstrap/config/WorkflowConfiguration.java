@@ -13,6 +13,7 @@ import com.company.opsagent.controlplane.modules.workflow.AgentWorkflowStore;
 import com.company.opsagent.controlplane.modules.workflow.ControlledSqlDmlWorkflowStore;
 import com.company.opsagent.controlplane.modules.workflow.ControlledSqlDmlWorkerGateway;
 import com.company.opsagent.controlplane.modules.workflow.ControlledSqlDmlWorkflowService;
+import com.company.opsagent.controlplane.modules.sqlworkbench.SqlDmlPreflightReceiptService;
 import com.company.opsagent.controlplane.modules.workflow.ReadOnlyDiagnosticWorkflowService;
 import com.company.opsagent.controlplane.modules.workflow.ReadOnlyWorkflowRecoveryService;
 import com.company.opsagent.controlplane.modules.workflow.ReadOnlyWorkflowStore;
@@ -81,10 +82,12 @@ public class WorkflowConfiguration {
   @Bean
   ControlledSqlDmlWorkflowService controlledSqlDmlWorkflowService(
       ControlledSqlDmlWorkflowStore controlledSqlDmlWorkflowStore,
-      ControlledSqlDmlWorkerGateway controlledSqlDmlWorkerGateway) {
+      ControlledSqlDmlWorkerGateway controlledSqlDmlWorkerGateway,
+      SqlDmlPreflightReceiptService sqlDmlPreflightReceiptService) {
     return new ControlledSqlDmlWorkflowService(
         controlledSqlDmlWorkflowStore,
         controlledSqlDmlWorkerGateway,
+        sqlDmlPreflightReceiptService,
         Clock.systemUTC());
   }
 
@@ -128,7 +131,8 @@ public class WorkflowConfiguration {
         new ClassPathResource("sql/migrations/V001__workflow_schema.sql"),
         new ClassPathResource("sql/migrations/V002__agent_workflow_schema.sql"),
         new ClassPathResource("sql/migrations/V003__agent_workflow_result_columns.sql"),
-        new ClassPathResource("sql/migrations/V004__controlled_sql_dml_workflow.sql")));
+        new ClassPathResource("sql/migrations/V004__controlled_sql_dml_workflow.sql"),
+        new ClassPathResource("sql/migrations/V005__controlled_sql_dml_execution_expiry.sql")));
     return initializer;
   }
 

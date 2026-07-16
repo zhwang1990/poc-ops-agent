@@ -140,20 +140,27 @@ public final class R2dbcControlledSqlDmlWorkflowStore implements ControlledSqlDm
   @Override
   public Mono<ControlledSqlDmlWorkflow> markSubmitted(
       String workflowId,
-      OffsetDateTime submittedAt) {
+      OffsetDateTime submittedAt,
+      OffsetDateTime executionExpiresAt) {
     if (!hasTransactionalAudit()) {
       return transactionalAuditRequired();
+    }
+    if (executionExpiresAt == null || !executionExpiresAt.isAfter(submittedAt)) {
+      return Mono.error(new IllegalArgumentException(
+          "controlled SQL DML execution expiry must be after submission"));
     }
     return transactions.transactional(databaseClient.sql("""
             update controlled_sql_dml_workflow
             set status = :runningStatus,
                 attempt_count = attempt_count + 1,
+                execution_expires_at = :executionExpiresAt,
                 updated_at = :updatedAt
             where workflow_id = :workflowId
               and status = :createdStatus
               and confirmed_at is not null
             """)
         .bind("runningStatus", ControlledSqlDmlWorkflow.Status.RUNNING.name())
+        .bind("executionExpiresAt", executionExpiresAt)
         .bind("updatedAt", submittedAt)
         .bind("workflowId", workflowId)
         .bind("createdStatus", ControlledSqlDmlWorkflow.Status.CREATED.name())
@@ -255,6 +262,7 @@ public final class R2dbcControlledSqlDmlWorkflowStore implements ControlledSqlDm
               confirmed_at,
               created_at,
               updated_at,
+              execution_expires_at,
               completed_at
             ) values (
               :workflowId,
@@ -280,6 +288,7 @@ public final class R2dbcControlledSqlDmlWorkflowStore implements ControlledSqlDm
               :confirmedAt,
               :createdAt,
               :updatedAt,
+              :executionExpiresAt,
               :completedAt
             )
             """)
@@ -306,6 +315,7 @@ public final class R2dbcControlledSqlDmlWorkflowStore implements ControlledSqlDm
     spec = bindNullable(spec, "affectedRowCount", workflow.affectedRowCount(), Integer.class);
     spec = bindNullable(spec, "failureCode", workflow.failureCode(), String.class);
     spec = bindNullable(spec, "confirmedAt", workflow.confirmedAt(), OffsetDateTime.class);
+    spec = bindNullable(spec, "executionExpiresAt", workflow.executionExpiresAt(), OffsetDateTime.class);
     spec = bindNullable(spec, "completedAt", workflow.completedAt(), OffsetDateTime.class);
     return spec.fetch()
         .rowsUpdated()
@@ -400,6 +410,7 @@ public final class R2dbcControlledSqlDmlWorkflowStore implements ControlledSqlDm
         row.get("confirmed_at", OffsetDateTime.class),
         row.get("created_at", OffsetDateTime.class),
         row.get("updated_at", OffsetDateTime.class),
+        row.get("execution_expires_at", OffsetDateTime.class),
         row.get("completed_at", OffsetDateTime.class));
   }
 

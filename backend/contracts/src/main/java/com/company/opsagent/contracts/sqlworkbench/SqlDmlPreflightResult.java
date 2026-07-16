@@ -8,16 +8,27 @@ import static com.company.opsagent.contracts.ContractValues.required;
 public record SqlDmlPreflightResult(
     String contractVersion,
     SqlValidationReport validation,
-    SqlDmlImpactPreview impactPreview) {
+    SqlDmlImpactPreview impactPreview,
+    SqlDmlPreflightReceipt receipt) {
 
   public SqlDmlPreflightResult {
-    if (!"1.0".equals(contractVersion)) {
-      throw new IllegalArgumentException("contractVersion must be 1.0");
+    if (!"1.0".equals(contractVersion) && !"1.1".equals(contractVersion)) {
+      throw new IllegalArgumentException("contractVersion must be 1.0 or 1.1");
     }
     validation = required(validation, "validation");
     if (requiresImpactPreview(validation) && impactPreview == null) {
       throw new IllegalArgumentException("impactPreview is required for validated DML");
     }
+    if ("1.1".equals(contractVersion) && receipt == null) {
+      throw new IllegalArgumentException("receipt is required for contractVersion 1.1");
+    }
+  }
+
+  public SqlDmlPreflightResult(
+      String contractVersion,
+      SqlValidationReport validation,
+      SqlDmlImpactPreview impactPreview) {
+    this(contractVersion, validation, impactPreview, null);
   }
 
   private static boolean requiresImpactPreview(SqlValidationReport validation) {

@@ -108,7 +108,8 @@ class R2dbcControlledSqlDmlWorkflowStoreTest {
 
     store.create(createdWorkflow("workflow-safe-audit", "key-safe-audit", createdAt)).block();
     store.markConfirmed("workflow-safe-audit", createdAt.plusSeconds(1)).block();
-    store.markSubmitted("workflow-safe-audit", createdAt.plusSeconds(2)).block();
+    store.markSubmitted(
+        "workflow-safe-audit", createdAt.plusSeconds(2), createdAt.plusSeconds(32)).block();
     store.markSucceeded("workflow-safe-audit", 1, createdAt.plusSeconds(3)).block();
 
     List<String> individualHashes = List.of(
@@ -129,7 +130,8 @@ class R2dbcControlledSqlDmlWorkflowStoreTest {
     store.create(createdWorkflow("workflow-audit-failure", "key-audit-failure", createdAt)).block();
     store.markConfirmed("workflow-audit-failure", createdAt.plusSeconds(1)).block();
 
-    StepVerifier.create(store.markSubmitted("workflow-audit-failure", createdAt.plusSeconds(2)))
+    StepVerifier.create(store.markSubmitted(
+        "workflow-audit-failure", createdAt.plusSeconds(2), createdAt.plusSeconds(32)))
         .expectErrorMessage("forced audit failure")
         .verify();
 
@@ -152,7 +154,8 @@ class R2dbcControlledSqlDmlWorkflowStoreTest {
 
     store.create(createdWorkflow("workflow-confirmed", "key-confirmed", createdAt)).block();
 
-    StepVerifier.create(store.markSubmitted("workflow-confirmed", createdAt.plusSeconds(2)))
+    StepVerifier.create(store.markSubmitted(
+        "workflow-confirmed", createdAt.plusSeconds(2), createdAt.plusSeconds(32)))
         .expectError(IllegalStateException.class)
         .verify();
     assertEquals(
@@ -172,7 +175,8 @@ class R2dbcControlledSqlDmlWorkflowStoreTest {
             .one()
             .block());
 
-    StepVerifier.create(store.markSubmitted("workflow-confirmed", createdAt.plusSeconds(2)))
+    StepVerifier.create(store.markSubmitted(
+        "workflow-confirmed", createdAt.plusSeconds(2), createdAt.plusSeconds(32)))
         .assertNext(workflow -> assertEquals(
             ControlledSqlDmlWorkflow.Status.RUNNING, workflow.status()))
         .verifyComplete();
@@ -186,7 +190,7 @@ class R2dbcControlledSqlDmlWorkflowStoreTest {
 
     StepVerifier.create(store.create(createdWorkflow("workflow-1", "key-1", createdAt))
         .then(store.markConfirmed("workflow-1", createdAt.plusSeconds(1)))
-        .then(store.markSubmitted("workflow-1", createdAt.plusSeconds(2)))
+        .then(store.markSubmitted("workflow-1", createdAt.plusSeconds(2), createdAt.plusSeconds(32)))
         .then(store.markSucceeded("workflow-1", 3, createdAt.plusSeconds(3))))
         .assertNext(workflow -> {
           assertEquals(ControlledSqlDmlWorkflow.Status.SUCCEEDED, workflow.status());
@@ -212,12 +216,14 @@ class R2dbcControlledSqlDmlWorkflowStoreTest {
 
     StepVerifier.create(store.create(createdWorkflow("workflow-failed", "key-failed", createdAt))
         .then(store.markConfirmed("workflow-failed", createdAt.plusSeconds(1)))
-        .then(store.markSubmitted("workflow-failed", createdAt.plusSeconds(2)))
+        .then(store.markSubmitted(
+            "workflow-failed", createdAt.plusSeconds(2), createdAt.plusSeconds(32)))
         .then(store.markFailed(
             "workflow-failed", "SQL_DML_WORKER_FAILED", createdAt.plusSeconds(3)))
         .then(store.create(createdWorkflow("workflow-handoff", "key-handoff", createdAt)))
         .then(store.markConfirmed("workflow-handoff", createdAt.plusSeconds(1)))
-        .then(store.markSubmitted("workflow-handoff", createdAt.plusSeconds(2)))
+        .then(store.markSubmitted(
+            "workflow-handoff", createdAt.plusSeconds(2), createdAt.plusSeconds(32)))
         .then(store.markHandoffRequired(
             "workflow-handoff", "SQL_DML_RESULT_UNKNOWN", createdAt.plusSeconds(3))))
         .assertNext(workflow -> {
@@ -251,7 +257,8 @@ class R2dbcControlledSqlDmlWorkflowStoreTest {
 
     StepVerifier.create(store.create(createdWorkflow("workflow-unsafe", "key-unsafe", createdAt))
         .then(store.markConfirmed("workflow-unsafe", createdAt.plusSeconds(1)))
-        .then(store.markSubmitted("workflow-unsafe", createdAt.plusSeconds(2)))
+        .then(store.markSubmitted(
+            "workflow-unsafe", createdAt.plusSeconds(2), createdAt.plusSeconds(32)))
         .then(store.markFailed(
             "workflow-unsafe", "sample-value select * from secret", createdAt.plusSeconds(3))))
         .expectError(IllegalArgumentException.class)
@@ -277,7 +284,8 @@ class R2dbcControlledSqlDmlWorkflowStoreTest {
     initializer.setConnectionFactory(connectionFactory);
     initializer.setDatabasePopulator(new ResourceDatabasePopulator(
         new ClassPathResource("sql/migrations/V001__audit_event_schema.sql"),
-        new ClassPathResource("sql/migrations/V004__controlled_sql_dml_workflow.sql")));
+        new ClassPathResource("sql/migrations/V004__controlled_sql_dml_workflow.sql"),
+        new ClassPathResource("sql/migrations/V005__controlled_sql_dml_execution_expiry.sql")));
     initializer.afterPropertiesSet();
     databaseClient = DatabaseClient.create(connectionFactory);
   }
@@ -334,6 +342,7 @@ class R2dbcControlledSqlDmlWorkflowStoreTest {
         null,
         createdAt,
         createdAt,
+        null,
         null);
   }
 

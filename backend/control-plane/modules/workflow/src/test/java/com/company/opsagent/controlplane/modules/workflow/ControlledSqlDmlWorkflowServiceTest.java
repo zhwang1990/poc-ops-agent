@@ -7,6 +7,7 @@ import com.company.opsagent.contracts.sqlworkbench.SqlControlledDmlExecutionRequ
 import com.company.opsagent.contracts.sqlworkbench.SqlDmlCommitRequest;
 import com.company.opsagent.contracts.sqlworkbench.SqlDmlConfirmation;
 import com.company.opsagent.contracts.sqlworkbench.SqlDmlExecutionBinding;
+import com.company.opsagent.contracts.sqlworkbench.SqlDmlPreviewSelection;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryAction;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryExecutionResult;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryLimits;
@@ -23,6 +24,7 @@ import io.r2dbc.spi.ConnectionFactories;
 import java.lang.reflect.Proxy;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
@@ -57,13 +59,14 @@ class ControlledSqlDmlWorkflowServiceTest {
     initializer.setConnectionFactory(connectionFactory);
     initializer.setDatabasePopulator(new ResourceDatabasePopulator(
         new ClassPathResource("sql/migrations/V001__audit_event_schema.sql"),
-        new ClassPathResource("sql/migrations/V004__controlled_sql_dml_workflow.sql")));
+        new ClassPathResource("sql/migrations/V004__controlled_sql_dml_workflow.sql"),
+        new ClassPathResource("sql/migrations/V005__controlled_sql_dml_execution_expiry.sql")));
     initializer.afterPropertiesSet();
     DatabaseClient databaseClient = DatabaseClient.create(connectionFactory);
     auditTrail = new R2dbcAuditTrail(databaseClient);
     store = new R2dbcControlledSqlDmlWorkflowStore(databaseClient, auditTrail);
     gateway = new RecordingGateway();
-    service = new ControlledSqlDmlWorkflowService(store, gateway, CLOCK);
+    service = new ControlledSqlDmlWorkflowService(store, gateway, request -> { }, CLOCK);
   }
 
   @Test
@@ -92,6 +95,16 @@ class ControlledSqlDmlWorkflowServiceTest {
     assertEquals(first, second);
     assertEquals(1, gateway.requests.size());
     assertEquals(1, persisted().attemptCount());
+  }
+
+  @Test
+  void reusesTerminalResultWhenFreshPolicyDecisionHasSameSemanticBinding() {
+    SqlQueryExecutionResult first = service.execute(request(BINDING_HASH, "decision-1"));
+    SqlQueryExecutionResult second = service.execute(request(BINDING_HASH, "decision-2"));
+
+    assertEquals(first, second);
+    assertEquals(1, gateway.requests.size());
+    assertEquals("decision-1", persisted().policyDecisionId());
   }
 
   @Test
@@ -126,36 +139,60 @@ class ControlledSqlDmlWorkflowServiceTest {
   }
 
   @Test
+  void convertsExpiredRunningWorkflowToHandoffBeforeReturningDuplicate() {
+    ControlledSqlDmlWorkflow workflow = createRunningWorkflow(
+        "workflow-expired", OffsetDateTime.now(CLOCK).minusSeconds(1));
+
+    ControlledSqlDmlWorkflowService.WorkflowException exception = assertThrows(
+        ControlledSqlDmlWorkflowService.WorkflowException.class,
+        () -> service.execute(request(BINDING_HASH)));
+
+    assertEquals("SQL_DML_RESULT_UNKNOWN", exception.code());
+    assertEquals(0, gateway.requests.size());
+    assertEquals(ControlledSqlDmlWorkflow.Status.UNKNOWN_REQUIRES_HANDOFF, persisted().status());
+    assertEquals(
+        "SQL_DML_HANDOFF_REQUIRED",
+        auditTrail.snapshot().getLast().action());
+  }
+
+  @Test
+  void failsClosedWhenUnknownHandoffCannotBePersisted() {
+    gateway.timeout = true;
+    ControlledSqlDmlWorkflowService unavailable = new ControlledSqlDmlWorkflowService(
+        storeWithHandoffFailure(), gateway, request -> { }, CLOCK);
+
+    ControlledSqlDmlWorkflowService.WorkflowException exception = assertThrows(
+        ControlledSqlDmlWorkflowService.WorkflowException.class,
+        () -> unavailable.execute(request(BINDING_HASH)));
+
+    assertEquals("SQL_DML_HANDOFF_PERSISTENCE_FAILED", exception.code());
+    assertEquals(1, gateway.requests.size());
+    assertEquals(ControlledSqlDmlWorkflow.Status.RUNNING, persisted().status());
+  }
+
+  @Test
+  void rejectsDirectWorkflowInvocationWithoutGenuinePreflightReceipt() {
+    ControlledSqlDmlWorkflowService guarded = new ControlledSqlDmlWorkflowService(
+        store,
+        gateway,
+        request -> {
+          throw new ControlledSqlDmlWorkflowService.WorkflowException(
+              "SQL_DML_PREFLIGHT_RECEIPT_REQUIRED", "A server-issued preflight receipt is required");
+        },
+        CLOCK);
+
+    ControlledSqlDmlWorkflowService.WorkflowException exception = assertThrows(
+        ControlledSqlDmlWorkflowService.WorkflowException.class,
+        () -> guarded.execute(request(BINDING_HASH)));
+
+    assertEquals("SQL_DML_PREFLIGHT_RECEIPT_REQUIRED", exception.code());
+    assertEquals(0, gateway.requests.size());
+  }
+
+  @Test
   void rejectsDuplicateWhileOriginalSubmissionIsRunningWithoutChangingItsState() {
     ControlledSqlDmlWorkflowRequest request = request(BINDING_HASH);
-    ControlledSqlDmlWorkflow workflow = new ControlledSqlDmlWorkflow(
-        "workflow-running",
-        "dml-key-1",
-        "operator-1",
-        "sit",
-        BINDING_HASH,
-        "as400-sit",
-        "OPS",
-        SqlStatementType.UPDATE,
-        SQL_HASH,
-        PARAMETERS_HASH,
-        PREFLIGHT_HASH,
-        CONFIRMATION_HASH,
-        "decision-1",
-        "policy-v1",
-        "trace-1",
-        "request-1",
-        ControlledSqlDmlWorkflow.Status.CREATED,
-        0,
-        null,
-        null,
-        null,
-        java.time.OffsetDateTime.now(CLOCK),
-        java.time.OffsetDateTime.now(CLOCK),
-        null);
-    store.create(workflow).block();
-    store.markConfirmed(workflow.workflowId(), java.time.OffsetDateTime.now(CLOCK)).block();
-    store.markSubmitted(workflow.workflowId(), java.time.OffsetDateTime.now(CLOCK)).block();
+    createRunningWorkflow("workflow-running", OffsetDateTime.now(CLOCK).plusSeconds(30));
 
     ControlledSqlDmlWorkflowService.WorkflowException exception = assertThrows(
         ControlledSqlDmlWorkflowService.WorkflowException.class,
@@ -218,10 +255,64 @@ class ControlledSqlDmlWorkflowServiceTest {
           }
           throw new AssertionError("Unexpected workflow-store call: " + method.getName());
         });
-    return new ControlledSqlDmlWorkflowService(failingStore, gateway, CLOCK);
+    return new ControlledSqlDmlWorkflowService(failingStore, gateway, request -> { }, CLOCK);
+  }
+
+  private ControlledSqlDmlWorkflowStore storeWithHandoffFailure() {
+    return (ControlledSqlDmlWorkflowStore) Proxy.newProxyInstance(
+        getClass().getClassLoader(),
+        new Class<?>[] {ControlledSqlDmlWorkflowStore.class},
+        (proxy, method, arguments) -> {
+          if ("markHandoffRequired".equals(method.getName())) {
+            return Mono.error(new IllegalStateException("audit transaction unavailable"));
+          }
+          return method.invoke(store, arguments);
+        });
+  }
+
+  private ControlledSqlDmlWorkflow createRunningWorkflow(
+      String workflowId,
+      OffsetDateTime executionExpiresAt) {
+    OffsetDateTime now = OffsetDateTime.now(CLOCK);
+    ControlledSqlDmlWorkflow workflow = new ControlledSqlDmlWorkflow(
+        workflowId,
+        "dml-key-1",
+        "operator-1",
+        "sit",
+        BINDING_HASH,
+        "as400-sit",
+        "OPS",
+        SqlStatementType.UPDATE,
+        SQL_HASH,
+        PARAMETERS_HASH,
+        PREFLIGHT_HASH,
+        CONFIRMATION_HASH,
+        "decision-1",
+        "policy-v1",
+        "trace-1",
+        "request-1",
+        ControlledSqlDmlWorkflow.Status.CREATED,
+        0,
+        null,
+        null,
+        null,
+        now,
+        now,
+        null,
+        null);
+    store.create(workflow).block();
+    OffsetDateTime submittedAt = executionExpiresAt.isAfter(now)
+        ? now
+        : executionExpiresAt.minusSeconds(1);
+    store.markConfirmed(workflow.workflowId(), submittedAt).block();
+    return store.markSubmitted(workflow.workflowId(), submittedAt, executionExpiresAt).block();
   }
 
   private ControlledSqlDmlWorkflowRequest request(String bindingHash) {
+    return request(bindingHash, "decision-1");
+  }
+
+  private ControlledSqlDmlWorkflowRequest request(String bindingHash, String decisionId) {
     SqlQueryRequest query = new SqlQueryRequest(
         "1.0",
         "as400-sit",
@@ -253,8 +344,9 @@ class ControlledSqlDmlWorkflowServiceTest {
             List.of(),
             List.of(),
             List.of()),
+        new SqlDmlPreviewSelection("1.0", List.of(), List.of()),
         new OperatorContext("operator-1", List.of("ROLE_ops-admin")),
-        new PolicyDecisionReference("decision-1", "policy-v1", "ALLOW"),
+        new PolicyDecisionReference(decisionId, "policy-v1", "ALLOW"),
         new TraceContext("trace-1", "request-1"));
   }
 

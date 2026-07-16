@@ -2,10 +2,12 @@ package com.company.opsagent.contracts.sqlworkbench;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.company.opsagent.contracts.workflow.OperatorContext;
 import com.company.opsagent.contracts.workflow.PolicyDecisionReference;
 import com.company.opsagent.contracts.workflow.TraceContext;
+import com.company.opsagent.contracts.workflow.WorkerRequestSignature;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -78,6 +80,35 @@ class SqlDmlPreflightResultTest {
         List.of()));
   }
 
+  @Test
+  void versionedPreflightRequiresSignedReceipt() {
+    assertThrows(IllegalArgumentException.class, () ->
+        new SqlDmlPreflightResult("1.1", updateValidation(), impactPreview(), null));
+
+    SqlDmlPreflightReceipt receipt = receipt(
+        WorkerRequestSignature.sqlDmlImpactPreviewDigest(impactPreview()));
+    SqlDmlPreflightResult result = new SqlDmlPreflightResult(
+        "1.1", updateValidation(), impactPreview(), receipt);
+
+    assertEquals(receipt, result.receipt());
+  }
+
+  @Test
+  void receiptCanonicalPayloadBindsActualWorkerImpactPreviewDigest() {
+    SqlDmlPreflightReceipt first = receipt(
+        WorkerRequestSignature.sqlDmlImpactPreviewDigest(impactPreview()));
+    SqlDmlPreflightReceipt second = receipt(
+        WorkerRequestSignature.sqlDmlImpactPreviewDigest(new SqlDmlImpactPreview(
+            "1.0", 2L, List.of(), List.of(), List.of("ROW_COUNT_UNVERIFIED"))));
+
+    String firstPayload = WorkerRequestSignature.canonicalSqlDmlPreflightReceiptPayload(
+        "receipt-key-1", first);
+    String secondPayload = WorkerRequestSignature.canonicalSqlDmlPreflightReceiptPayload(
+        "receipt-key-1", second);
+
+    assertTrue(!firstPayload.equals(secondPayload));
+  }
+
   private SqlValidationReport updateValidation() {
     return new SqlValidationReport(
         "1.0",
@@ -107,6 +138,31 @@ class SqlDmlPreflightResultTest {
 
   private SqlDmlCommitRequest commitRequest() {
     return new SqlDmlCommitRequest("1.0", query(SqlQueryAction.COMMIT_DML), confirmation());
+  }
+
+  private SqlDmlImpactPreview impactPreview() {
+    return new SqlDmlImpactPreview("1.0", 1L, List.of(), List.of(), List.of());
+  }
+
+  private SqlDmlPreflightReceipt receipt(String impactPreviewDigest) {
+    return new SqlDmlPreflightReceipt(
+        "1.0",
+        "receipt-1",
+        "receipt-key-1",
+        OffsetDateTime.parse("2026-07-17T12:00:00Z"),
+        OffsetDateTime.parse("2026-07-17T12:05:00Z"),
+        "operator-1",
+        "a".repeat(64),
+        "connection-1",
+        "dev",
+        "APP",
+        "b".repeat(64),
+        "c".repeat(64),
+        "policy-v1",
+        "d".repeat(64),
+        impactPreviewDigest,
+        "e".repeat(64),
+        "signature");
   }
 
   private SqlDmlConfirmation confirmation() {

@@ -29,6 +29,7 @@ import com.company.opsagent.contracts.sqlworkbench.SqlValidationReport;
 import com.company.opsagent.contracts.workflow.OperatorContext;
 import com.company.opsagent.contracts.workflow.PolicyDecisionReference;
 import com.company.opsagent.contracts.workflow.TraceContext;
+import com.company.opsagent.contracts.workflow.WorkerRequestSignature;
 import com.company.opsagent.controlplane.modules.workflow.ControlledSqlDmlWorkflowRequest;
 import com.company.opsagent.controlplane.modules.workflow.ControlledSqlDmlWorkflowService;
 import com.company.opsagent.controlplane.modules.workflow.ControlledSqlDmlWorkflowStore;
@@ -57,6 +58,7 @@ public class DefaultSqlWorkbenchService implements SqlWorkbenchService {
   private final SqlWorkbenchWorkerClient workerClient;
   private final SqlAssistantClient assistantClient;
   private final ControlledSqlDmlPolicy controlledDmlPolicy;
+  private final SqlDmlPreflightReceiptService preflightReceiptService;
   private final Function<ControlledSqlDmlWorkflowRequest, SqlQueryExecutionResult> controlledDmlExecutor;
   private final Predicate<String> controlledDmlEnvironmentEnabled;
   private final boolean transactionalAuditAvailable;
@@ -127,6 +129,7 @@ public class DefaultSqlWorkbenchService implements SqlWorkbenchService {
       SqlWorkbenchWorkerClient workerClient,
       SqlAssistantClient assistantClient,
       ControlledSqlDmlPolicy controlledDmlPolicy,
+      SqlDmlPreflightReceiptService preflightReceiptService,
       Function<ControlledSqlDmlWorkflowRequest, SqlQueryExecutionResult> controlledDmlExecutor,
       Predicate<String> controlledDmlEnvironmentEnabled,
       boolean transactionalAuditAvailable,
@@ -136,10 +139,34 @@ public class DefaultSqlWorkbenchService implements SqlWorkbenchService {
     this.workerClient = workerClient;
     this.assistantClient = assistantClient;
     this.controlledDmlPolicy = controlledDmlPolicy;
+    this.preflightReceiptService = preflightReceiptService;
     this.controlledDmlExecutor = controlledDmlExecutor;
     this.controlledDmlEnvironmentEnabled = controlledDmlEnvironmentEnabled;
     this.transactionalAuditAvailable = transactionalAuditAvailable;
     this.clock = clock;
+  }
+
+  public DefaultSqlWorkbenchService(
+      SqlConnectionCatalog connectionCatalog,
+      SqlValidationService validationService,
+      SqlWorkbenchWorkerClient workerClient,
+      SqlAssistantClient assistantClient,
+      ControlledSqlDmlPolicy controlledDmlPolicy,
+      Function<ControlledSqlDmlWorkflowRequest, SqlQueryExecutionResult> controlledDmlExecutor,
+      Predicate<String> controlledDmlEnvironmentEnabled,
+      boolean transactionalAuditAvailable,
+      Clock clock) {
+    this(
+        connectionCatalog,
+        validationService,
+        workerClient,
+        assistantClient,
+        controlledDmlPolicy,
+        unavailablePreflightReceiptService(clock),
+        controlledDmlExecutor,
+        controlledDmlEnvironmentEnabled,
+        transactionalAuditAvailable,
+        clock);
   }
 
   @Override
@@ -315,7 +342,16 @@ public class DefaultSqlWorkbenchService implements SqlWorkbenchService {
         trace,
         OffsetDateTime.now(clock).plusSeconds(request.limits().timeoutSeconds()));
     SqlDmlImpactPreview impactPreview = workerClient.preflightDml(workerRequest);
-    return new SqlDmlPreflightResult("1.0", report, impactPreview);
+    try {
+      return new SqlDmlPreflightResult(
+          "1.1",
+          report,
+          impactPreview,
+          preflightReceiptService.issue(
+              request, report, previewSelection, impactPreview, operator, policyDecision));
+    } catch (ControlledSqlDmlWorkflowService.WorkflowException exception) {
+      throw new SqlWorkbenchException(exception.code(), exception.getMessage());
+    }
   }
 
   @Override
@@ -334,21 +370,19 @@ public class DefaultSqlWorkbenchService implements SqlWorkbenchService {
     requireValidatedDml(report);
     SqlDmlPreviewSelection previewSelection = controlledDmlPolicy.authorize(request, report);
     requireRiskConfirmation(report, commitRequest.confirmation());
-    SqlDmlExecutionBinding binding = executionBinding(
-        commitRequest, report, previewSelection, operator, policyDecision);
     try {
-      return controlledDmlExecutor.apply(new ControlledSqlDmlWorkflowRequest(
+      SqlDmlExecutionBinding binding = executionBinding(commitRequest, operator, policyDecision);
+      ControlledSqlDmlWorkflowRequest workflowRequest = new ControlledSqlDmlWorkflowRequest(
           commitRequest,
           binding,
           report,
+          previewSelection,
           operator,
           policyDecision,
-          trace));
+          trace);
+      preflightReceiptService.verify(workflowRequest);
+      return controlledDmlExecutor.apply(workflowRequest);
     } catch (ControlledSqlDmlWorkflowService.WorkflowException exception) {
-      throw new SqlWorkbenchException(exception.code(), exception.getMessage());
-    } catch (ControlledSqlDmlWorkflowStore.IdempotencyConflictException exception) {
-      throw new SqlWorkbenchException(exception.code(), exception.getMessage());
-    } catch (ControlledSqlDmlWorkflowStore.TransactionalAuditRequiredException exception) {
       throw new SqlWorkbenchException(exception.code(), exception.getMessage());
     }
   }
@@ -410,36 +444,25 @@ public class DefaultSqlWorkbenchService implements SqlWorkbenchService {
 
   private SqlDmlExecutionBinding executionBinding(
       SqlDmlCommitRequest commitRequest,
-      SqlValidationReport report,
-      SqlDmlPreviewSelection previewSelection,
       OperatorContext operator,
       PolicyDecisionReference policyDecision) {
-    String parametersHash = hashComponents(commitRequest.query().parameters().stream()
-        .map(parameter -> canonicalList(List.of(
-            parameter.name(), parameter.type(), canonicalJson(parameter.value())), false))
-        .sorted()
-        .toArray(String[]::new));
-    String preflightHash = validationHash(report, previewSelection);
+    if (!"1.1".equals(commitRequest.contractVersion()) || commitRequest.receipt() == null) {
+      throw new ControlledSqlDmlWorkflowService.WorkflowException(
+          "SQL_DML_PREFLIGHT_RECEIPT_REQUIRED",
+          "A server-issued preflight receipt is required");
+    }
     SqlDmlConfirmation confirmation = commitRequest.confirmation();
-    String confirmationHash = hashComponents(
-        confirmation.sqlHash(),
-        canonicalList(confirmation.confirmedRisks(), true),
-        confirmation.confirmationCode());
-    String bindingHash = hashComponents(
-        commitRequest.query().connectionId(),
-        commitRequest.query().targetEnvironment(),
-        commitRequest.query().schema(),
-        commitRequest.query().action().name(),
-        report.sqlHash(),
-        parametersHash,
-        preflightHash,
-        confirmationHash,
-        operator.operatorId(),
-        policyDecision.decisionId(),
-        policyDecision.policyVersion(),
-        policyDecision.decision());
+    String confirmationHash = WorkerRequestSignature.sqlDmlConfirmationDigest(confirmation);
     return new SqlDmlExecutionBinding(
-        bindingHash, parametersHash, preflightHash, confirmationHash);
+        WorkerRequestSignature.sqlDmlExecutionBindingDigest(
+            commitRequest, operator, policyDecision),
+        commitRequest.receipt().parametersHash(),
+        commitRequest.receipt().preflightHash(),
+        confirmationHash);
+  }
+
+  private static SqlDmlPreflightReceiptService unavailablePreflightReceiptService(Clock clock) {
+    return new SqlDmlPreflightReceiptService(new SqlDmlPreflightReceiptProperties(), clock);
   }
 
   private String validationHash(

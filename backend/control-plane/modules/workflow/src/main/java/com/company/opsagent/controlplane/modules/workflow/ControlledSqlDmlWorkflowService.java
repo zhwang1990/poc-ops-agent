@@ -20,20 +20,39 @@ public final class ControlledSqlDmlWorkflowService {
 
   private final ControlledSqlDmlWorkflowStore store;
   private final ControlledSqlDmlWorkerGateway workerGateway;
+  private final ControlledSqlDmlPreflightReceiptVerifier receiptVerifier;
   private final Clock clock;
 
   public ControlledSqlDmlWorkflowService(
       ControlledSqlDmlWorkflowStore store,
       ControlledSqlDmlWorkerGateway workerGateway,
       Clock clock) {
+    this(
+        store,
+        workerGateway,
+        request -> {
+          throw new WorkflowException(
+              "SQL_DML_PREFLIGHT_RECEIPT_REQUIRED",
+              "A server-issued preflight receipt is required");
+        },
+        clock);
+  }
+
+  public ControlledSqlDmlWorkflowService(
+      ControlledSqlDmlWorkflowStore store,
+      ControlledSqlDmlWorkerGateway workerGateway,
+      ControlledSqlDmlPreflightReceiptVerifier receiptVerifier,
+      Clock clock) {
     this.store = Objects.requireNonNull(store, "store");
     this.workerGateway = Objects.requireNonNull(workerGateway, "workerGateway");
+    this.receiptVerifier = Objects.requireNonNull(receiptVerifier, "receiptVerifier");
     this.clock = Objects.requireNonNull(clock, "clock");
   }
 
   public SqlQueryExecutionResult execute(ControlledSqlDmlWorkflowRequest request) {
     Objects.requireNonNull(request, "request");
     validateTrustedRequest(request);
+    receiptVerifier.verify(request);
     var query = request.commitRequest().query();
     ControlledSqlDmlWorkflow existing = findCompatible(request);
     if (existing != null) {
@@ -49,7 +68,10 @@ public final class ControlledSqlDmlWorkflowService {
 
     try {
       store.markConfirmed(workflowId, now).block();
-      store.markSubmitted(workflowId, now).block();
+      store.markSubmitted(
+          workflowId,
+          now,
+          now.plusSeconds(query.limits().timeoutSeconds())).block();
     } catch (ControlledSqlDmlWorkflowStore.TransactionalAuditRequiredException exception) {
       throw workflowFailure(exception.code(), "Transactional audit is required for controlled DML");
     } catch (RuntimeException exception) {
@@ -65,7 +87,7 @@ public final class ControlledSqlDmlWorkflowService {
     try {
       result = workerGateway.execute(workerRequest);
     } catch (RuntimeException exception) {
-      markUnknown(workflowId);
+      markUnknownOrFail(workflowId);
       throw workflowFailure(RESULT_UNKNOWN, "DML result requires human handoff");
     }
     return complete(workflowId, executionRequestId, result);
@@ -118,6 +140,7 @@ public final class ControlledSqlDmlWorkflowService {
         null,
         now,
         now,
+        null,
         null);
     try {
       return store.create(workflow).block();
@@ -137,7 +160,7 @@ public final class ControlledSqlDmlWorkflowService {
     if (result == null
         || !executionRequestId.equals(result.executionRequestId())
         || !workflowId.equals(result.workflowId())) {
-      markUnknown(workflowId);
+      markUnknownOrFail(workflowId);
       throw workflowFailure(RESULT_UNKNOWN, "DML result requires human handoff");
     }
     OffsetDateTime completedAt = OffsetDateTime.now(clock);
@@ -147,7 +170,7 @@ public final class ControlledSqlDmlWorkflowService {
       try {
         store.markSucceeded(workflowId, result.affectedRows(), completedAt).block();
       } catch (RuntimeException exception) {
-        markUnknown(workflowId);
+        markUnknownOrFail(workflowId);
         throw workflowFailure(RESULT_UNKNOWN, "DML result requires human handoff");
       }
       return successfulResult(workflowId, result.affectedRows());
@@ -157,12 +180,12 @@ public final class ControlledSqlDmlWorkflowService {
       try {
         store.markFailed(workflowId, failureCode, completedAt).block();
       } catch (RuntimeException exception) {
-        markUnknown(workflowId);
+        markUnknownOrFail(workflowId);
         throw workflowFailure(RESULT_UNKNOWN, "DML result requires human handoff");
       }
       return failedResult(workflowId, failureCode);
     }
-    markUnknown(workflowId);
+    markUnknownOrFail(workflowId);
     throw workflowFailure(RESULT_UNKNOWN, "DML result requires human handoff");
   }
 
@@ -172,8 +195,7 @@ public final class ControlledSqlDmlWorkflowService {
       case FAILED -> failedResult(workflow.workflowId(), safeFailureCode(workflow.failureCode()));
       case UNKNOWN_REQUIRES_HANDOFF -> throw workflowFailure(
           RESULT_UNKNOWN, "DML result requires human handoff");
-      case RUNNING -> throw workflowFailure(
-          "SQL_DML_WORKFLOW_IN_PROGRESS", "Controlled DML workflow is already in progress");
+      case RUNNING -> reuseRunningWorkflow(workflow);
       case CREATED -> throw workflowFailure(
           "SQL_DML_WORKFLOW_IN_PROGRESS", "Controlled DML workflow is already in progress");
     };
@@ -194,12 +216,24 @@ public final class ControlledSqlDmlWorkflowService {
         null, failureCode, "Controlled DML worker rejected the request", null);
   }
 
-  private void markUnknown(String workflowId) {
+  private SqlQueryExecutionResult reuseRunningWorkflow(ControlledSqlDmlWorkflow workflow) {
+    OffsetDateTime executionExpiresAt = workflow.executionExpiresAt();
+    if (executionExpiresAt == null || !executionExpiresAt.isAfter(OffsetDateTime.now(clock))) {
+      markUnknownOrFail(workflow.workflowId());
+      throw workflowFailure(RESULT_UNKNOWN, "DML result requires human handoff");
+    }
+    throw workflowFailure(
+        "SQL_DML_WORKFLOW_IN_PROGRESS", "Controlled DML workflow is already in progress");
+  }
+
+  private void markUnknownOrFail(String workflowId) {
     try {
       store.markHandoffRequired(
           workflowId, RESULT_UNKNOWN, OffsetDateTime.now(clock)).block();
-    } catch (RuntimeException ignored) {
-      // The caller still receives the handoff-required result; no retry is attempted.
+    } catch (RuntimeException exception) {
+      throw workflowFailure(
+          "SQL_DML_HANDOFF_PERSISTENCE_FAILED",
+          "Controlled DML handoff could not be persisted");
     }
   }
 

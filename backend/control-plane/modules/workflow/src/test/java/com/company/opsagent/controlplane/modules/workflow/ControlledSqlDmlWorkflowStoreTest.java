@@ -83,7 +83,8 @@ class ControlledSqlDmlWorkflowStoreTest {
     initializer.setConnectionFactory(connectionFactory);
     initializer.setDatabasePopulator(new ResourceDatabasePopulator(
         new ClassPathResource("sql/migrations/V001__audit_event_schema.sql"),
-        new ClassPathResource("sql/migrations/V004__controlled_sql_dml_workflow.sql")));
+        new ClassPathResource("sql/migrations/V004__controlled_sql_dml_workflow.sql"),
+        new ClassPathResource("sql/migrations/V005__controlled_sql_dml_execution_expiry.sql")));
     initializer.afterPropertiesSet();
     DatabaseClient databaseClient = DatabaseClient.create(connectionFactory);
     return new R2dbcControlledSqlDmlWorkflowStore(
@@ -123,6 +124,7 @@ class ControlledSqlDmlWorkflowStoreTest {
         null,
         createdAt,
         createdAt,
+        null,
         null);
   }
 }

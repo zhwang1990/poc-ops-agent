@@ -53,6 +53,7 @@ class DefaultSqlWorkbenchServiceTest {
   private final RecordingSqlWorkbenchWorkerClient workerClient = new RecordingSqlWorkbenchWorkerClient();
   private final RecordingSqlAssistantClient assistantClient = new RecordingSqlAssistantClient();
   private final RecordingControlledSqlDmlExecutor dmlExecutor = new RecordingControlledSqlDmlExecutor();
+  private final SqlDmlPreflightReceiptService receiptService = receiptService();
   private final DefaultSqlWorkbenchService service = new DefaultSqlWorkbenchService(
       new InMemorySqlConnectionCatalog(List.of(new SqlConnectionSummary(
           "1.0",
@@ -70,6 +71,7 @@ class DefaultSqlWorkbenchServiceTest {
       workerClient,
       assistantClient,
       controlledDmlPolicy(),
+      receiptService,
       dmlExecutor,
       environment -> true,
       true,
@@ -260,17 +262,8 @@ class DefaultSqlWorkbenchServiceTest {
         "ORDERS",
         SqlQueryAction.COMMIT_DML,
         "update ORDERS.ORDERS set status = 'READY' where order_id = 42");
-    String sqlHash = service.validate(request).sqlHash();
-
     SqlQueryExecutionResult result = service.commitControlledDml(
-        new SqlDmlCommitRequest(
-            "1.0",
-            request,
-            new SqlDmlConfirmation(
-                "1.0",
-                sqlHash,
-                List.of("CONTROLLED_DML_CONFIRMED"),
-                SqlDmlConfirmation.RISK_CONFIRMATION_CODE)),
+        commitRequest(request, List.of("CONTROLLED_DML_CONFIRMED")),
         operator(),
         policy(),
         trace());
@@ -278,7 +271,7 @@ class DefaultSqlWorkbenchServiceTest {
     assertEquals("SUCCEEDED", result.status());
     assertEquals(1, dmlExecutor.executeCount);
     assertEquals("operator-1", dmlExecutor.lastRequest.operator().operatorId());
-    assertEquals(sqlHash.substring("sha256:".length()), dmlExecutor.lastRequest.sqlHash());
+    assertEquals(service.validate(request).sqlHash().substring("sha256:".length()), dmlExecutor.lastRequest.sqlHash());
     assertEquals(0, workerClient.executeCount);
   }
 
@@ -293,6 +286,11 @@ class DefaultSqlWorkbenchServiceTest {
         request, operator(), policy(), trace());
 
     assertEquals(3L, result.impactPreview().affectedRows());
+    assertEquals("1.1", result.contractVersion());
+    assertEquals(
+        com.company.opsagent.contracts.workflow.WorkerRequestSignature.sqlDmlImpactPreviewDigest(
+            workerClient.lastPreflightPreview),
+        result.receipt().impactPreviewHash());
     assertEquals(1, workerClient.preflightCount);
     assertEquals(List.of("ORDER_ID"), workerClient.lastPreflightRequest.previewSelection().sampleColumns());
     assertEquals("operator-1", workerClient.lastPreflightRequest.operator().operatorId());
@@ -304,15 +302,7 @@ class DefaultSqlWorkbenchServiceTest {
         "ORDERS",
         SqlQueryAction.COMMIT_DML,
         "update ORDERS.ORDERS set status = 'READY' where order_id = 42");
-    String sqlHash = service.validate(request).sqlHash();
-    SqlDmlCommitRequest commitRequest = new SqlDmlCommitRequest(
-        "1.0",
-        request,
-        new SqlDmlConfirmation(
-            "1.0",
-            sqlHash,
-            List.of("CONTROLLED_DML_CONFIRMED"),
-            SqlDmlConfirmation.RISK_CONFIRMATION_CODE));
+    SqlDmlCommitRequest commitRequest = commitRequest(request, List.of("CONTROLLED_DML_CONFIRMED"));
     dmlExecutor.failure = new ControlledSqlDmlWorkflowService.WorkflowException(
         "SQL_DML_RESULT_UNKNOWN", "DML result requires human handoff");
 
@@ -393,22 +383,76 @@ class DefaultSqlWorkbenchServiceTest {
   }
 
   @Test
+  void rejectsCommitWithoutServerIssuedPreflightReceiptBeforeWorkflowInvocation() {
+    SqlQueryRequest request = request(
+        "ORDERS",
+        SqlQueryAction.COMMIT_DML,
+        "update ORDERS.ORDERS set status = 'READY' where order_id = 42");
+    SqlWorkbenchException exception = assertThrows(
+        SqlWorkbenchException.class,
+        () -> service.commitControlledDml(
+            new SqlDmlCommitRequest(
+                "1.0",
+                request,
+                new SqlDmlConfirmation(
+                    "1.0",
+                    service.validate(request).sqlHash(),
+                    List.of("CONTROLLED_DML_CONFIRMED"),
+                    SqlDmlConfirmation.RISK_CONFIRMATION_CODE)),
+            operator(),
+            policy(),
+            trace()));
+
+    assertEquals("SQL_DML_PREFLIGHT_RECEIPT_REQUIRED", exception.code());
+    assertEquals(0, dmlExecutor.executeCount);
+  }
+
+  @Test
+  void rejectsReceiptThatDoesNotMatchCommitBeforeWorkflowInvocation() {
+    SqlQueryRequest request = request(
+        "ORDERS",
+        SqlQueryAction.COMMIT_DML,
+        "update ORDERS.ORDERS set status = 'READY' where order_id = 42");
+    SqlDmlCommitRequest valid = commitRequest(request, List.of("CONTROLLED_DML_CONFIRMED"));
+    SqlDmlCommitRequest tampered = new SqlDmlCommitRequest(
+        "1.1",
+        valid.query(),
+        valid.confirmation(),
+        new com.company.opsagent.contracts.sqlworkbench.SqlDmlPreflightReceipt(
+            valid.receipt().contractVersion(),
+            valid.receipt().receiptId(),
+            valid.receipt().keyId(),
+            valid.receipt().issuedAt(),
+            valid.receipt().expiresAt(),
+            "other-operator",
+            valid.receipt().requestHash(),
+            valid.receipt().connectionId(),
+            valid.receipt().targetEnvironment(),
+            valid.receipt().schema(),
+            valid.receipt().sqlHash(),
+            valid.receipt().parametersHash(),
+            valid.receipt().policyVersion(),
+            valid.receipt().policySelectionHash(),
+            valid.receipt().impactPreviewHash(),
+            valid.receipt().preflightHash(),
+            valid.receipt().signature()));
+
+    SqlWorkbenchException exception = assertThrows(
+        SqlWorkbenchException.class,
+        () -> service.commitControlledDml(tampered, operator(), policy(), trace()));
+
+    assertEquals("SQL_DML_PREFLIGHT_RECEIPT_INVALID", exception.code());
+    assertEquals(0, dmlExecutor.executeCount);
+  }
+
+  @Test
   void commitControlledDmlAcceptsMatchingSecondConfirmation() {
     SqlQueryRequest request = request(
         "ORDERS",
         SqlQueryAction.COMMIT_DML,
         "update ORDERS.ORDERS set status = 'READY'");
-    String sqlHash = service.validate(request).sqlHash();
-
     SqlQueryExecutionResult result = service.commitControlledDml(
-        new SqlDmlCommitRequest(
-            "1.0",
-            request,
-            new SqlDmlConfirmation(
-                "1.0",
-                sqlHash,
-                List.of("UPDATE_WITHOUT_WHERE"),
-                SqlDmlConfirmation.RISK_CONFIRMATION_CODE)),
+        commitRequest(request, List.of("UPDATE_WITHOUT_WHERE")),
         operator(),
         policy(),
         trace());
@@ -416,6 +460,24 @@ class DefaultSqlWorkbenchServiceTest {
     assertEquals("SUCCEEDED", result.status());
     assertEquals(1, dmlExecutor.executeCount);
     assertEquals(0, workerClient.executeCount);
+  }
+
+  @Test
+  void derivesSameBindingForFreshEquivalentPolicyDecisionRetry() {
+    SqlQueryRequest request = request(
+        "ORDERS",
+        SqlQueryAction.COMMIT_DML,
+        "update ORDERS.ORDERS set status = 'READY' where order_id = 42");
+
+    service.commitControlledDml(
+        commitRequest(request, List.of("CONTROLLED_DML_CONFIRMED")),
+        operator(), policy(), trace());
+    String firstBindingHash = dmlExecutor.lastRequest.binding().bindingHash();
+    service.commitControlledDml(
+        commitRequest(request, List.of("CONTROLLED_DML_CONFIRMED")),
+        operator(), policy("decision-2"), trace());
+
+    assertEquals(firstBindingHash, dmlExecutor.lastRequest.binding().bindingHash());
   }
 
   @Test
@@ -517,7 +579,42 @@ class DefaultSqlWorkbenchServiceTest {
   }
 
   private PolicyDecisionReference policy() {
-    return new PolicyDecisionReference("decision-1", "policy-v1", "ALLOW");
+    return policy("decision-1");
+  }
+
+  private PolicyDecisionReference policy(String decisionId) {
+    return new PolicyDecisionReference(decisionId, "policy-v1", "ALLOW");
+  }
+
+  private SqlDmlCommitRequest commitRequest(SqlQueryRequest request, List<String> confirmedRisks) {
+    SqlQueryRequest preflightRequest = new SqlQueryRequest(
+        request.contractVersion(),
+        request.connectionId(),
+        request.targetEnvironment(),
+        request.schema(),
+        SqlQueryAction.PREFLIGHT_DML,
+        request.sql(),
+        request.parameters(),
+        request.limits(),
+        request.idempotencyKey());
+    SqlDmlPreflightResult preflight = service.preflightControlledDml(
+        preflightRequest, operator(), policy(), trace());
+    return new SqlDmlCommitRequest(
+        "1.1",
+        request,
+        new SqlDmlConfirmation(
+            "1.0",
+            service.validate(request).sqlHash(),
+            confirmedRisks,
+            SqlDmlConfirmation.RISK_CONFIRMATION_CODE),
+        preflight.receipt());
+  }
+
+  private static SqlDmlPreflightReceiptService receiptService() {
+    var properties = new SqlDmlPreflightReceiptProperties();
+    properties.setKeyId("test-receipt-key");
+    properties.setHmacSecret("test-only-receipt-secret");
+    return new SqlDmlPreflightReceiptService(properties, CLOCK);
   }
 
   private TraceContext trace() {
@@ -601,6 +698,7 @@ class DefaultSqlWorkbenchServiceTest {
     private String lastMetadataSchema;
     private SqlQueryExecutionRequest lastExecutionRequest;
     private SqlDmlPreflightExecutionRequest lastPreflightRequest;
+    private SqlDmlImpactPreview lastPreflightPreview;
 
     @Override
     public SqlConnectionProbeResult probe(SqlConnectionSummary connection) {
@@ -635,7 +733,8 @@ class DefaultSqlWorkbenchServiceTest {
     public SqlDmlImpactPreview preflightDml(SqlDmlPreflightExecutionRequest request) {
       preflightCount++;
       lastPreflightRequest = request;
-      return new SqlDmlImpactPreview("1.0", 3L, List.of(), List.of(), List.of());
+      lastPreflightPreview = new SqlDmlImpactPreview("1.0", 3L, List.of(), List.of(), List.of());
+      return lastPreflightPreview;
     }
 
     @Override

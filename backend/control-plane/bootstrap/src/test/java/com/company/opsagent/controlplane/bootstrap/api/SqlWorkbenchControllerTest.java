@@ -39,8 +39,8 @@ import reactor.test.StepVerifier;
 class SqlWorkbenchControllerTest {
 
   private final RecordingSqlWorkbenchService service = new RecordingSqlWorkbenchService();
-  private final SqlWorkbenchController controller = new SqlWorkbenchController(service, new ObjectMapper());
-  private final ObjectMapper objectMapper = new ObjectMapper();
+  private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
+  private final SqlWorkbenchController controller = new SqlWorkbenchController(service, objectMapper);
 
   @Test
   void rejectsUnknownConnectionCreateFieldsBeforeServiceLayer() throws Exception {
@@ -226,6 +226,58 @@ class SqlWorkbenchControllerTest {
   }
 
   @Test
+  void parsesAndForwardsVersionedDmlPreflightReceipt() throws Exception {
+    var request = objectMapper.readTree("""
+        {
+          "contractVersion": "1.1",
+          "query": {
+            "contractVersion": "1.0",
+            "connectionId": "as400-dev",
+            "targetEnvironment": "dev",
+            "schema": "ORDERS",
+            "action": "COMMIT_DML",
+            "sql": "update ORDERS.ORDERS set status = 'READY'",
+            "parameters": [],
+            "limits": {"maxRows": 500, "maxBytes": 5000000, "timeoutSeconds": 30},
+            "idempotencyKey": "commit-key-1"
+          },
+          "confirmation": {
+            "contractVersion": "1.0",
+            "sqlHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "confirmedRisks": ["UPDATE_WITHOUT_WHERE"],
+            "confirmationCode": "CONFIRM_SQL_DML_RISK"
+          },
+          "receipt": {
+            "contractVersion": "1.0",
+            "receiptId": "receipt-1",
+            "keyId": "server-receipt-key",
+            "issuedAt": "2026-07-17T10:00:00Z",
+            "expiresAt": "2026-07-17T10:05:00Z",
+            "operatorId": "operator-1",
+            "requestHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "connectionId": "as400-dev",
+            "targetEnvironment": "dev",
+            "schema": "ORDERS",
+            "sqlHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "parametersHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "policyVersion": "policy-v1",
+            "policySelectionHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+            "impactPreviewHash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            "preflightHash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+            "signature": "opaque-signature"
+          }
+        }
+        """);
+
+    StepVerifier.create(controller.commit(request, exchange()))
+        .expectNextCount(1)
+        .verifyComplete();
+
+    assertEquals("receipt-1", service.lastCommitRequest.receipt().receiptId());
+    assertEquals("policy-v1", service.lastCommitRequest.receipt().policyVersion());
+  }
+
+  @Test
   void passesDmlPreflightWithExecutionContextThroughServiceBoundary() {
     SqlQueryRequest request = new SqlQueryRequest(
         "1.0",
@@ -317,6 +369,7 @@ class SqlWorkbenchControllerTest {
     private String lastMetadataSchema;
     private OperatorContext lastPreflightOperator;
     private PolicyDecisionReference lastPreflightPolicy;
+    private SqlDmlCommitRequest lastCommitRequest;
 
     @Override
     public List<SqlConnectionSummary> listConnections() {
@@ -424,6 +477,7 @@ class SqlWorkbenchControllerTest {
         PolicyDecisionReference policyDecision,
         TraceContext trace) {
       commitCount.incrementAndGet();
+      lastCommitRequest = request;
       return new SqlQueryExecutionResult(
           "1.0",
           "execution-1",

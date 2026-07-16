@@ -5,6 +5,7 @@ import static com.company.opsagent.contracts.ContractValues.required;
 import com.company.opsagent.contracts.sqlworkbench.SqlControlledDmlExecutionRequest;
 import com.company.opsagent.contracts.sqlworkbench.SqlDmlCommitRequest;
 import com.company.opsagent.contracts.sqlworkbench.SqlDmlExecutionBinding;
+import com.company.opsagent.contracts.sqlworkbench.SqlDmlPreviewSelection;
 import com.company.opsagent.contracts.sqlworkbench.SqlValidationReport;
 import com.company.opsagent.contracts.workflow.OperatorContext;
 import com.company.opsagent.contracts.workflow.PolicyDecisionReference;
@@ -16,6 +17,7 @@ public record ControlledSqlDmlWorkflowRequest(
     SqlDmlCommitRequest commitRequest,
     SqlDmlExecutionBinding binding,
     SqlValidationReport validation,
+    SqlDmlPreviewSelection previewSelection,
     OperatorContext operator,
     PolicyDecisionReference policyDecision,
     TraceContext trace) {
@@ -24,6 +26,7 @@ public record ControlledSqlDmlWorkflowRequest(
     commitRequest = required(commitRequest, "commitRequest");
     binding = required(binding, "binding");
     validation = required(validation, "validation");
+    previewSelection = required(previewSelection, "previewSelection");
     operator = required(operator, "operator");
     policyDecision = required(policyDecision, "policyDecision");
     trace = required(trace, "trace");

@@ -6,9 +6,12 @@ import com.company.opsagent.contracts.sqlworkbench.SqlDmlCommitRequest;
 import com.company.opsagent.contracts.sqlworkbench.SqlDmlConfirmation;
 import com.company.opsagent.contracts.sqlworkbench.SqlDmlExecutionBinding;
 import com.company.opsagent.contracts.sqlworkbench.SqlDmlPreflightExecutionRequest;
+import com.company.opsagent.contracts.sqlworkbench.SqlDmlPreflightReceipt;
 import com.company.opsagent.contracts.sqlworkbench.SqlDmlPreviewSelection;
+import com.company.opsagent.contracts.sqlworkbench.SqlDmlImpactPreview;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryExecutionRequest;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryRequest;
+import com.company.opsagent.contracts.sqlworkbench.SqlResultColumn;
 import com.company.opsagent.contracts.sqlworkbench.SqlTypedParameter;
 import com.fasterxml.jackson.databind.JsonNode;
 import java.nio.charset.StandardCharsets;
@@ -174,6 +177,7 @@ public final class WorkerRequestSignature {
     }
     SqlDmlCommitRequest commitRequest = request.commitRequest();
     SqlDmlConfirmation confirmation = commitRequest.confirmation();
+    SqlDmlPreflightReceipt receipt = commitRequest.receipt();
     SqlDmlExecutionBinding binding = request.binding();
     OperatorContext operator = request.operator();
     PolicyDecisionReference policyDecision = request.policyDecision();
@@ -193,6 +197,7 @@ public final class WorkerRequestSignature {
         confirmation.sqlHash(),
         canonicalStringList(confirmation.confirmedRisks()),
         confirmation.confirmationCode(),
+        canonicalSqlDmlPreflightReceiptFields(receipt),
         binding.bindingHash(),
         binding.parametersHash(),
         binding.preflightHash(),
@@ -204,6 +209,161 @@ public final class WorkerRequestSignature {
         policyDecision.decision(),
         trace.traceId(),
         trace.requestId());
+  }
+
+  /**
+   * 构造 DML 预检回执的 HMAC payload。回执本身只承载安全摘要。
+   */
+  public static String canonicalSqlDmlPreflightReceiptPayload(
+      String keyId,
+      SqlDmlPreflightReceipt receipt) {
+    requireText(keyId, "keyId");
+    if (receipt == null) {
+      throw new IllegalArgumentException("receipt is required");
+    }
+    return canonicalFields(
+        SIGNATURE_VERSION,
+        "sql-dml-preflight-receipt-v1",
+        keyId,
+        canonicalSqlDmlPreflightReceiptFields(receipt));
+  }
+
+  /**
+   * 计算实际 Worker 影响预览的 canonical 摘要，供回执绑定而不保存样本值。
+   */
+  public static String sqlDmlImpactPreviewDigest(SqlDmlImpactPreview preview) {
+    if (preview == null) {
+      throw new IllegalArgumentException("preview is required");
+    }
+    List<String> columns = new ArrayList<>(preview.sampleColumns().size());
+    for (SqlResultColumn column : preview.sampleColumns()) {
+      columns.add(canonicalFields(
+          column.name(),
+          column.type(),
+          String.valueOf(column.masked())));
+    }
+    List<String> rows = new ArrayList<>(preview.sampleRows().size());
+    for (List<JsonNode> row : preview.sampleRows()) {
+      List<String> values = new ArrayList<>(row.size());
+      for (JsonNode value : row) {
+        values.add(canonicalJson(value));
+      }
+      rows.add(canonicalStringList(values));
+    }
+    return sha256Hex(canonicalFields(
+        SIGNATURE_VERSION,
+        "sql-dml-impact-preview-v1",
+        preview.contractVersion(),
+        String.valueOf(preview.affectedRows()),
+        canonicalStringList(columns),
+        canonicalStringList(rows),
+        canonicalStringList(preview.unverifiedItems())));
+  }
+
+  /** 计算服务端策略选择的 canonical 摘要。 */
+  public static String sqlDmlPreviewSelectionDigest(SqlDmlPreviewSelection selection) {
+    if (selection == null) {
+      throw new IllegalArgumentException("selection is required");
+    }
+    return sha256Hex(canonicalFields(
+        SIGNATURE_VERSION,
+        "sql-dml-preview-selection-v1",
+        selection.contractVersion(),
+        canonicalStringList(selection.sampleColumns()),
+        canonicalStringList(selection.maskedSampleColumns())));
+  }
+
+  /**
+   * 计算预检与提交共享的 DML 请求摘要，故意不包含 PREFLIGHT_DML/COMMIT_DML 动作差异。
+   */
+  public static String sqlDmlReceiptRequestDigest(SqlQueryRequest query) {
+    if (query == null) {
+      throw new IllegalArgumentException("query is required");
+    }
+    return sha256Hex(canonicalFields(
+        SIGNATURE_VERSION,
+        "sql-dml-receipt-request-v1",
+        query.contractVersion(),
+        query.connectionId(),
+        query.targetEnvironment(),
+        query.schema(),
+        query.idempotencyKey(),
+        String.valueOf(query.limits().maxRows()),
+        String.valueOf(query.limits().maxBytes()),
+        String.valueOf(query.limits().timeoutSeconds()),
+        sha256Hex(query.sql()),
+        sqlDmlParametersDigest(query.parameters())));
+  }
+
+  /** 计算 SQL 参数的 canonical 摘要，不暴露参数值。 */
+  public static String sqlDmlParametersDigest(List<SqlTypedParameter> parameters) {
+    if (parameters == null) {
+      throw new IllegalArgumentException("parameters are required");
+    }
+    return sha256Hex(canonicalSqlParameters(parameters));
+  }
+
+  /** 计算二次确认的 canonical 摘要。 */
+  public static String sqlDmlConfirmationDigest(SqlDmlConfirmation confirmation) {
+    if (confirmation == null) {
+      throw new IllegalArgumentException("confirmation is required");
+    }
+    return sha256Hex(canonicalFields(
+        SIGNATURE_VERSION,
+        "sql-dml-confirmation-v1",
+        confirmation.contractVersion(),
+        confirmation.sqlHash(),
+        canonicalStringList(confirmation.confirmedRisks()),
+        confirmation.confirmationCode()));
+  }
+
+  /**
+   * 计算幂等工作流绑定摘要。策略决定编号被审计但不在摘要中，避免同一语义请求的重试失效。
+   */
+  public static String sqlDmlExecutionBindingDigest(
+      SqlDmlCommitRequest commitRequest,
+      OperatorContext operator,
+      PolicyDecisionReference policyDecision) {
+    if (commitRequest == null || commitRequest.receipt() == null) {
+      throw new IllegalArgumentException("commit request with receipt is required");
+    }
+    if (operator == null || policyDecision == null) {
+      throw new IllegalArgumentException("operator and policy decision are required");
+    }
+    SqlDmlPreflightReceipt receipt = commitRequest.receipt();
+    return sha256Hex(canonicalFields(
+        SIGNATURE_VERSION,
+        "sql-dml-execution-binding-v1",
+        commitRequest.query().contractVersion(),
+        commitRequest.query().action().name(),
+        receipt.requestHash(),
+        receipt.preflightHash(),
+        receipt.parametersHash(),
+        sqlDmlConfirmationDigest(commitRequest.confirmation()),
+        operator.operatorId(),
+        policyDecision.policyVersion(),
+        policyDecision.decision()));
+  }
+
+  /** 计算可持久化的预检授权摘要，不包含回执签名、签发时间或回执编号。 */
+  public static String sqlDmlPreflightReceiptBindingDigest(SqlDmlPreflightReceipt receipt) {
+    if (receipt == null) {
+      throw new IllegalArgumentException("receipt is required");
+    }
+    return sha256Hex(canonicalFields(
+        SIGNATURE_VERSION,
+        "sql-dml-preflight-receipt-binding-v1",
+        receipt.contractVersion(),
+        receipt.operatorId(),
+        receipt.requestHash(),
+        receipt.connectionId(),
+        receipt.targetEnvironment(),
+        receipt.schema(),
+        receipt.sqlHash(),
+        receipt.parametersHash(),
+        receipt.policyVersion(),
+        receipt.policySelectionHash(),
+        receipt.impactPreviewHash()));
   }
 
   /**
@@ -334,6 +494,29 @@ public final class WorkerRequestSignature {
         String.valueOf(query.limits().timeoutSeconds()),
         sha256Hex(query.sql()),
         sha256Hex(canonicalSqlParameters(query.parameters())));
+  }
+
+  private static String canonicalSqlDmlPreflightReceiptFields(SqlDmlPreflightReceipt receipt) {
+    if (receipt == null) {
+      return canonicalFields("none");
+    }
+    return canonicalFields(
+        receipt.contractVersion(),
+        receipt.receiptId(),
+        receipt.keyId(),
+        receipt.issuedAt().toString(),
+        receipt.expiresAt().toString(),
+        receipt.operatorId(),
+        receipt.requestHash(),
+        receipt.connectionId(),
+        receipt.targetEnvironment(),
+        receipt.schema(),
+        receipt.sqlHash(),
+        receipt.parametersHash(),
+        receipt.policyVersion(),
+        receipt.policySelectionHash(),
+        receipt.impactPreviewHash(),
+        receipt.preflightHash());
   }
 
   private static String canonicalSqlParameters(List<SqlTypedParameter> parameters) {

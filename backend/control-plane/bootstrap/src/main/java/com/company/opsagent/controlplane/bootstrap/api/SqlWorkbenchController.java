@@ -74,7 +74,8 @@ public class SqlWorkbenchController {
   private static final Set<String> DML_COMMIT_FIELDS = Set.of(
       "contractVersion",
       "query",
-      "confirmation");
+      "confirmation",
+      "receipt");
 
   private final SqlWorkbenchService sqlWorkbenchService;
   private final ObjectMapper objectMapper;

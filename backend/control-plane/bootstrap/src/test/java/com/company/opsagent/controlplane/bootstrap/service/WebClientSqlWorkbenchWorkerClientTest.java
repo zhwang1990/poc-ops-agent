@@ -168,6 +168,30 @@ class WebClientSqlWorkbenchWorkerClientTest {
   }
 
   @Test
+  void keepsWorkerCommitServerFailureAsUncertainTransportFailure() {
+    var client = new WebClientSqlWorkbenchWorkerClient(
+        dmlErrorWebClient(HttpStatus.INTERNAL_SERVER_ERROR),
+        workerProperties(true),
+        Clock.fixed(SIGNED_AT, ZoneOffset.UTC));
+
+    assertThrows(
+        IllegalStateException.class,
+        () -> client.executeControlledDml(controlledDmlRequest()));
+  }
+
+  @Test
+  void keepsWorkerCommitDecodeFailureAsUncertainTransportFailure() {
+    var client = new WebClientSqlWorkbenchWorkerClient(
+        malformedDmlSuccessWebClient(),
+        workerProperties(true),
+        Clock.fixed(SIGNED_AT, ZoneOffset.UTC));
+
+    assertThrows(
+        RuntimeException.class,
+        () -> client.executeControlledDml(controlledDmlRequest()));
+  }
+
+  @Test
   void readsSqlResultPageThroughSignedWorkerEndpoint() {
     List<ClientRequest> captured = new ArrayList<>();
     var client = new WebClientSqlWorkbenchWorkerClient(
@@ -415,6 +439,15 @@ class WebClientSqlWorkbenchWorkerClientTest {
         .exchangeFunction(request -> Mono.just(ClientResponse.create(status)
             .header("Content-Type", "application/problem+json")
             .body("{\"errorCode\":\"SQL_DML_EGRESS_DENIED\",\"detail\":\"denied\"}")
+            .build()))
+        .build();
+  }
+
+  private WebClient malformedDmlSuccessWebClient() {
+    return WebClient.builder()
+        .exchangeFunction(request -> Mono.just(ClientResponse.create(HttpStatus.OK)
+            .header("Content-Type", "application/json")
+            .body("{not-json")
             .build()))
         .build();
   }

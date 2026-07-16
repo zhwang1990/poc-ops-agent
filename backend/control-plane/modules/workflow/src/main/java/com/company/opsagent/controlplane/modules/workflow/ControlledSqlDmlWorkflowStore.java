@@ -21,7 +21,10 @@ public interface ControlledSqlDmlWorkflowStore {
 
   Mono<ControlledSqlDmlWorkflow> markConfirmed(String workflowId, OffsetDateTime confirmedAt);
 
-  Mono<ControlledSqlDmlWorkflow> markSubmitted(String workflowId, OffsetDateTime submittedAt);
+  Mono<ControlledSqlDmlWorkflow> markSubmitted(
+      String workflowId,
+      OffsetDateTime submittedAt,
+      OffsetDateTime executionExpiresAt);
 
   Mono<ControlledSqlDmlWorkflow> markSucceeded(
       String workflowId,
