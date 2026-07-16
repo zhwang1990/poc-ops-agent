@@ -1,5 +1,6 @@
 package com.company.opsagent.controlplane.modules.audit;
 
+import io.r2dbc.spi.ConnectionFactory;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -18,11 +19,18 @@ import reactor.core.publisher.Mono;
 public class R2dbcAuditTrail implements AuditTrail {
 
   private final DatabaseClient databaseClient;
+  private final ConnectionFactory connectionFactory;
   private final CopyOnWriteArrayList<AuditEvent> events = new CopyOnWriteArrayList<>();
 
   public R2dbcAuditTrail(DatabaseClient databaseClient) {
     this.databaseClient = databaseClient;
+    this.connectionFactory = databaseClient.getConnectionFactory();
     loadExisting();
+  }
+
+  @Override
+  public boolean supportsTransactionalParticipation(ConnectionFactory connectionFactory) {
+    return this.connectionFactory == connectionFactory;
   }
 
   @Override

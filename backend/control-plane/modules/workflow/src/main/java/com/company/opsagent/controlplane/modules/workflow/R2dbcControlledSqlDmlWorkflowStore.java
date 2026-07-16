@@ -40,6 +40,9 @@ public final class R2dbcControlledSqlDmlWorkflowStore implements ControlledSqlDm
 
   @Override
   public Mono<ControlledSqlDmlWorkflow> create(ControlledSqlDmlWorkflow workflow) {
+    if (!hasTransactionalAudit()) {
+      return transactionalAuditRequired();
+    }
     if (!hasValidPersistedHashes(workflow)) {
       return Mono.error(new IllegalArgumentException(
           "controlled SQL DML persisted hash is invalid"));
@@ -108,6 +111,9 @@ public final class R2dbcControlledSqlDmlWorkflowStore implements ControlledSqlDm
   public Mono<ControlledSqlDmlWorkflow> markConfirmed(
       String workflowId,
       OffsetDateTime confirmedAt) {
+    if (!hasTransactionalAudit()) {
+      return transactionalAuditRequired();
+    }
     return transactions.transactional(databaseClient.sql("""
             update controlled_sql_dml_workflow
             set confirmed_at = :confirmedAt,
@@ -135,6 +141,9 @@ public final class R2dbcControlledSqlDmlWorkflowStore implements ControlledSqlDm
   public Mono<ControlledSqlDmlWorkflow> markSubmitted(
       String workflowId,
       OffsetDateTime submittedAt) {
+    if (!hasTransactionalAudit()) {
+      return transactionalAuditRequired();
+    }
     return transactions.transactional(databaseClient.sql("""
             update controlled_sql_dml_workflow
             set status = :runningStatus,
@@ -165,6 +174,9 @@ public final class R2dbcControlledSqlDmlWorkflowStore implements ControlledSqlDm
       String workflowId,
       int affectedRowCount,
       OffsetDateTime completedAt) {
+    if (!hasTransactionalAudit()) {
+      return transactionalAuditRequired();
+    }
     return complete(
         workflowId,
         ControlledSqlDmlWorkflow.Status.SUCCEEDED,
@@ -180,6 +192,9 @@ public final class R2dbcControlledSqlDmlWorkflowStore implements ControlledSqlDm
       String workflowId,
       String failureCode,
       OffsetDateTime completedAt) {
+    if (!hasTransactionalAudit()) {
+      return transactionalAuditRequired();
+    }
     if (!isSafeFailureCode(failureCode)) {
       return Mono.error(new IllegalArgumentException("controlled SQL DML failure code is invalid"));
     }
@@ -198,6 +213,9 @@ public final class R2dbcControlledSqlDmlWorkflowStore implements ControlledSqlDm
       String workflowId,
       String failureCode,
       OffsetDateTime completedAt) {
+    if (!hasTransactionalAudit()) {
+      return transactionalAuditRequired();
+    }
     if (!isSafeFailureCode(failureCode)) {
       return Mono.error(new IllegalArgumentException("controlled SQL DML failure code is invalid"));
     }
@@ -433,5 +451,13 @@ public final class R2dbcControlledSqlDmlWorkflowStore implements ControlledSqlDm
 
   private boolean isSha256Hex(String value) {
     return value != null && SHA_256_HEX.matcher(value).matches();
+  }
+
+  private boolean hasTransactionalAudit() {
+    return auditTrail.supportsTransactionalParticipation(databaseClient.getConnectionFactory());
+  }
+
+  private <T> Mono<T> transactionalAuditRequired() {
+    return Mono.error(new ControlledSqlDmlWorkflowStore.TransactionalAuditRequiredException());
   }
 }

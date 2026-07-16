@@ -1,6 +1,7 @@
 package com.company.opsagent.controlplane.modules.audit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.r2dbc.spi.ConnectionFactories;
@@ -17,6 +18,17 @@ import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 class R2dbcAuditTrailTest {
+
+  @Test
+  void reportsTransactionalParticipationOnlyForItsConnectionFactory() {
+    ConnectionFactory connectionFactory = connectionFactory("audit-store-capability");
+    initialize(connectionFactory);
+    R2dbcAuditTrail auditTrail = new R2dbcAuditTrail(DatabaseClient.create(connectionFactory));
+
+    assertTrue(auditTrail.supportsTransactionalParticipation(connectionFactory));
+    assertFalse(auditTrail.supportsTransactionalParticipation(
+        connectionFactory("audit-store-other-capability")));
+  }
 
   @Test
   void reactiveRecordParticipatesInCallerTransaction() {

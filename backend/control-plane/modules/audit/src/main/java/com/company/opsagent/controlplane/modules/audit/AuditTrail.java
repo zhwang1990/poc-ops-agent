@@ -1,5 +1,6 @@
 package com.company.opsagent.controlplane.modules.audit;
 
+import io.r2dbc.spi.ConnectionFactory;
 import java.util.List;
 import java.util.Optional;
 import reactor.core.publisher.Mono;
@@ -11,6 +12,12 @@ import reactor.core.scheduler.Schedulers;
  * <p>定义审计事件记录、查询和清理的基础能力，便于在内存实现、文件实现和未来正式存储实现之间切换。
  */
 public interface AuditTrail {
+
+  /**
+   * 鏄惁鑳藉鍙傚姞鎸囧畾 R2DBC 杩炴帴宸ュ巶鐨勮皟鐢ㄦ柟浜嬪姟銆?   */
+  default boolean supportsTransactionalParticipation(ConnectionFactory connectionFactory) {
+    return false;
+  }
 
   /**
    * 记录一条审计事件。

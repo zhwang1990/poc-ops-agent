@@ -2,12 +2,15 @@ package com.company.opsagent.controlplane.modules.workflow;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.company.opsagent.contracts.sqlworkbench.SqlStatementType;
 import com.company.opsagent.controlplane.modules.audit.AuditEvent;
 import com.company.opsagent.controlplane.modules.audit.AuditTrail;
 import com.company.opsagent.controlplane.modules.audit.InMemoryAuditTrail;
+import com.company.opsagent.controlplane.modules.audit.R2dbcAuditTrail;
 import io.r2dbc.spi.ConnectionFactories;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -16,6 +19,7 @@ import org.springframework.core.io.ClassPathResource;
 import org.springframework.r2dbc.connection.init.ConnectionFactoryInitializer;
 import org.springframework.r2dbc.connection.init.ResourceDatabasePopulator;
 import org.springframework.r2dbc.core.DatabaseClient;
+import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 class R2dbcControlledSqlDmlWorkflowStoreTest {
@@ -27,6 +31,37 @@ class R2dbcControlledSqlDmlWorkflowStoreTest {
   private static final String CONFIRMATION_HASH = "e".repeat(64);
 
   private DatabaseClient databaseClient;
+
+  @Test
+  void rejectsCreationAndMutationWhenAuditCannotJoinWorkflowTransaction() {
+    R2dbcAuditTrail transactionalAuditTrail = initializeTransactionalAuditTrail();
+    var supportedStore = storeWith(transactionalAuditTrail);
+    var unsupportedAuditTrail = new InMemoryAuditTrail();
+    var unsupportedStore = storeWith(unsupportedAuditTrail);
+    OffsetDateTime createdAt = OffsetDateTime.parse("2026-07-17T10:00:00Z");
+
+    supportedStore.create(createdWorkflow("workflow-existing", "key-existing", createdAt)).block();
+
+    StepVerifier.create(unsupportedStore.create(
+            createdWorkflow("workflow-rejected", "key-rejected", createdAt)))
+        .expectErrorSatisfies(error -> {
+          var exception = assertInstanceOf(
+              ControlledSqlDmlWorkflowStore.TransactionalAuditRequiredException.class,
+              error);
+          assertEquals("SQL_DML_TRANSACTIONAL_AUDIT_REQUIRED", exception.code());
+        })
+        .verify();
+    StepVerifier.create(unsupportedStore.markConfirmed(
+            "workflow-existing", createdAt.plusSeconds(1)))
+        .expectError(ControlledSqlDmlWorkflowStore.TransactionalAuditRequiredException.class)
+        .verify();
+
+    assertNull(unsupportedStore.findByIdempotency(
+        "key-rejected", "operator-1", "sit").block());
+    assertNull(supportedStore.findByIdempotency(
+        "key-existing", "operator-1", "sit").block().confirmedAt());
+    assertTrue(unsupportedAuditTrail.snapshot().isEmpty());
+  }
 
   @Test
   void rejectsRawLookingValuesForEveryPersistedHashBeforePersistenceOrAudit() {
@@ -51,8 +86,8 @@ class R2dbcControlledSqlDmlWorkflowStoreTest {
             PARAMETERS_HASH, PREFLIGHT_HASH, "CONFIRM sample-value", createdAt));
 
     for (ControlledSqlDmlWorkflow invalidWorkflow : invalidWorkflows) {
-      var auditTrail = new InMemoryAuditTrail();
-      var store = testStore(auditTrail);
+      var auditTrail = initializeTransactionalAuditTrail();
+      var store = storeWith(auditTrail);
 
       StepVerifier.create(store.create(invalidWorkflow))
           .expectError(IllegalArgumentException.class)
@@ -67,8 +102,8 @@ class R2dbcControlledSqlDmlWorkflowStoreTest {
 
   @Test
   void excludesIndividualHashesFromAuditReasons() {
-    var auditTrail = new InMemoryAuditTrail();
-    var store = testStore(auditTrail);
+    var auditTrail = initializeTransactionalAuditTrail();
+    var store = storeWith(auditTrail);
     OffsetDateTime createdAt = OffsetDateTime.parse("2026-07-17T10:00:00Z");
 
     store.create(createdWorkflow("workflow-safe-audit", "key-safe-audit", createdAt)).block();
@@ -85,8 +120,10 @@ class R2dbcControlledSqlDmlWorkflowStoreTest {
 
   @Test
   void rollsBackSubmissionWhenRequiredAuditFails() {
-    var auditTrail = new FailingActionAuditTrail("SQL_DML_SUBMITTED");
-    var store = testStore(auditTrail);
+    initializeDatabase();
+    var auditTrail = new FailingActionAuditTrail(
+        databaseClient, "SQL_DML_SUBMITTED");
+    var store = storeWith(auditTrail);
     OffsetDateTime createdAt = OffsetDateTime.parse("2026-07-17T10:00:00Z");
 
     store.create(createdWorkflow("workflow-audit-failure", "key-audit-failure", createdAt)).block();
@@ -108,8 +145,8 @@ class R2dbcControlledSqlDmlWorkflowStoreTest {
 
   @Test
   void requiresDurableConfirmationBeforeSubmission() {
-    var auditTrail = new InMemoryAuditTrail();
-    var store = testStore(auditTrail);
+    var auditTrail = initializeTransactionalAuditTrail();
+    var store = storeWith(auditTrail);
     OffsetDateTime createdAt = OffsetDateTime.parse("2026-07-17T10:00:00Z");
     OffsetDateTime confirmedAt = createdAt.plusSeconds(1);
 
@@ -143,8 +180,8 @@ class R2dbcControlledSqlDmlWorkflowStoreTest {
 
   @Test
   void persistsControlledDmlLifecycleAndAuditsOnlySafeFacts() {
-    var auditTrail = new InMemoryAuditTrail();
-    var store = testStore(auditTrail);
+    var auditTrail = initializeTransactionalAuditTrail();
+    var store = storeWith(auditTrail);
     OffsetDateTime createdAt = OffsetDateTime.parse("2026-07-17T10:00:00Z");
 
     StepVerifier.create(store.create(createdWorkflow("workflow-1", "key-1", createdAt))
@@ -169,8 +206,8 @@ class R2dbcControlledSqlDmlWorkflowStoreTest {
 
   @Test
   void recordsFailedAndUnknownResultsAsTerminalWithoutReplayCandidates() {
-    var auditTrail = new InMemoryAuditTrail();
-    var store = testStore(auditTrail);
+    var auditTrail = initializeTransactionalAuditTrail();
+    var store = storeWith(auditTrail);
     OffsetDateTime createdAt = OffsetDateTime.parse("2026-07-17T10:00:00Z");
 
     StepVerifier.create(store.create(createdWorkflow("workflow-failed", "key-failed", createdAt))
@@ -208,8 +245,8 @@ class R2dbcControlledSqlDmlWorkflowStoreTest {
 
   @Test
   void rejectsFreeFormFailureDetailsBeforePersistenceOrAudit() {
-    var auditTrail = new InMemoryAuditTrail();
-    var store = testStore(auditTrail);
+    var auditTrail = initializeTransactionalAuditTrail();
+    var store = storeWith(auditTrail);
     OffsetDateTime createdAt = OffsetDateTime.parse("2026-07-17T10:00:00Z");
 
     StepVerifier.create(store.create(createdWorkflow("workflow-unsafe", "key-unsafe", createdAt))
@@ -228,15 +265,24 @@ class R2dbcControlledSqlDmlWorkflowStoreTest {
         auditTrail.snapshot().stream().map(event -> event.action()).toList());
   }
 
-  private R2dbcControlledSqlDmlWorkflowStore testStore(AuditTrail auditTrail) {
+  private R2dbcAuditTrail initializeTransactionalAuditTrail() {
+    initializeDatabase();
+    return new R2dbcAuditTrail(databaseClient);
+  }
+
+  private void initializeDatabase() {
     var connectionFactory = ConnectionFactories.get(
         "r2dbc:h2:mem:///controlled-sql-dml-r2dbc-" + System.nanoTime() + ";DB_CLOSE_DELAY=-1");
     var initializer = new ConnectionFactoryInitializer();
     initializer.setConnectionFactory(connectionFactory);
     initializer.setDatabasePopulator(new ResourceDatabasePopulator(
+        new ClassPathResource("sql/migrations/V001__audit_event_schema.sql"),
         new ClassPathResource("sql/migrations/V004__controlled_sql_dml_workflow.sql")));
     initializer.afterPropertiesSet();
     databaseClient = DatabaseClient.create(connectionFactory);
+  }
+
+  private R2dbcControlledSqlDmlWorkflowStore storeWith(AuditTrail auditTrail) {
     return new R2dbcControlledSqlDmlWorkflowStore(databaseClient, auditTrail);
   }
 
@@ -291,20 +337,21 @@ class R2dbcControlledSqlDmlWorkflowStoreTest {
         null);
   }
 
-  private static final class FailingActionAuditTrail extends InMemoryAuditTrail {
+  private static final class FailingActionAuditTrail extends R2dbcAuditTrail {
 
     private final String failingAction;
 
-    private FailingActionAuditTrail(String failingAction) {
+    private FailingActionAuditTrail(DatabaseClient databaseClient, String failingAction) {
+      super(databaseClient);
       this.failingAction = failingAction;
     }
 
     @Override
-    public void record(AuditEvent event) {
+    public Mono<Void> recordReactive(AuditEvent event) {
       if (failingAction.equals(event.action())) {
-        throw new IllegalStateException("forced audit failure");
+        return Mono.error(new IllegalStateException("forced audit failure"));
       }
-      super.record(event);
+      return super.recordReactive(event);
     }
   }
 }

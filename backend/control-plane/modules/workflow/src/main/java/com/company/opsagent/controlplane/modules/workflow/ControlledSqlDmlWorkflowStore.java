@@ -51,4 +51,18 @@ public interface ControlledSqlDmlWorkflowStore {
       return CODE;
     }
   }
+
+  /** 鍙楁帶 DML 缂哄皯鍚屼簨鍔″璁¤兘鍔涙椂鐨勭ǔ瀹氬畨鍏ㄩ敊璇€?*/
+  final class TransactionalAuditRequiredException extends IllegalStateException {
+
+    public static final String CODE = "SQL_DML_TRANSACTIONAL_AUDIT_REQUIRED";
+
+    public TransactionalAuditRequiredException() {
+      super(CODE);
+    }
+
+    public String code() {
+      return CODE;
+    }
+  }
 }

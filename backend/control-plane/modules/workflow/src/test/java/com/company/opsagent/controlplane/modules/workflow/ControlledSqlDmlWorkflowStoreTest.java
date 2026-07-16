@@ -5,7 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.company.opsagent.contracts.sqlworkbench.SqlStatementType;
-import com.company.opsagent.controlplane.modules.audit.InMemoryAuditTrail;
+import com.company.opsagent.controlplane.modules.audit.R2dbcAuditTrail;
 import io.r2dbc.spi.ConnectionFactories;
 import java.time.OffsetDateTime;
 import org.junit.jupiter.api.Test;
@@ -82,10 +82,12 @@ class ControlledSqlDmlWorkflowStoreTest {
     var initializer = new ConnectionFactoryInitializer();
     initializer.setConnectionFactory(connectionFactory);
     initializer.setDatabasePopulator(new ResourceDatabasePopulator(
+        new ClassPathResource("sql/migrations/V001__audit_event_schema.sql"),
         new ClassPathResource("sql/migrations/V004__controlled_sql_dml_workflow.sql")));
     initializer.afterPropertiesSet();
+    DatabaseClient databaseClient = DatabaseClient.create(connectionFactory);
     return new R2dbcControlledSqlDmlWorkflowStore(
-        DatabaseClient.create(connectionFactory), new InMemoryAuditTrail());
+        databaseClient, new R2dbcAuditTrail(databaseClient));
   }
 
   private ControlledSqlDmlWorkflow createdWorkflow(String workflowId, String bindingHash) {
