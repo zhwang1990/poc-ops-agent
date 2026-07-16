@@ -191,7 +191,7 @@ git commit -m "Add controlled SQL DML policy gate"
 **接口：**
 
 - 状态为 `CREATED`、`RUNNING`、`SUCCEEDED`、`FAILED`、`UNKNOWN_REQUIRES_HANDOFF`，不得加入只读 replay 队列。
-- `findByIdempotency(idempotencyKey, operatorId, targetEnvironment)` 返回已有工作流；binding 不同时抛出 `SQL_DML_IDEMPOTENCY_CONFLICT`。
+- `findByIdempotency(idempotencyKey, operatorId, targetEnvironment)` 返回已有工作流；binding 不同时由 M05 的 `ControlledSqlDmlWorkflowStore.IdempotencyConflictException` 抛出稳定错误码 `SQL_DML_IDEMPOTENCY_CONFLICT`。M05 不依赖 M09 的 `SqlWorkbenchException`。
 - 迁移仅保存连接、Schema、语句类型、SQL/参数/预检/确认/binding 哈希、策略、trace、尝试、影响行数和安全失败码。
 
 - [ ] **步骤 1：写失败测试**
@@ -206,7 +206,7 @@ void reusesIdenticalIdempotencyBinding() {
 @Test
 void rejectsChangedBindingForSameKey() {
   store.create(createdWorkflow("binding-a")).block();
-  assertThrows(SqlWorkbenchException.class,
+  assertThrows(ControlledSqlDmlWorkflowStore.IdempotencyConflictException.class,
       () -> store.assertCompatible("key-1", "operator-1", "sit", "binding-b").block());
 }
 ~~~
@@ -364,7 +364,7 @@ git commit -m "Add controlled SQL DML worker guards"
 - `ControlledSqlDmlWorkerGateway.execute(SqlControlledDmlExecutionRequest request): SqlQueryExecutionResult` 是 M05 到 M07 的端口；配置层以 `SqlWorkbenchWorkerClient::executeControlledDml` 适配。
 - `ControlledSqlDmlWorkflowService.execute(ControlledSqlDmlWorkflowRequest request): SqlQueryExecutionResult` 先落工作流和审计，再调用 gateway。
 - `SqlWorkbenchWorkerClient.preflightDml(SqlDmlPreflightExecutionRequest request): SqlDmlImpactPreview` 调用 Worker 只读预览端点。
-- `DefaultSqlWorkbenchService.preflightControlledDml(...)` 返回 `SqlDmlPreflightResult`；`commitControlledDml(...)` 不再固定抛出 `SQL_DML_WORKFLOW_REQUIRED`。
+- `DefaultSqlWorkbenchService.preflightControlledDml(...)` 返回 `SqlDmlPreflightResult`；`commitControlledDml(...)` 不再固定抛出 `SQL_DML_WORKFLOW_REQUIRED`，并在 M09 边界将 M05 的稳定工作流错误码映射为 `SqlWorkbenchException`，不使 M05 依赖 M09。
 
 - [ ] **步骤 1：写失败的端到端服务测试**
 
