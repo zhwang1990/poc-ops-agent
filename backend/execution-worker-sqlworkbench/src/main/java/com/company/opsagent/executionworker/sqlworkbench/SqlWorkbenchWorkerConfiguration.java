@@ -26,6 +26,17 @@ public class SqlWorkbenchWorkerConfiguration {
   }
 
   /**
+   * 构建 Worker 本地 DML 功能与写凭据门禁。
+   */
+  @Bean
+  WorkerSqlDmlExecutionPolicy workerSqlDmlExecutionPolicy(WorkerSqlEgressProperties properties) {
+    return new WorkerSqlDmlExecutionPolicy(
+        properties.getConnections().stream()
+            .map(WorkerSqlEgressProperties.Connection::toDescriptor)
+            .toList());
+  }
+
+  /**
    * SQL 结果短期存储，P1 仅用于只读诊断结果暂存。
    */
   @Bean
@@ -76,7 +87,7 @@ public class SqlWorkbenchWorkerConfiguration {
    * SQL 数据源解析边界，真实连接配置接入前仍先强制执行出口 allowlist。
    */
   @Bean
-  SqlDataSourceRegistry sqlDataSourceRegistry(
+  ConfiguredSqlDataSourceRegistry sqlDataSourceRegistry(
       WorkerSqlEgressPolicy workerSqlEgressPolicy,
       SqlPasswordProvider sqlPasswordProvider) {
     return new ConfiguredSqlDataSourceRegistry(
@@ -98,6 +109,16 @@ public class SqlWorkbenchWorkerConfiguration {
     return new JdbcSqlQueryExecutor(sqlDataSourceRegistry, sqlResultStore, objectMapper, workerClock);
   }
 
+  /**
+   * 构建只读 DML 影响预览执行器。
+   */
+  @Bean
+  SqlDmlImpactPreviewExecutor sqlDmlImpactPreviewExecutor(
+      SqlDataSourceRegistry sqlDataSourceRegistry,
+      ObjectMapper objectMapper) {
+    return new JdbcSqlDmlImpactPreviewExecutor(sqlDataSourceRegistry, objectMapper);
+  }
+
   @Bean
   SqlMetadataReader sqlMetadataReader(
       SqlDataSourceRegistry sqlDataSourceRegistry,
@@ -111,11 +132,15 @@ public class SqlWorkbenchWorkerConfiguration {
   @Bean
   RestrictedSqlQueryExecutionWorker restrictedSqlQueryExecutionWorker(
       Clock workerClock,
-      SqlQueryExecutor sqlQueryExecutor) {
+      SqlQueryExecutor sqlQueryExecutor,
+      SqlDmlImpactPreviewExecutor sqlDmlImpactPreviewExecutor,
+      WorkerSqlDmlExecutionPolicy workerSqlDmlExecutionPolicy) {
     return new RestrictedSqlQueryExecutionWorker(
         new CalciteSqlReadOnlyGuard(),
         new CalciteSqlDmlGuard(),
         sqlQueryExecutor,
+        sqlDmlImpactPreviewExecutor,
+        workerSqlDmlExecutionPolicy,
         workerClock);
   }
 }

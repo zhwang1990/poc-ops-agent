@@ -3,9 +3,16 @@ package com.company.opsagent.executionworker.sqlworkbench;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import com.company.opsagent.contracts.sqlworkbench.SqlControlledDmlExecutionRequest;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryAction;
 import com.company.opsagent.contracts.sqlworkbench.SqlConnectionSummary;
 import com.company.opsagent.contracts.sqlworkbench.SqlDatabaseMetadata;
+import com.company.opsagent.contracts.sqlworkbench.SqlDmlCommitRequest;
+import com.company.opsagent.contracts.sqlworkbench.SqlDmlConfirmation;
+import com.company.opsagent.contracts.sqlworkbench.SqlDmlExecutionBinding;
+import com.company.opsagent.contracts.sqlworkbench.SqlDmlImpactPreview;
+import com.company.opsagent.contracts.sqlworkbench.SqlDmlPreflightExecutionRequest;
+import com.company.opsagent.contracts.sqlworkbench.SqlDmlPreviewSelection;
 import com.company.opsagent.contracts.sqlworkbench.SqlMetadataColumn;
 import com.company.opsagent.contracts.sqlworkbench.SqlMetadataObject;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryExecutionRequest;
@@ -53,6 +60,37 @@ class SqlQueryExecutionControllerTest {
 
     assertEquals("SUCCEEDED", result.status());
     assertEquals("result-1", result.resultId());
+  }
+
+  @Test
+  void acceptsOnlySignedDmlPreflightEnvelope() {
+    var request = preflightRequest();
+    var controller = controller();
+
+    assertThrows(
+        ResponseStatusException.class,
+        () -> controller.preflightDml(new HttpHeaders(), request).block());
+
+    SqlDmlImpactPreview preview = controller.preflightDml(
+        signedPreflightHeaders(request),
+        request).block();
+    assertEquals(2L, preview.affectedRows());
+  }
+
+  @Test
+  void acceptsOnlySignedControlledDmlEnvelope() {
+    var request = controlledDmlRequest();
+    var controller = controller();
+
+    assertThrows(
+        ResponseStatusException.class,
+        () -> controller.executeControlledDml(new HttpHeaders(), request).block());
+
+    var result = controller.executeControlledDml(
+        signedControlledDmlHeaders(request),
+        request).block();
+    assertEquals("SUCCEEDED", result.status());
+    assertEquals(2, result.affectedRows());
   }
 
   @Test
@@ -110,9 +148,41 @@ class SqlQueryExecutionControllerTest {
   private SqlQueryExecutionController controller(SqlResultStore store) {
     var worker = new RestrictedSqlQueryExecutionWorker(
         new CalciteSqlReadOnlyGuard(),
-        request -> "result-1",
+        new CalciteSqlDmlGuard(),
+        executor(),
+        request -> reactor.core.publisher.Mono.just(new SqlDmlImpactPreview(
+            "1.0", 2L, List.of(), List.of(), List.of())),
+        new WorkerSqlDmlExecutionPolicy(List.of(dmlDescriptor())),
         CLOCK);
     return new SqlQueryExecutionController(worker, store, authenticator(), probeWorker(), metadataReader());
+  }
+
+  private SqlQueryExecutor executor() {
+    return new SqlQueryExecutor() {
+      @Override
+      public String execute(SqlQueryExecutionRequest request) {
+        return "result-1";
+      }
+
+      @Override
+      public int executeDml(SqlQueryExecutionRequest request) {
+        return 2;
+      }
+    };
+  }
+
+  private WorkerSqlConnectionDescriptor dmlDescriptor() {
+    return new WorkerSqlConnectionDescriptor(
+        "as400-development",
+        "dev",
+        "DB2_FOR_I",
+        "as400-dev.internal",
+        446,
+        "as400-dev-readonly",
+        "as400-dev-readonly",
+        true,
+        true,
+        "as400-dev-writer");
   }
 
   private SqlConnectionProbeWorker probeWorker() {
@@ -158,6 +228,24 @@ class SqlQueryExecutionControllerTest {
     HttpHeaders headers = baseHeaders();
     String timestamp = OffsetDateTime.now(CLOCK).toString();
     String payload = WorkerRequestSignature.canonicalSqlPayload(KEY_ID, timestamp, request);
+    headers.set(WorkerTransportHeaders.TIMESTAMP, timestamp);
+    headers.set(WorkerTransportHeaders.SIGNATURE, WorkerRequestSignature.sign(SHARED_SECRET, payload));
+    return headers;
+  }
+
+  private HttpHeaders signedPreflightHeaders(SqlDmlPreflightExecutionRequest request) {
+    HttpHeaders headers = baseHeaders();
+    String timestamp = OffsetDateTime.now(CLOCK).toString();
+    String payload = WorkerRequestSignature.canonicalSqlDmlPreflightPayload(KEY_ID, timestamp, request);
+    headers.set(WorkerTransportHeaders.TIMESTAMP, timestamp);
+    headers.set(WorkerTransportHeaders.SIGNATURE, WorkerRequestSignature.sign(SHARED_SECRET, payload));
+    return headers;
+  }
+
+  private HttpHeaders signedControlledDmlHeaders(SqlControlledDmlExecutionRequest request) {
+    HttpHeaders headers = baseHeaders();
+    String timestamp = OffsetDateTime.now(CLOCK).toString();
+    String payload = WorkerRequestSignature.canonicalControlledSqlDmlPayload(KEY_ID, timestamp, request);
     headers.set(WorkerTransportHeaders.TIMESTAMP, timestamp);
     headers.set(WorkerTransportHeaders.SIGNATURE, WorkerRequestSignature.sign(SHARED_SECRET, payload));
     return headers;
@@ -246,5 +334,57 @@ class SqlQueryExecutionControllerTest {
         new PolicyDecisionReference("decision-1", "policy-v1", "ALLOW"),
         new TraceContext("trace-1", "request-1"),
         OffsetDateTime.now(CLOCK).plusSeconds(30));
+  }
+
+  private SqlDmlPreflightExecutionRequest preflightRequest() {
+    return new SqlDmlPreflightExecutionRequest(
+        "1.0",
+        "preflight-execution-1",
+        "workflow-1",
+        query(SqlQueryAction.PREFLIGHT_DML),
+        "validation-hash-1",
+        new SqlDmlPreviewSelection("1.0", List.of(), List.of()),
+        new OperatorContext("operator-1", List.of("ROLE_sql-operator")),
+        new PolicyDecisionReference("decision-1", "policy-v1", "ALLOW"),
+        new TraceContext("trace-1", "request-1"),
+        OffsetDateTime.now(CLOCK).plusSeconds(30));
+  }
+
+  private SqlControlledDmlExecutionRequest controlledDmlRequest() {
+    SqlDmlCommitRequest commitRequest = new SqlDmlCommitRequest(
+        "1.0",
+        query(SqlQueryAction.COMMIT_DML),
+        new SqlDmlConfirmation(
+            "1.0",
+            "sha256:sql",
+            List.of("CONTROLLED_DML"),
+            SqlDmlConfirmation.RISK_CONFIRMATION_CODE));
+    return new SqlControlledDmlExecutionRequest(
+        "1.0",
+        "controlled-execution-1",
+        "workflow-1",
+        commitRequest,
+        new SqlDmlExecutionBinding(
+            "sha256:binding",
+            "sha256:parameters",
+            "sha256:preflight",
+            "sha256:confirmation"),
+        new OperatorContext("operator-1", List.of("ROLE_sql-operator")),
+        new PolicyDecisionReference("decision-1", "policy-v1", "ALLOW"),
+        new TraceContext("trace-1", "request-1"),
+        OffsetDateTime.now(CLOCK).plusSeconds(30));
+  }
+
+  private com.company.opsagent.contracts.sqlworkbench.SqlQueryRequest query(SqlQueryAction action) {
+    return new com.company.opsagent.contracts.sqlworkbench.SqlQueryRequest(
+        "1.0",
+        "as400-development",
+        "dev",
+        "ORDERS",
+        action,
+        "update ORDERS.ORDERS set STATUS = 'READY' where ORDER_ID = 42",
+        List.of(),
+        new SqlQueryLimits(500, 10_000_000, 30),
+        "dml-idempotency-1");
   }
 }

@@ -1,5 +1,8 @@
 package com.company.opsagent.executionworker.sqlworkbench;
 
+import com.company.opsagent.contracts.sqlworkbench.SqlControlledDmlExecutionRequest;
+import com.company.opsagent.contracts.sqlworkbench.SqlDmlImpactPreview;
+import com.company.opsagent.contracts.sqlworkbench.SqlDmlPreflightExecutionRequest;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryExecutionRequest;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryExecutionResult;
 import com.company.opsagent.contracts.sqlworkbench.SqlResultPage;
@@ -53,6 +56,26 @@ public class SqlQueryExecutionController {
     return Mono.fromCallable(() -> {
       authenticator.authenticateSqlExecution(headers, request);
       return worker.execute(request);
+    }).subscribeOn(Schedulers.boundedElastic());
+  }
+
+  @PostMapping("/dml-preflight")
+  public Mono<SqlDmlImpactPreview> preflightDml(
+      @RequestHeader HttpHeaders headers,
+      @RequestBody SqlDmlPreflightExecutionRequest request) {
+    return Mono.defer(() -> {
+      authenticator.authenticateSqlDmlPreflight(headers, request);
+      return worker.preflightDml(request);
+    }).subscribeOn(Schedulers.boundedElastic());
+  }
+
+  @PostMapping("/dml-commit")
+  public Mono<SqlQueryExecutionResult> executeControlledDml(
+      @RequestHeader HttpHeaders headers,
+      @RequestBody SqlControlledDmlExecutionRequest request) {
+    return Mono.fromCallable(() -> {
+      authenticator.authenticateControlledSqlDml(headers, request);
+      return worker.executeControlledDml(request);
     }).subscribeOn(Schedulers.boundedElastic());
   }
 

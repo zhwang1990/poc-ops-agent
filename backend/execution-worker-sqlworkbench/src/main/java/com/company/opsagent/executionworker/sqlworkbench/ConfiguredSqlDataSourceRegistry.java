@@ -2,6 +2,7 @@ package com.company.opsagent.executionworker.sqlworkbench;
 
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryExecutionRequest;
 import com.company.opsagent.contracts.sqlworkbench.SqlConnectionSummary;
+import com.company.opsagent.contracts.sqlworkbench.SqlQueryAction;
 import java.util.Arrays;
 import javax.sql.DataSource;
 
@@ -29,29 +30,50 @@ public final class ConfiguredSqlDataSourceRegistry implements SqlDataSourceRegis
   @Override
   public DataSource resolve(SqlQueryExecutionRequest request) {
     WorkerSqlConnectionDescriptor descriptor = egressPolicy.validate(request);
-    return createDataSource(descriptor);
+    if (request.query().action() == SqlQueryAction.COMMIT_DML) {
+      return createWriteDataSource(descriptor);
+    }
+    return createDataSource(descriptor, descriptor.credentialAlias(), descriptor.username());
   }
 
   @Override
   public DataSource resolve(SqlConnectionSummary connection) {
     WorkerSqlConnectionDescriptor descriptor = egressPolicy.validate(connection);
-    return createDataSource(descriptor);
+    return createDataSource(descriptor, descriptor.credentialAlias(), descriptor.username());
   }
 
-  private DataSource createDataSource(WorkerSqlConnectionDescriptor descriptor) {
+  private DataSource createWriteDataSource(WorkerSqlConnectionDescriptor descriptor) {
+    if (!descriptor.dmlEnabled() || descriptor.dmlCredentialAlias() == null) {
+      throw new WorkerSqlEgressException(
+          "SQL_DML_WORKER_DISABLED",
+          "SQL DML is not enabled with a write credential for this worker connection");
+    }
+    return createDataSource(
+        descriptor,
+        descriptor.dmlCredentialAlias(),
+        descriptor.dmlCredentialAlias());
+  }
+
+  private DataSource createDataSource(
+      WorkerSqlConnectionDescriptor descriptor,
+      String credentialAlias,
+      String username) {
     return switch (descriptor.platformType()) {
       case "H2" -> h2DataSourceFactory.create(descriptor);
-      case "DB2_FOR_I" -> createJt400DataSource(descriptor);
+      case "DB2_FOR_I" -> createJt400DataSource(descriptor, credentialAlias, username);
       default -> throw new WorkerSqlEgressException(
           "SQL_PLATFORM_NOT_SUPPORTED",
           "SQL platform is not supported by this worker");
     };
   }
 
-  private DataSource createJt400DataSource(WorkerSqlConnectionDescriptor descriptor) {
-    char[] password = passwordProvider.password(descriptor.credentialAlias());
+  private DataSource createJt400DataSource(
+      WorkerSqlConnectionDescriptor descriptor,
+      String credentialAlias,
+      String username) {
+    char[] password = passwordProvider.password(credentialAlias);
     try {
-      return jt400DataSourceFactory.create(descriptor.host(), descriptor.username(), password);
+      return jt400DataSourceFactory.create(descriptor.host(), username, password);
     } finally {
       Arrays.fill(password, '\0');
     }

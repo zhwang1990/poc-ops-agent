@@ -1,5 +1,7 @@
 package com.company.opsagent.executionworker.sqlworkbench;
 
+import com.company.opsagent.contracts.sqlworkbench.SqlControlledDmlExecutionRequest;
+import com.company.opsagent.contracts.sqlworkbench.SqlDmlPreflightExecutionRequest;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryExecutionRequest;
 import com.company.opsagent.contracts.sqlworkbench.SqlConnectionSummary;
 import com.company.opsagent.contracts.workflow.WorkerRequestSignature;
@@ -32,6 +34,30 @@ public class SqlWorkerTransportAuthenticator {
     String keyId = acceptedKeyId(headers);
     String timestamp = acceptedTimestamp(headers);
     String payload = WorkerRequestSignature.canonicalSqlPayload(keyId, timestamp, request);
+    assertSignature(headers, payload);
+  }
+
+  public void authenticateSqlDmlPreflight(
+      HttpHeaders headers,
+      SqlDmlPreflightExecutionRequest request) {
+    if (!properties.isEnabled()) {
+      return;
+    }
+    String keyId = acceptedKeyId(headers);
+    String timestamp = acceptedTimestamp(headers);
+    String payload = WorkerRequestSignature.canonicalSqlDmlPreflightPayload(keyId, timestamp, request);
+    assertSignature(headers, payload);
+  }
+
+  public void authenticateControlledSqlDml(
+      HttpHeaders headers,
+      SqlControlledDmlExecutionRequest request) {
+    if (!properties.isEnabled()) {
+      return;
+    }
+    String keyId = acceptedKeyId(headers);
+    String timestamp = acceptedTimestamp(headers);
+    String payload = WorkerRequestSignature.canonicalControlledSqlDmlPayload(keyId, timestamp, request);
     assertSignature(headers, payload);
   }
 
