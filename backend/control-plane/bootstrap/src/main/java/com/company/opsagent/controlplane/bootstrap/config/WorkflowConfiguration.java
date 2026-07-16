@@ -10,10 +10,12 @@ import com.company.opsagent.controlplane.modules.policy.PolicyDecisionService;
 import com.company.opsagent.controlplane.modules.agentrouting.SkillRoutingService;
 import com.company.opsagent.controlplane.modules.workflow.AgentDiagnosticWorkflowService;
 import com.company.opsagent.controlplane.modules.workflow.AgentWorkflowStore;
+import com.company.opsagent.controlplane.modules.workflow.ControlledSqlDmlWorkflowStore;
 import com.company.opsagent.controlplane.modules.workflow.ReadOnlyDiagnosticWorkflowService;
 import com.company.opsagent.controlplane.modules.workflow.ReadOnlyWorkflowRecoveryService;
 import com.company.opsagent.controlplane.modules.workflow.ReadOnlyWorkflowStore;
 import com.company.opsagent.controlplane.modules.workflow.R2dbcAgentWorkflowStore;
+import com.company.opsagent.controlplane.modules.workflow.R2dbcControlledSqlDmlWorkflowStore;
 import com.company.opsagent.controlplane.modules.workflow.R2dbcReadOnlyWorkflowStore;
 import com.company.opsagent.controlplane.modules.workflow.RetryableFailureClassifier;
 import com.company.opsagent.controlplane.modules.workflow.WorkerGateway;
@@ -61,6 +63,13 @@ public class WorkflowConfiguration {
   }
 
   @Bean
+  ControlledSqlDmlWorkflowStore controlledSqlDmlWorkflowStore(
+      DatabaseClient databaseClient,
+      AuditTrail auditTrail) {
+    return new R2dbcControlledSqlDmlWorkflowStore(databaseClient, auditTrail);
+  }
+
+  @Bean
   AgentRuntimeProgressSink agentRuntimeProgressSink(ReadOnlyWorkflowStore readOnlyWorkflowStore) {
     return new WorkflowAgentRuntimeProgressSink(readOnlyWorkflowStore, Clock.systemUTC());
   }
@@ -99,7 +108,8 @@ public class WorkflowConfiguration {
     initializer.setDatabasePopulator(new ResourceDatabasePopulator(
         new ClassPathResource("sql/migrations/V001__workflow_schema.sql"),
         new ClassPathResource("sql/migrations/V002__agent_workflow_schema.sql"),
-        new ClassPathResource("sql/migrations/V003__agent_workflow_result_columns.sql")));
+        new ClassPathResource("sql/migrations/V003__agent_workflow_result_columns.sql"),
+        new ClassPathResource("sql/migrations/V004__controlled_sql_dml_workflow.sql")));
     return initializer;
   }
 
