@@ -106,7 +106,8 @@ public class WebClientSqlWorkbenchWorkerClient implements SqlWorkbenchWorkerClie
           if (response.statusCode().is2xxSuccessful()) {
             return response.bodyToMono(SqlQueryExecutionResult.class);
           }
-          if (response.statusCode().is4xxClientError()) {
+          if (response.statusCode().is4xxClientError()
+              && response.statusCode().value() != 408) {
             return response.bodyToMono(JsonNode.class)
                 .defaultIfEmpty(com.fasterxml.jackson.databind.node.NullNode.getInstance())
                 .map(problem -> new SqlQueryExecutionResult(

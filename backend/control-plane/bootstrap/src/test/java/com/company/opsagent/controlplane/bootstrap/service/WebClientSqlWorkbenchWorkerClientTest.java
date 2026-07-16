@@ -156,6 +156,18 @@ class WebClientSqlWorkbenchWorkerClientTest {
   }
 
   @Test
+  void keepsWorkerCommitTimeoutAsUncertainTransportFailure() {
+    var client = new WebClientSqlWorkbenchWorkerClient(
+        dmlErrorWebClient(HttpStatus.REQUEST_TIMEOUT),
+        workerProperties(true),
+        Clock.fixed(SIGNED_AT, ZoneOffset.UTC));
+
+    assertThrows(
+        IllegalStateException.class,
+        () -> client.executeControlledDml(controlledDmlRequest()));
+  }
+
+  @Test
   void readsSqlResultPageThroughSignedWorkerEndpoint() {
     List<ClientRequest> captured = new ArrayList<>();
     var client = new WebClientSqlWorkbenchWorkerClient(
@@ -395,8 +407,12 @@ class WebClientSqlWorkbenchWorkerClientTest {
   }
 
   private WebClient rejectingDmlWebClient() {
+    return dmlErrorWebClient(HttpStatus.FORBIDDEN);
+  }
+
+  private WebClient dmlErrorWebClient(HttpStatus status) {
     return WebClient.builder()
-        .exchangeFunction(request -> Mono.just(ClientResponse.create(HttpStatus.FORBIDDEN)
+        .exchangeFunction(request -> Mono.just(ClientResponse.create(status)
             .header("Content-Type", "application/problem+json")
             .body("{\"errorCode\":\"SQL_DML_EGRESS_DENIED\",\"detail\":\"denied\"}")
             .build()))

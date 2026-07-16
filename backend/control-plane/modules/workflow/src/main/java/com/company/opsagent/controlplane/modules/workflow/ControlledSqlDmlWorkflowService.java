@@ -80,6 +80,12 @@ public final class ControlledSqlDmlWorkflowService {
           request.binding().bindingHash()).block();
     } catch (ControlledSqlDmlWorkflowStore.IdempotencyConflictException exception) {
       throw workflowFailure(exception.code(), exception.getMessage());
+    } catch (ControlledSqlDmlWorkflowStore.TransactionalAuditRequiredException exception) {
+      throw workflowFailure(exception.code(), "Transactional audit is required for controlled DML");
+    } catch (RuntimeException exception) {
+      throw workflowFailure(
+          "SQL_DML_WORKFLOW_PERSISTENCE_FAILED",
+          "Controlled DML workflow state could not be read");
     }
   }
 
