@@ -5,6 +5,9 @@ import com.company.opsagent.controlplane.bootstrap.service.ModelProviderSqlAssis
 import com.company.opsagent.controlplane.modules.agentruntime.ModelProviderSecretCodec;
 import com.company.opsagent.controlplane.modules.agentruntime.ModelProviderStore;
 import com.company.opsagent.controlplane.modules.sqlworkbench.CalciteSqlValidationService;
+import com.company.opsagent.controlplane.modules.sqlworkbench.CalciteSqlDmlAnalysis;
+import com.company.opsagent.controlplane.modules.sqlworkbench.ControlledSqlDmlPolicy;
+import com.company.opsagent.controlplane.modules.sqlworkbench.ControlledSqlDmlProperties;
 import com.company.opsagent.controlplane.modules.sqlworkbench.DefaultSqlWorkbenchService;
 import com.company.opsagent.controlplane.modules.sqlworkbench.R2dbcSqlConnectionCatalog;
 import com.company.opsagent.controlplane.modules.sqlworkbench.SqlAssistantClient;
@@ -17,6 +20,7 @@ import io.r2dbc.spi.ConnectionFactory;
 import java.net.http.HttpClient;
 import java.time.Clock;
 import java.time.Duration;
+import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.ClassPathResource;
@@ -50,6 +54,24 @@ public class SqlWorkbenchConfiguration {
   @Bean
   SqlValidationService sqlValidationService() {
     return new CalciteSqlValidationService();
+  }
+
+  @Bean
+  CalciteSqlDmlAnalysis calciteSqlDmlAnalysis() {
+    return new CalciteSqlDmlAnalysis();
+  }
+
+  @Bean
+  @ConfigurationProperties(prefix = "ops-agent.controlled-sql-dml")
+  ControlledSqlDmlProperties controlledSqlDmlProperties() {
+    return new ControlledSqlDmlProperties();
+  }
+
+  @Bean
+  ControlledSqlDmlPolicy controlledSqlDmlPolicy(
+      ControlledSqlDmlProperties controlledSqlDmlProperties,
+      CalciteSqlDmlAnalysis calciteSqlDmlAnalysis) {
+    return new ControlledSqlDmlPolicy(controlledSqlDmlProperties, calciteSqlDmlAnalysis);
   }
 
   @Bean

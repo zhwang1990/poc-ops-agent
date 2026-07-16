@@ -154,6 +154,9 @@ ops-agent:
     base-url: http://127.0.0.1:8091
     transport-auth:
       enabled: false
+  controlled-sql-dml:
+    enabled-environments: []
+    rules: []
   workflow:
     startup-recovery-enabled: true
   agent-runtime:
