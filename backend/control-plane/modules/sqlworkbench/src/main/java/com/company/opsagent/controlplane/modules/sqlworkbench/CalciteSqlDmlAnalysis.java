@@ -106,6 +106,7 @@ public final class CalciteSqlDmlAnalysis {
       throw rejected("controlled DML target must be a table identifier");
     }
     List<String> names = identifier.names;
+    rejectQuotedIdentifiers(identifier);
     if (names.size() == 1) {
       return new Target(null, canonical(names.getFirst()));
     }
@@ -215,7 +216,16 @@ public final class CalciteSqlDmlAnalysis {
     if (!(node instanceof SqlIdentifier identifier) || identifier.names.size() != 1) {
       throw rejected("controlled DML " + fieldName + " must be a simple identifier");
     }
+    rejectQuotedIdentifiers(identifier);
     return canonical(identifier.names.getFirst());
+  }
+
+  private void rejectQuotedIdentifiers(SqlIdentifier identifier) {
+    for (int index = 0; index < identifier.names.size(); index++) {
+      if (identifier.isComponentQuoted(index)) {
+        throw rejected("controlled DML does not allow quoted identifiers");
+      }
+    }
   }
 
   private static String canonical(String value) {

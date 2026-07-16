@@ -55,8 +55,8 @@ public final class ControlledSqlDmlProperties {
     private Set<String> changedColumns = Set.of();
     private Set<String> predicateColumns = Set.of();
     private Set<String> operators = Set.of();
-    private List<String> previewSampleColumns = List.of();
-    private List<String> maskedPreviewColumns = List.of();
+    private List<String> previewSampleColumns;
+    private List<String> maskedPreviewColumns;
 
     public String getConnectionId() {
       return connectionId;
@@ -119,7 +119,7 @@ public final class ControlledSqlDmlProperties {
     }
 
     public void setPreviewSampleColumns(List<String> previewSampleColumns) {
-      this.previewSampleColumns = previewSampleColumns == null ? List.of() : List.copyOf(previewSampleColumns);
+      this.previewSampleColumns = previewSampleColumns == null ? null : List.copyOf(previewSampleColumns);
     }
 
     public List<String> getMaskedPreviewColumns() {
@@ -127,7 +127,7 @@ public final class ControlledSqlDmlProperties {
     }
 
     public void setMaskedPreviewColumns(List<String> maskedPreviewColumns) {
-      this.maskedPreviewColumns = maskedPreviewColumns == null ? List.of() : List.copyOf(maskedPreviewColumns);
+      this.maskedPreviewColumns = maskedPreviewColumns == null ? null : List.copyOf(maskedPreviewColumns);
     }
 
     boolean matchesTarget(
@@ -172,6 +172,10 @@ public final class ControlledSqlDmlProperties {
       canonicalSet(changedColumns);
       canonicalSet(predicateColumns);
       canonicalSet(operators);
+      if (previewSampleColumns == null || maskedPreviewColumns == null) {
+        throw new IllegalArgumentException(
+            "previewSampleColumns and maskedPreviewColumns must be configured");
+      }
       previewSelection();
     }
   }

@@ -111,6 +111,15 @@ class CalciteSqlValidationServiceTest {
     assertTrue(report.rejectionReasons().contains("controlled DML predicate contains an unsupported column expression"));
   }
 
+  @Test
+  void rejectsQuotedLowerCaseIdentifiersBeforePolicyAuthorization() {
+    var report = service.validate(request(SqlQueryAction.PREFLIGHT_DML,
+        "update \"orders\" set \"status\" = 'READY' where \"order_id\" = 42"));
+
+    assertEquals(SqlValidationLevel.REJECTED, report.validationLevel());
+    assertTrue(report.rejectionReasons().contains("controlled DML does not allow quoted identifiers"));
+  }
+
   private SqlQueryRequest request(SqlQueryAction action, String sql) {
     return new SqlQueryRequest(
         "1.0",

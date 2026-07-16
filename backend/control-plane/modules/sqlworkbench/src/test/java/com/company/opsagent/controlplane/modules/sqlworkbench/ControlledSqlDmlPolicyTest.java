@@ -103,6 +103,22 @@ class ControlledSqlDmlPolicyTest {
         List.of("STATUS")));
   }
 
+  @Test
+  void rejectsRuleWithMissingPreviewConfiguration() {
+    var rule = updateRule();
+
+    assertThrows(IllegalArgumentException.class, () -> policyFor(rule));
+  }
+
+  @Test
+  void rejectsRuleWithNullPreviewConfiguration() {
+    var rule = updateRule();
+    rule.setPreviewSampleColumns(null);
+    rule.setMaskedPreviewColumns(List.of());
+
+    assertThrows(IllegalArgumentException.class, () -> policyFor(rule));
+  }
+
   private ControlledSqlDmlPolicy policyFor(
       String table,
       Set<String> changedColumns,
@@ -112,11 +128,8 @@ class ControlledSqlDmlPolicyTest {
       List<String> maskedPreviewColumns) {
     var properties = new ControlledSqlDmlProperties();
     properties.setEnabledEnvironments(Set.of("dev"));
-    var rule = new ControlledSqlDmlProperties.Rule();
-    rule.setConnectionId("as400-development");
-    rule.setSchema("ORDERS");
+    var rule = updateRule();
     rule.setTable(table);
-    rule.setStatementType(SqlStatementType.UPDATE);
     rule.setChangedColumns(changedColumns);
     rule.setPredicateColumns(predicateColumns);
     rule.setOperators(operators);
@@ -124,6 +137,25 @@ class ControlledSqlDmlPolicyTest {
     rule.setMaskedPreviewColumns(maskedPreviewColumns);
     properties.setRules(List.of(rule));
     return new ControlledSqlDmlPolicy(properties, new CalciteSqlDmlAnalysis());
+  }
+
+  private ControlledSqlDmlPolicy policyFor(ControlledSqlDmlProperties.Rule rule) {
+    var properties = new ControlledSqlDmlProperties();
+    properties.setEnabledEnvironments(Set.of("dev"));
+    properties.setRules(List.of(rule));
+    return new ControlledSqlDmlPolicy(properties, new CalciteSqlDmlAnalysis());
+  }
+
+  private ControlledSqlDmlProperties.Rule updateRule() {
+    var rule = new ControlledSqlDmlProperties.Rule();
+    rule.setConnectionId("as400-development");
+    rule.setSchema("ORDERS");
+    rule.setTable("ORDERS");
+    rule.setStatementType(SqlStatementType.UPDATE);
+    rule.setChangedColumns(Set.of("STATUS"));
+    rule.setPredicateColumns(Set.of("ORDER_ID"));
+    rule.setOperators(Set.of("EQUALS"));
+    return rule;
   }
 
   private SqlQueryRequest updateRequest(String sql) {
