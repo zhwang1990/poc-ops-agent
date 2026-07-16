@@ -191,7 +191,8 @@ public final class R2dbcControlledSqlDmlWorkflowStore implements ControlledSqlDm
         null,
         completedAt,
         ACTION_SUCCEEDED,
-        "affectedRowCount=" + affectedRowCount);
+        "affectedRowCount=" + affectedRowCount,
+        false);
   }
 
   @Override
@@ -212,7 +213,8 @@ public final class R2dbcControlledSqlDmlWorkflowStore implements ControlledSqlDm
         failureCode,
         completedAt,
         ACTION_FAILED,
-        "failureCode=" + failureCode);
+        "failureCode=" + failureCode,
+        false);
   }
 
   @Override
@@ -233,7 +235,8 @@ public final class R2dbcControlledSqlDmlWorkflowStore implements ControlledSqlDm
         failureCode,
         completedAt,
         ACTION_HANDOFF_REQUIRED,
-        "failureCode=" + failureCode);
+        "failureCode=" + failureCode,
+        true);
   }
 
   private Mono<ControlledSqlDmlWorkflow> insert(ControlledSqlDmlWorkflow workflow) {
@@ -335,8 +338,18 @@ public final class R2dbcControlledSqlDmlWorkflowStore implements ControlledSqlDm
       String failureCode,
       OffsetDateTime completedAt,
       String action,
-      String safeResultFact) {
-    DatabaseClient.GenericExecuteSpec spec = databaseClient.sql("""
+      String safeResultFact,
+      boolean allowCreated) {
+    DatabaseClient.GenericExecuteSpec spec = databaseClient.sql(allowCreated ? """
+            update controlled_sql_dml_workflow
+            set status = :status,
+                affected_row_count = :affectedRowCount,
+                failure_code = :failureCode,
+                updated_at = :updatedAt,
+                completed_at = :completedAt
+            where workflow_id = :workflowId
+              and status in (:runningStatus, :createdStatus)
+            """ : """
             update controlled_sql_dml_workflow
             set status = :status,
                 affected_row_count = :affectedRowCount,
@@ -350,6 +363,9 @@ public final class R2dbcControlledSqlDmlWorkflowStore implements ControlledSqlDm
         .bind("completedAt", completedAt)
         .bind("workflowId", workflowId)
         .bind("runningStatus", ControlledSqlDmlWorkflow.Status.RUNNING.name());
+    if (allowCreated) {
+      spec = spec.bind("createdStatus", ControlledSqlDmlWorkflow.Status.CREATED.name());
+    }
     spec = bindNullable(spec, "affectedRowCount", affectedRowCount, Integer.class);
     spec = bindNullable(spec, "failureCode", failureCode, String.class);
     return transactions.transactional(spec.fetch()

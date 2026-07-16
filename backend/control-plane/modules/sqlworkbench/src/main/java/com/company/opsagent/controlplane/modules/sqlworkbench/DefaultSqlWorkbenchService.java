@@ -380,7 +380,7 @@ public class DefaultSqlWorkbenchService implements SqlWorkbenchService {
           operator,
           policyDecision,
           trace);
-      preflightReceiptService.verify(workflowRequest);
+      preflightReceiptService.verifyAuthenticityAndBinding(workflowRequest);
       return controlledDmlExecutor.apply(workflowRequest);
     } catch (ControlledSqlDmlWorkflowService.WorkflowException exception) {
       throw new SqlWorkbenchException(exception.code(), exception.getMessage());
@@ -419,6 +419,11 @@ public class DefaultSqlWorkbenchService implements SqlWorkbenchService {
       throw new SqlWorkbenchException(
           ControlledSqlDmlWorkflowStore.TransactionalAuditRequiredException.CODE,
           "Transactional audit storage is required for controlled SQL DML");
+    }
+    if (!preflightReceiptService.isAvailable()) {
+      throw new SqlWorkbenchException(
+          "SQL_DML_PREFLIGHT_RECEIPT_UNAVAILABLE",
+          "The server preflight receipt signer is not configured");
     }
     if (!controlledDmlEnvironmentEnabled.test(targetEnvironment)) {
       throw new SqlWorkbenchException(
@@ -546,6 +551,7 @@ public class DefaultSqlWorkbenchService implements SqlWorkbenchService {
 
   private SqlConnectionSummary serverVisibleConnection(SqlConnectionSummary connection) {
     if (transactionalAuditAvailable
+        && preflightReceiptService.isAvailable()
         && controlledDmlEnvironmentEnabled.test(connection.targetEnvironment())
         && controlledDmlPolicy.supports(connection)
         && "READY".equalsIgnoreCase(connection.status())) {

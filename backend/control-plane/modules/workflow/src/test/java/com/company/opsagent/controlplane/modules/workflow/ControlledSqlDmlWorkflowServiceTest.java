@@ -2,6 +2,7 @@ package com.company.opsagent.controlplane.modules.workflow;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.company.opsagent.contracts.sqlworkbench.SqlControlledDmlExecutionRequest;
 import com.company.opsagent.contracts.sqlworkbench.SqlDmlCommitRequest;
@@ -108,6 +109,23 @@ class ControlledSqlDmlWorkflowServiceTest {
   }
 
   @Test
+  void reusesTerminalWorkflowAfterReceiptExpiryWithoutCallingWorkerAgain() {
+    RecordingReceiptVerifier receiptVerifier = new RecordingReceiptVerifier();
+    ControlledSqlDmlWorkflowService recovered = new ControlledSqlDmlWorkflowService(
+        store, gateway, receiptVerifier, CLOCK);
+
+    SqlQueryExecutionResult first = recovered.execute(request(BINDING_HASH));
+    receiptVerifier.expired = true;
+
+    SqlQueryExecutionResult second = recovered.execute(request(BINDING_HASH));
+
+    assertEquals(first, second);
+    assertEquals(1, gateway.requests.size());
+    assertEquals(2, receiptVerifier.authenticityAndBindingChecks);
+    assertEquals(2, receiptVerifier.dispatchChecks);
+  }
+
+  @Test
   void rejectsChangedBindingWithoutSecondWorkerSubmission() {
     service.execute(request(BINDING_HASH));
 
@@ -153,6 +171,87 @@ class ControlledSqlDmlWorkflowServiceTest {
     assertEquals(
         "SQL_DML_HANDOFF_REQUIRED",
         auditTrail.snapshot().getLast().action());
+  }
+
+  @Test
+  void reconcilesStaleRunningWorkflowAfterReceiptExpiryWithoutWorkerReplay() {
+    ControlledSqlDmlWorkflow workflow = createRunningWorkflow(
+        "workflow-expired", OffsetDateTime.now(CLOCK).minusSeconds(1));
+    RecordingReceiptVerifier receiptVerifier = new RecordingReceiptVerifier();
+    receiptVerifier.expired = true;
+    ControlledSqlDmlWorkflowService recovered = new ControlledSqlDmlWorkflowService(
+        store, gateway, receiptVerifier, CLOCK);
+
+    ControlledSqlDmlWorkflowService.WorkflowException exception = assertThrows(
+        ControlledSqlDmlWorkflowService.WorkflowException.class,
+        () -> recovered.execute(request(BINDING_HASH)));
+
+    assertEquals("SQL_DML_RESULT_UNKNOWN", exception.code());
+    assertEquals(ControlledSqlDmlWorkflow.Status.UNKNOWN_REQUIRES_HANDOFF, persisted().status());
+    assertEquals(0, gateway.requests.size());
+    assertEquals(1, receiptVerifier.authenticityAndBindingChecks);
+    assertEquals(0, receiptVerifier.dispatchChecks);
+  }
+
+  @Test
+  void recoversCreatedWorkflowAndDispatchesWorkerExactlyOnce() {
+    ControlledSqlDmlWorkflow workflow = createCreatedWorkflow("workflow-created");
+    RecordingReceiptVerifier receiptVerifier = new RecordingReceiptVerifier();
+    ControlledSqlDmlWorkflowService recovered = new ControlledSqlDmlWorkflowService(
+        store, gateway, receiptVerifier, CLOCK);
+
+    SqlQueryExecutionResult first = recovered.execute(request(BINDING_HASH));
+    SqlQueryExecutionResult second = recovered.execute(request(BINDING_HASH));
+
+    assertEquals(first, second);
+    assertEquals(1, gateway.requests.size());
+    assertEquals(ControlledSqlDmlWorkflow.Status.SUCCEEDED, persisted().status());
+    assertEquals(2, receiptVerifier.authenticityAndBindingChecks);
+    assertEquals(1, receiptVerifier.dispatchChecks);
+    assertTrue(auditTrail.snapshot().stream().map(AuditEvent::action)
+        .anyMatch("SQL_DML_SUBMITTED"::equals));
+  }
+
+  @Test
+  void movesCreatedWorkflowToAuditedHandoffWhenReceiptHasExpired() {
+    ControlledSqlDmlWorkflow workflow = createCreatedWorkflow("workflow-created");
+    RecordingReceiptVerifier receiptVerifier = new RecordingReceiptVerifier();
+    receiptVerifier.expired = true;
+    ControlledSqlDmlWorkflowService recovered = new ControlledSqlDmlWorkflowService(
+        store, gateway, receiptVerifier, CLOCK);
+
+    ControlledSqlDmlWorkflowService.WorkflowException exception = assertThrows(
+        ControlledSqlDmlWorkflowService.WorkflowException.class,
+        () -> recovered.execute(request(BINDING_HASH)));
+
+    assertEquals("SQL_DML_RESULT_UNKNOWN", exception.code());
+    assertEquals(ControlledSqlDmlWorkflow.Status.UNKNOWN_REQUIRES_HANDOFF, persisted().status());
+    assertEquals(0, gateway.requests.size());
+    assertTrue(auditTrail.snapshot().stream().map(AuditEvent::action)
+        .anyMatch("SQL_DML_HANDOFF_REQUIRED"::equals));
+    assertEquals(1, receiptVerifier.authenticityAndBindingChecks);
+    assertEquals(1, receiptVerifier.dispatchChecks);
+  }
+
+  @Test
+  void movesCreatedWorkflowToAuditedHandoffWhenReceiptIsInvalid() {
+    createCreatedWorkflow("workflow-created");
+    RecordingReceiptVerifier receiptVerifier = new RecordingReceiptVerifier();
+    receiptVerifier.invalid = true;
+    ControlledSqlDmlWorkflowService recovered = new ControlledSqlDmlWorkflowService(
+        store, gateway, receiptVerifier, CLOCK);
+
+    ControlledSqlDmlWorkflowService.WorkflowException exception = assertThrows(
+        ControlledSqlDmlWorkflowService.WorkflowException.class,
+        () -> recovered.execute(request(BINDING_HASH)));
+
+    assertEquals("SQL_DML_RESULT_UNKNOWN", exception.code());
+    assertEquals(ControlledSqlDmlWorkflow.Status.UNKNOWN_REQUIRES_HANDOFF, persisted().status());
+    assertEquals(0, gateway.requests.size());
+    assertTrue(auditTrail.snapshot().stream().map(AuditEvent::action)
+        .anyMatch("SQL_DML_HANDOFF_REQUIRED"::equals));
+    assertEquals(1, receiptVerifier.authenticityAndBindingChecks);
+    assertEquals(0, receiptVerifier.dispatchChecks);
   }
 
   @Test
@@ -308,6 +407,37 @@ class ControlledSqlDmlWorkflowServiceTest {
     return store.markSubmitted(workflow.workflowId(), submittedAt, executionExpiresAt).block();
   }
 
+  private ControlledSqlDmlWorkflow createCreatedWorkflow(String workflowId) {
+    OffsetDateTime now = OffsetDateTime.now(CLOCK);
+    ControlledSqlDmlWorkflow workflow = new ControlledSqlDmlWorkflow(
+        workflowId,
+        "dml-key-1",
+        "operator-1",
+        "sit",
+        BINDING_HASH,
+        "as400-sit",
+        "OPS",
+        SqlStatementType.UPDATE,
+        SQL_HASH,
+        PARAMETERS_HASH,
+        PREFLIGHT_HASH,
+        CONFIRMATION_HASH,
+        "decision-1",
+        "policy-v1",
+        "trace-1",
+        "request-1",
+        ControlledSqlDmlWorkflow.Status.CREATED,
+        0,
+        null,
+        null,
+        null,
+        now,
+        now,
+        null,
+        null);
+    return store.create(workflow).block();
+  }
+
   private ControlledSqlDmlWorkflowRequest request(String bindingHash) {
     return request(bindingHash, "decision-1");
   }
@@ -382,6 +512,33 @@ class ControlledSqlDmlWorkflowServiceTest {
           null,
           null,
           1);
+    }
+  }
+
+  private static final class RecordingReceiptVerifier
+      implements ControlledSqlDmlPreflightReceiptVerifier {
+
+    private boolean expired;
+    private boolean invalid;
+    private int authenticityAndBindingChecks;
+    private int dispatchChecks;
+
+    @Override
+    public void verifyAuthenticityAndBinding(ControlledSqlDmlWorkflowRequest request) {
+      authenticityAndBindingChecks++;
+      if (invalid) {
+        throw new ControlledSqlDmlWorkflowService.WorkflowException(
+            "SQL_DML_PREFLIGHT_RECEIPT_INVALID", "The preflight receipt is invalid");
+      }
+    }
+
+    @Override
+    public void verifyUsableForDispatch(ControlledSqlDmlWorkflowRequest request) {
+      dispatchChecks++;
+      if (expired) {
+        throw new ControlledSqlDmlWorkflowService.WorkflowException(
+            "SQL_DML_PREFLIGHT_RECEIPT_EXPIRED", "The preflight receipt has expired");
+      }
     }
   }
 }

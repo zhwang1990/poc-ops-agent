@@ -39,6 +39,7 @@ import com.company.opsagent.controlplane.modules.workflow.ControlledSqlDmlWorkfl
 import com.company.opsagent.controlplane.modules.workflow.ControlledSqlDmlWorkflowStore;
 import com.fasterxml.jackson.databind.node.TextNode;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -363,6 +364,47 @@ class DefaultSqlWorkbenchServiceTest {
   }
 
   @Test
+  void removesDmlCapabilitiesAndFailsClosedWhenCompatibilityConstructorHasNoReceiptSigner() {
+    DefaultSqlWorkbenchService unavailable = new DefaultSqlWorkbenchService(
+        new InMemorySqlConnectionCatalog(service.listConnections()),
+        new CalciteSqlValidationService(),
+        workerClient,
+        assistantClient,
+        controlledDmlPolicy(),
+        dmlExecutor,
+        environment -> true,
+        true,
+        CLOCK);
+    SqlQueryRequest preflightRequest = request(
+        "ORDERS",
+        SqlQueryAction.PREFLIGHT_DML,
+        "update ORDERS.ORDERS set status = 'READY' where order_id = 42");
+
+    assertEquals(
+        List.of(SqlQueryAction.VALIDATE, SqlQueryAction.RUN_READ_ONLY),
+        unavailable.listConnections().getFirst().capabilities());
+    SqlWorkbenchException preflightException = assertThrows(
+        SqlWorkbenchException.class,
+        () -> unavailable.preflightControlledDml(preflightRequest, operator(), policy(), trace()));
+
+    assertEquals("SQL_DML_PREFLIGHT_RECEIPT_UNAVAILABLE", preflightException.code());
+    assertEquals(0, workerClient.preflightCount);
+
+    SqlQueryRequest commitQuery = request(
+        "ORDERS",
+        SqlQueryAction.COMMIT_DML,
+        "update ORDERS.ORDERS set status = 'READY' where order_id = 42");
+    SqlWorkbenchException commitException = assertThrows(
+        SqlWorkbenchException.class,
+        () -> unavailable.commitControlledDml(
+            commitRequest(commitQuery, List.of("CONTROLLED_DML_CONFIRMED")),
+            operator(), policy(), trace()));
+
+    assertEquals("SQL_DML_PREFLIGHT_RECEIPT_UNAVAILABLE", commitException.code());
+    assertEquals(0, dmlExecutor.executeCount);
+  }
+
+  @Test
   void commitControlledDmlRequiresSecondConfirmationForUpdateWithoutWhere() {
     SqlQueryRequest request = request(
         "ORDERS",
@@ -443,6 +485,34 @@ class DefaultSqlWorkbenchServiceTest {
 
     assertEquals("SQL_DML_PREFLIGHT_RECEIPT_INVALID", exception.code());
     assertEquals(0, dmlExecutor.executeCount);
+  }
+
+  @Test
+  void allowsAnAuthenticatedExpiredReceiptThroughM09ForM05Recovery() {
+    SqlQueryRequest request = request(
+        "ORDERS",
+        SqlQueryAction.COMMIT_DML,
+        "update ORDERS.ORDERS set status = 'READY' where order_id = 42");
+    SqlDmlCommitRequest commitRequest = commitRequest(
+        request, List.of("CONTROLLED_DML_CONFIRMED"));
+    Clock afterExpiry = Clock.offset(CLOCK, Duration.ofMinutes(6));
+    DefaultSqlWorkbenchService recoveredBoundary = new DefaultSqlWorkbenchService(
+        new InMemorySqlConnectionCatalog(service.listConnections()),
+        new CalciteSqlValidationService(),
+        workerClient,
+        assistantClient,
+        controlledDmlPolicy(),
+        receiptService(afterExpiry),
+        dmlExecutor,
+        environment -> true,
+        true,
+        afterExpiry);
+
+    SqlQueryExecutionResult result = recoveredBoundary.commitControlledDml(
+        commitRequest, operator(), policy(), trace());
+
+    assertEquals("SUCCEEDED", result.status());
+    assertEquals(1, dmlExecutor.executeCount);
   }
 
   @Test
@@ -611,10 +681,14 @@ class DefaultSqlWorkbenchServiceTest {
   }
 
   private static SqlDmlPreflightReceiptService receiptService() {
+    return receiptService(CLOCK);
+  }
+
+  private static SqlDmlPreflightReceiptService receiptService(Clock clock) {
     var properties = new SqlDmlPreflightReceiptProperties();
     properties.setKeyId("test-receipt-key");
     properties.setHmacSecret("test-only-receipt-secret");
-    return new SqlDmlPreflightReceiptService(properties, CLOCK);
+    return new SqlDmlPreflightReceiptService(properties, clock);
   }
 
   private TraceContext trace() {

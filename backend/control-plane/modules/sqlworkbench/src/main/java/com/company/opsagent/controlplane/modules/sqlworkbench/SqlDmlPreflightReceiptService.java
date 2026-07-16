@@ -104,7 +104,7 @@ public final class SqlDmlPreflightReceiptService
   }
 
   @Override
-  public void verify(ControlledSqlDmlWorkflowRequest request) {
+  public void verifyAuthenticityAndBinding(ControlledSqlDmlWorkflowRequest request) {
     SqlDmlPreflightReceipt receipt = request.commitRequest().receipt();
     if (receipt == null || !"1.1".equals(request.commitRequest().contractVersion())) {
       throw failure(
@@ -120,9 +120,6 @@ public final class SqlDmlPreflightReceiptService
                     receipt.keyId(), receipt)),
             receipt.signature())) {
       throw invalidReceipt();
-    }
-    if (!receipt.expiresAt().isAfter(OffsetDateTime.now(clock))) {
-      throw failure("SQL_DML_PREFLIGHT_RECEIPT_EXPIRED", "The preflight receipt has expired");
     }
     SqlQueryRequest query = request.commitRequest().query();
     if (!receipt.operatorId().equals(request.operator().operatorId())
@@ -141,6 +138,14 @@ public final class SqlDmlPreflightReceiptService
         || !receipt.parametersHash().equals(request.binding().parametersHash())
         || !receipt.preflightHash().equals(request.binding().preflightHash())) {
       throw invalidReceipt();
+    }
+  }
+
+  @Override
+  public void verifyUsableForDispatch(ControlledSqlDmlWorkflowRequest request) {
+    verifyAuthenticityAndBinding(request);
+    if (!request.commitRequest().receipt().expiresAt().isAfter(OffsetDateTime.now(clock))) {
+      throw failure("SQL_DML_PREFLIGHT_RECEIPT_EXPIRED", "The preflight receipt has expired");
     }
   }
 

@@ -161,3 +161,59 @@ GREEN 聚焦命令：
 
 - 运行环境必须通过受控密钥管理配置 `ops-agent.controlled-sql-dml.preflight-receipt.key-id` 与 `hmac-secret`；未配置时 DML 能力保持隐藏并失败关闭。
 - 本整改不启用生产 DML、不增加 Worker 自动重试，也不改变生产只读限制。正式上线前仍需完成 ADR 0009 所列安全评审、密钥管理联调和人工交接运行演练。
+
+## 2026-07-17 剩余审查问题恢复
+
+### 修复范围
+
+- M05 将回执真实性与绑定校验和提交时效校验拆开：所有请求均校验真实性与绑定，只有即将产生新的 Worker 提交时才校验过期时间。
+- M05 在过期拒绝前读取已有幂等工作流。终态直接复用；已过执行时限的 `RUNNING` 以事务审计转为 `UNKNOWN_REQUIRES_HANDOFF`，不重放 Worker。
+- `CREATED` 明确作为尚未提交 Worker 的状态处理：有效未过期回执恢复为一次 Worker 调用；过期或无效回执以事务审计转为 `UNKNOWN_REQUIRES_HANDOFF`，不保留永久进行中状态。
+- R2DBC 工作流存储允许仅由人工交接转换把 `CREATED` 或 `RUNNING` 置为 `UNKNOWN_REQUIRES_HANDOFF`；成功和确定性失败仍只允许从 `RUNNING` 转换。
+- M09 的 DML 能力展示和服务端准入均显式要求回执签名器可用；未注入签名器的兼容构造器隐藏 DML 能力，并在预检或提交前以 `SQL_DML_PREFLIGHT_RECEIPT_UNAVAILABLE` 失败关闭。
+
+### TDD 红灯
+
+在 `backend` 目录执行：
+
+```powershell
+.\mvnw.cmd -pl control-plane/modules/workflow -am '-Dtest=ControlledSqlDmlWorkflowServiceTest#movesCreatedWorkflowToAuditedHandoffWhenReceiptIsInvalid' '-Dsurefire.failIfNoSpecifiedTests=false' test
+```
+
+首次退出码为 `1`，`1` 个测试运行、`1` 个失败、`0` 个错误、`0` 个跳过。失败符合预期：期望 `SQL_DML_RESULT_UNKNOWN`，实际为 `SQL_DML_PREFLIGHT_RECEIPT_INVALID`，证明无效回执在幂等查找前被拒绝，已有 `CREATED` 工作流未进入持久化人工交接。
+
+### TDD 绿灯
+
+完成 M05 顺序修复后执行同一命令，退出码为 `0`，`1` 个测试通过、`0` 个失败、`0` 个错误、`0` 个跳过；总耗时 `5.862 s`，完成时间 `2026-07-17T06:26:20+08:00`。
+
+### 聚焦验证
+
+在 `backend` 目录执行：
+
+```powershell
+.\mvnw.cmd -pl 'contracts,control-plane/modules/workflow,control-plane/modules/sqlworkbench,control-plane/bootstrap' -am '-Dtest=SqlDmlPreflightResultTest,WorkerRequestSignatureTest,R2dbcControlledSqlDmlWorkflowStoreTest,ControlledSqlDmlWorkflowServiceTest,DefaultSqlWorkbenchServiceTest,SqlWorkbenchControllerTest,WebClientSqlWorkbenchWorkerClientTest' '-Dsurefire.failIfNoSpecifiedTests=false' test
+```
+
+退出码为 `0`，`BUILD SUCCESS`，共 `103` 个聚焦测试通过、`0` 个失败、`0` 个错误、`0` 个跳过；总耗时 `9.471 s`，完成时间 `2026-07-17T06:26:44+08:00`。
+
+- contracts：`24` tests。
+- workflow：`25` tests，其中工作流服务 `17`、R2DBC 工作流存储 `8`。
+- sqlworkbench：`30` tests。
+- bootstrap：`24` tests，其中控制器 `9`、Worker 客户端 `15`。
+
+### 清洁 Reactor 验证
+
+在 `backend` 目录执行：
+
+```powershell
+.\mvnw.cmd -pl 'contracts,control-plane/modules/workflow,control-plane/modules/sqlworkbench,control-plane/bootstrap' -am clean test
+```
+
+退出码为 `0`，`BUILD SUCCESS`，总耗时 `01:46 min`，完成时间 `2026-07-17T06:29:02+08:00`。`15` 个 reactor 模块全部为 `SUCCESS`；关键模块结果如下：
+
+- contracts：`64` tests，`0` failures，`0` errors，`0` skipped。
+- workflow：`57` tests，`0` failures，`0` errors，`0` skipped。
+- sqlworkbench：`53` tests，`0` failures，`0` errors，`0` skipped。
+- bootstrap：`123` tests，`0` failures，`0` errors，`0` skipped。
+
+`git diff --check` 退出码为 `0`。任务指定的 `C:\Users\Lenovo\Documents\ops-agent` 事实源目录仍不存在，本轮继续读取并遵循当前工作树内对应的 `AGENTS.md`、模块图、项目计划、设计追溯和 ADR 0009。
