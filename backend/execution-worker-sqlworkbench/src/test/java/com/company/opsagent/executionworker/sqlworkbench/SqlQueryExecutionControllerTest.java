@@ -35,6 +35,7 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
@@ -93,6 +94,18 @@ class SqlQueryExecutionControllerTest {
   }
 
   @Test
+  void rejectsDmlPreflightWhenTransportAuthenticationIsDisabled() {
+    var request = preflightRequest();
+    var controller = controller(authenticator(false, true));
+
+    ResponseStatusException exception = assertThrows(
+        ResponseStatusException.class,
+        () -> controller.preflightDml(signedPreflightHeaders(request), request).block());
+
+    assertEquals(HttpStatus.UNAUTHORIZED, exception.getStatusCode());
+  }
+
+  @Test
   void rejectsCorrectlySignedDmlPreflightWhenWriteCapabilityIsDisabled() {
     AtomicBoolean previewAccessed = new AtomicBoolean();
     var request = preflightRequest();
@@ -108,12 +121,43 @@ class SqlQueryExecutionControllerTest {
         CLOCK);
     var controller = controller(worker, new InMemorySqlResultStore(CLOCK));
 
-    WorkerSqlEgressException exception = assertThrows(
-        WorkerSqlEgressException.class,
+    ResponseStatusException exception = assertThrows(
+        ResponseStatusException.class,
         () -> controller.preflightDml(signedPreflightHeaders(request), request).block());
 
-    assertEquals("SQL_DML_WORKER_DISABLED", exception.errorCode());
+    assertEquals(HttpStatus.FORBIDDEN, exception.getStatusCode());
+    assertEquals("SQL_DML_WORKER_DISABLED", exception.getReason());
+    assertEquals(
+        "SQL_DML_WORKER_DISABLED",
+        exception.getBody().getProperties().get("errorCode"));
     assertFalse(previewAccessed.get());
+  }
+
+  @Test
+  void exposesOnlyStableCodeForDmlPreflightEgressDenial() {
+    var request = preflightRequest();
+    var worker = new RestrictedSqlQueryExecutionWorker(
+        new CalciteSqlReadOnlyGuard(),
+        new CalciteSqlDmlGuard(),
+        executor(),
+        ignored -> reactor.core.publisher.Mono.empty(),
+        new WorkerSqlDmlExecutionPolicy(List.of(dmlDescriptor())),
+        denyingWriteCapabilityValidator(
+            "SQL_EGRESS_NOT_ALLOWED",
+            "internal network policy stack details"),
+        CLOCK);
+    var controller = controller(worker, new InMemorySqlResultStore(CLOCK));
+
+    ResponseStatusException exception = assertThrows(
+        ResponseStatusException.class,
+        () -> controller.preflightDml(signedPreflightHeaders(request), request).block());
+
+    assertEquals(HttpStatus.FORBIDDEN, exception.getStatusCode());
+    assertEquals("SQL_EGRESS_NOT_ALLOWED", exception.getReason());
+    assertEquals(
+        "SQL_EGRESS_NOT_ALLOWED",
+        exception.getBody().getProperties().get("errorCode"));
+    assertFalse(exception.getMessage().contains("internal network policy stack details"));
   }
 
   @Test
@@ -130,6 +174,18 @@ class SqlQueryExecutionControllerTest {
         request).block();
     assertEquals("SUCCEEDED", result.status());
     assertEquals(2, result.affectedRows());
+  }
+
+  @Test
+  void rejectsDmlCommitWhenTransportAuthenticationConfigurationIsMissing() {
+    var request = controlledDmlRequest();
+    var controller = controller(authenticator(true, false));
+
+    ResponseStatusException exception = assertThrows(
+        ResponseStatusException.class,
+        () -> controller.executeControlledDml(new HttpHeaders(), request).block());
+
+    assertEquals(HttpStatus.UNAUTHORIZED, exception.getStatusCode());
   }
 
   @Test
@@ -211,6 +267,20 @@ class SqlQueryExecutionControllerTest {
     return new SqlQueryExecutionController(worker, store, authenticator(), probeWorker(), metadataReader());
   }
 
+  private SqlQueryExecutionController controller(SqlWorkerTransportAuthenticator authenticator) {
+    InMemorySqlResultStore store = new InMemorySqlResultStore(CLOCK);
+    var worker = new RestrictedSqlQueryExecutionWorker(
+        new CalciteSqlReadOnlyGuard(),
+        new CalciteSqlDmlGuard(),
+        executor(),
+        request -> reactor.core.publisher.Mono.just(new SqlDmlImpactPreview(
+            "1.0", 2L, List.of(), List.of(), List.of())),
+        new WorkerSqlDmlExecutionPolicy(List.of(dmlDescriptor())),
+        allowingWriteCapabilityValidator(),
+        CLOCK);
+    return new SqlQueryExecutionController(worker, store, authenticator, probeWorker(), metadataReader());
+  }
+
   private SqlQueryExecutor executor() {
     return executor(null);
   }
@@ -277,6 +347,22 @@ class SqlQueryExecutionControllerTest {
     };
   }
 
+  private SqlDmlWriteCapabilityValidator denyingWriteCapabilityValidator(
+      String errorCode,
+      String safeMessage) {
+    return new SqlDmlWriteCapabilityValidator() {
+      @Override
+      public void assertPreflightAllowed(SqlDmlPreflightExecutionRequest request) {
+        throw new WorkerSqlEgressException(errorCode, safeMessage);
+      }
+
+      @Override
+      public void assertCommitAllowed(SqlControlledDmlExecutionRequest request) {
+        throw new WorkerSqlEgressException(errorCode, safeMessage);
+      }
+    };
+  }
+
   private SqlConnectionProbeWorker probeWorker() {
     return new SqlConnectionProbeWorker(
         new WorkerSqlEgressPolicy(
@@ -293,10 +379,16 @@ class SqlQueryExecutionControllerTest {
   }
 
   private SqlWorkerTransportAuthenticator authenticator() {
+    return authenticator(true, true);
+  }
+
+  private SqlWorkerTransportAuthenticator authenticator(boolean enabled, boolean configured) {
     SqlWorkerTransportAuthProperties properties = new SqlWorkerTransportAuthProperties();
-    properties.setEnabled(true);
-    properties.setKeyId(KEY_ID);
-    properties.setSharedSecret(SHARED_SECRET);
+    properties.setEnabled(enabled);
+    if (configured) {
+      properties.setKeyId(KEY_ID);
+      properties.setSharedSecret(SHARED_SECRET);
+    }
     properties.setMaxClockSkew(java.time.Duration.ofSeconds(30));
     return new SqlWorkerTransportAuthenticator(properties, CLOCK);
   }

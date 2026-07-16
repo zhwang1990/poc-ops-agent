@@ -68,28 +68,41 @@ public class JdbcSqlQueryExecutor implements SqlQueryExecutor {
 
   @Override
   public int executeDml(SqlQueryExecutionRequest request) {
-    try (Connection connection = dataSourceRegistry.resolve(request).getConnection()) {
-      boolean autoCommitDisabled = false;
-      try {
-        connection.setReadOnly(false);
-        connection.setAutoCommit(false);
-        autoCommitDisabled = true;
-        connection.setSchema(request.query().schema());
-        try (var statement = connection.prepareStatement(request.query().sql())) {
-          statement.setQueryTimeout(request.query().limits().timeoutSeconds());
-          bindParameters(statement, request.query().parameters());
-          int affectedRows = statement.executeUpdate();
-          connection.commit();
-          return affectedRows;
-        }
-      } catch (SQLException | RuntimeException exception) {
-        if (autoCommitDisabled) {
-          rollbackQuietly(connection);
-        }
-        throw exception;
-      }
+    Connection connection;
+    try {
+      connection = dataSourceRegistry.resolve(request).getConnection();
     } catch (SQLException exception) {
       throw new IllegalStateException("controlled JDBC DML failed", exception);
+    }
+
+    boolean autoCommitDisabled = false;
+    boolean committed = false;
+    try {
+      connection.setReadOnly(false);
+      connection.setAutoCommit(false);
+      autoCommitDisabled = true;
+      connection.setSchema(request.query().schema());
+      int affectedRows;
+      try (var statement = connection.prepareStatement(request.query().sql())) {
+        statement.setQueryTimeout(request.query().limits().timeoutSeconds());
+        bindParameters(statement, request.query().parameters());
+        affectedRows = statement.executeUpdate();
+      }
+      connection.commit();
+      committed = true;
+      return affectedRows;
+    } catch (SQLException exception) {
+      if (autoCommitDisabled && !committed) {
+        rollbackQuietly(connection);
+      }
+      throw new IllegalStateException("controlled JDBC DML failed", exception);
+    } catch (RuntimeException exception) {
+      if (autoCommitDisabled && !committed) {
+        rollbackQuietly(connection);
+      }
+      throw exception;
+    } finally {
+      closeQuietly(connection);
     }
   }
 
@@ -98,6 +111,14 @@ public class JdbcSqlQueryExecutor implements SqlQueryExecutor {
       connection.rollback();
     } catch (SQLException ignored) {
       // Preserve the original DML failure as the stable error cause.
+    }
+  }
+
+  private void closeQuietly(Connection connection) {
+    try {
+      connection.close();
+    } catch (SQLException ignored) {
+      // A cleanup failure must not replace the committed result or the original DML failure.
     }
   }
 

@@ -40,9 +40,7 @@ public class SqlWorkerTransportAuthenticator {
   public void authenticateSqlDmlPreflight(
       HttpHeaders headers,
       SqlDmlPreflightExecutionRequest request) {
-    if (!properties.isEnabled()) {
-      return;
-    }
+    ensureDmlAuthenticationConfigured();
     String keyId = acceptedKeyId(headers);
     String timestamp = acceptedTimestamp(headers);
     String payload = WorkerRequestSignature.canonicalSqlDmlPreflightPayload(keyId, timestamp, request);
@@ -52,9 +50,7 @@ public class SqlWorkerTransportAuthenticator {
   public void authenticateControlledSqlDml(
       HttpHeaders headers,
       SqlControlledDmlExecutionRequest request) {
-    if (!properties.isEnabled()) {
-      return;
-    }
+    ensureDmlAuthenticationConfigured();
     String keyId = acceptedKeyId(headers);
     String timestamp = acceptedTimestamp(headers);
     String payload = WorkerRequestSignature.canonicalControlledSqlDmlPayload(keyId, timestamp, request);
@@ -121,6 +117,14 @@ public class SqlWorkerTransportAuthenticator {
   private void ensureConfigured() {
     if (isBlank(properties.getKeyId()) || isBlank(properties.getSharedSecret())) {
       throw new IllegalStateException("worker transport auth is enabled but key id or shared secret is missing");
+    }
+  }
+
+  private void ensureDmlAuthenticationConfigured() {
+    if (!properties.isEnabled()
+        || isBlank(properties.getKeyId())
+        || isBlank(properties.getSharedSecret())) {
+      reject("worker transport authentication is required for SQL DML");
     }
   }
 

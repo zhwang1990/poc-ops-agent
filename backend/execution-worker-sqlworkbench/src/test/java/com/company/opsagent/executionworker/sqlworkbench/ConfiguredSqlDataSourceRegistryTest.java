@@ -74,7 +74,6 @@ class ConfiguredSqlDataSourceRegistryTest {
     WorkerSqlConnectionDescriptor descriptor = h2Descriptor("demo-h2-writer", "DEMO_H2_WRITER");
     ConfiguredSqlDataSourceRegistry registry = registry(descriptor, alias -> "write-password".toCharArray());
     DataSource readDataSource = registry.resolve(request(SqlQueryAction.RUN_READ_ONLY));
-    provisionH2Writer(readDataSource, descriptor.dmlUsername());
     try (var connection = readDataSource.getConnection(); var statement = connection.createStatement()) {
       statement.executeUpdate("update PUBLIC.ORDERS set STATUS = 'CHANGED' where ORDER_ID = 2");
     }
@@ -129,7 +128,6 @@ class ConfiguredSqlDataSourceRegistryTest {
     WorkerSqlConnectionDescriptor descriptor = h2Descriptor("demo-h2-writer", "DEMO_H2_WRITER");
     ConfiguredSqlDataSourceRegistry registry = registry(descriptor, alias -> "write-password".toCharArray());
     DataSource readDataSource = registry.resolve(request(SqlQueryAction.RUN_READ_ONLY));
-    provisionH2Writer(readDataSource, descriptor.dmlUsername());
 
     DataSource writeDataSource = registry.resolve(request(SqlQueryAction.COMMIT_DML));
     try (var connection = writeDataSource.getConnection();
@@ -160,6 +158,14 @@ class ConfiguredSqlDataSourceRegistryTest {
         var statement = connection.createStatement()) {
       assertEquals(1, statement.executeUpdate(
           "update PUBLIC.ORDERS set STATUS = 'WRITER_FIRST' where ORDER_ID = 1"));
+    }
+
+    DataSource readDataSource = registry.resolve(request(descriptor, SqlQueryAction.RUN_READ_ONLY));
+    try (var connection = readDataSource.getConnection();
+        var statement = connection.createStatement();
+        var rows = statement.executeQuery("select STATUS from PUBLIC.ORDERS where ORDER_ID = 1")) {
+      assertTrue(rows.next());
+      assertEquals("WRITER_FIRST", rows.getString(1));
     }
   }
 
@@ -225,10 +231,4 @@ class ConfiguredSqlDataSourceRegistryTest {
         OffsetDateTime.now().plusSeconds(30));
   }
 
-  private void provisionH2Writer(DataSource dataSource, String username) throws Exception {
-    try (var connection = dataSource.getConnection(); var statement = connection.createStatement()) {
-      statement.execute("create user if not exists " + username + " password 'write-password'");
-      statement.execute("grant all on schema PUBLIC to " + username);
-    }
-  }
 }

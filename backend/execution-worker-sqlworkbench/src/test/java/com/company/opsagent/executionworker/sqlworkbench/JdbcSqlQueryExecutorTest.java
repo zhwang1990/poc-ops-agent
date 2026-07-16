@@ -4,7 +4,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -113,6 +115,45 @@ class JdbcSqlQueryExecutorTest {
 
     verify(connection).setAutoCommit(false);
     verify(connection).rollback();
+  }
+
+  @Test
+  void closesDmlStatementBeforeCommit() throws Exception {
+    Connection connection = mock(Connection.class);
+    PreparedStatement statement = mock(PreparedStatement.class);
+    DataSource dataSource = mock(DataSource.class);
+    when(dataSource.getConnection()).thenReturn(connection);
+    when(connection.prepareStatement("update ORDERS set STATUS = ? where ORDER_ID = 1")).thenReturn(statement);
+    when(statement.executeUpdate()).thenReturn(1);
+    JdbcSqlQueryExecutor executor = executor(dataSource);
+
+    assertEquals(1, executor.executeDml(dmlRequest(
+        "PUBLIC",
+        List.of(new SqlTypedParameter("status", "STRING", new com.fasterxml.jackson.databind.node.TextNode("READY"))))));
+
+    var order = inOrder(statement, connection);
+    order.verify(statement).close();
+    order.verify(connection).commit();
+  }
+
+  @Test
+  void preservesSuccessfulCommitWhenConnectionCleanupFails() throws Exception {
+    Connection connection = mock(Connection.class);
+    PreparedStatement statement = mock(PreparedStatement.class);
+    DataSource dataSource = mock(DataSource.class);
+    when(dataSource.getConnection()).thenReturn(connection);
+    when(connection.prepareStatement("update ORDERS set STATUS = ? where ORDER_ID = 1")).thenReturn(statement);
+    when(statement.executeUpdate()).thenReturn(1);
+    doThrow(new SQLException("connection cleanup failed")).when(connection).close();
+    JdbcSqlQueryExecutor executor = executor(dataSource);
+
+    int affectedRows = executor.executeDml(dmlRequest(
+        "PUBLIC",
+        List.of(new SqlTypedParameter("status", "STRING", new com.fasterxml.jackson.databind.node.TextNode("READY")))));
+
+    assertEquals(1, affectedRows);
+    verify(connection).commit();
+    verify(connection, never()).rollback();
   }
 
   private SqlQueryExecutionRequest request() {

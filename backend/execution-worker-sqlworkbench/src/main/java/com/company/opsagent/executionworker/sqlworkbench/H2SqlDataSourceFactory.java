@@ -14,12 +14,13 @@ public final class H2SqlDataSourceFactory {
 
   private final ConcurrentMap<String, DataSource> dataSources = new ConcurrentHashMap<>();
   private final ConcurrentMap<String, DataSource> initializedDatabases = new ConcurrentHashMap<>();
+  private final ConcurrentMap<String, Boolean> provisionedWriters = new ConcurrentHashMap<>();
 
   public DataSource create(WorkerSqlConnectionDescriptor descriptor) {
     return dataSources.computeIfAbsent(
         dataSourceKey(descriptor.connectionId(), "read"),
         ignored -> {
-          initializeDatabase(descriptor.connectionId(), null, null);
+          initializeDatabase(descriptor.connectionId());
           return createDataSource(descriptor.connectionId(), null, null, true);
         });
   }
@@ -28,16 +29,43 @@ public final class H2SqlDataSourceFactory {
     return dataSources.computeIfAbsent(
         dataSourceKey(descriptor.connectionId(), "write"),
         ignored -> {
-          initializeDatabase(descriptor.connectionId(), descriptor.dmlUsername(), password);
+          DataSource initializationDataSource = initializeDatabase(descriptor.connectionId());
+          provisionWriter(
+              descriptor.connectionId(),
+              initializationDataSource,
+              descriptor.dmlUsername(),
+              password);
           return createDataSource(descriptor.connectionId(), descriptor.dmlUsername(), password, false);
         });
   }
 
-  private void initializeDatabase(String connectionId, String username, char[] password) {
-    initializedDatabases.computeIfAbsent(connectionId, ignored -> {
-      DataSource dataSource = createDataSource(connectionId, username, password, true);
+  private DataSource initializeDatabase(String connectionId) {
+    return initializedDatabases.computeIfAbsent(connectionId, ignored -> {
+      DataSource dataSource = createDataSource(connectionId, null, null, true);
       initialize(dataSource);
       return dataSource;
+    });
+  }
+
+  private void provisionWriter(
+      String connectionId,
+      DataSource initializationDataSource,
+      String username,
+      char[] password) {
+    provisionedWriters.computeIfAbsent(dataSourceKey(connectionId, username), ignored -> {
+      String quotedUsername = quoteIdentifier(username);
+      try (var connection = initializationDataSource.getConnection();
+          var createUser = connection.prepareStatement(
+              "CREATE USER IF NOT EXISTS " + quotedUsername + " PASSWORD ?");
+          var grant = connection.createStatement()) {
+        createUser.setString(1, new String(password));
+        createUser.execute();
+        grant.execute(
+            "GRANT SELECT, INSERT, UPDATE, DELETE ON SCHEMA PUBLIC TO " + quotedUsername);
+        return true;
+      } catch (SQLException exception) {
+        throw new IllegalStateException("H2 SQL writer provisioning failed", exception);
+      }
     });
   }
 
@@ -147,6 +175,13 @@ public final class H2SqlDataSourceFactory {
 
   private String dataSourceKey(String connectionId, String role) {
     return connectionId + "|" + role;
+  }
+
+  private String quoteIdentifier(String identifier) {
+    if (identifier == null || !identifier.matches("[A-Za-z][A-Za-z0-9_]{0,127}")) {
+      throw new IllegalArgumentException("H2 SQL writer username is invalid");
+    }
+    return '"' + identifier + '"';
   }
 
   private String connectionUrl(String connectionId, boolean applyDatabaseSettings) {

@@ -66,7 +66,9 @@ public class SqlQueryExecutionController {
     return Mono.defer(() -> {
       authenticator.authenticateSqlDmlPreflight(headers, request);
       return worker.preflightDml(request);
-    }).subscribeOn(Schedulers.boundedElastic());
+    })
+        .onErrorMap(WorkerSqlEgressException.class, this::preflightDenied)
+        .subscribeOn(Schedulers.boundedElastic());
   }
 
   @PostMapping("/dml-commit")
@@ -117,5 +119,12 @@ public class SqlQueryExecutionController {
       authenticator.authenticateSqlMetadataRead(headers, connection, schema);
       return metadataReader.read(connection, schema);
     }).subscribeOn(Schedulers.boundedElastic());
+  }
+
+  private ResponseStatusException preflightDenied(WorkerSqlEgressException exception) {
+    ResponseStatusException response =
+        new ResponseStatusException(HttpStatus.FORBIDDEN, exception.errorCode());
+    response.getBody().setProperty("errorCode", exception.errorCode());
+    return response;
   }
 }
