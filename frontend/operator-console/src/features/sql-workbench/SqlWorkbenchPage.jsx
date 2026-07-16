@@ -17,6 +17,7 @@ import {
 import { ApiError } from "../../api/client.js";
 import {
   commitControlledSqlDml,
+  preflightControlledSqlDml,
   runReadOnlySqlQuery,
   validateSqlQuery,
 } from "../../api/sql-api.js";
@@ -63,6 +64,7 @@ let sqlResultTabCounter = 0;
 /**
  * @typedef {import("../../schemas/sql-schemas.js").SqlConnectionSummary} SqlConnectionSummary
  * @typedef {import("../../schemas/sql-schemas.js").SqlValidationReport} SqlValidationReport
+ * @typedef {import("../../schemas/sql-schemas.js").SqlDmlPreflightResult} SqlDmlPreflightResult
  * @typedef {import("../../schemas/sql-schemas.js").SqlDmlCommitRequest["query"]} SqlDmlCommitQuery
  * @typedef {import("../../schemas/sql-schemas.js").SqlQueryRunResult} SqlQueryRunResult
  * @typedef {import("../../schemas/sql-schemas.js").SqlResultPage} SqlResultPage
@@ -86,7 +88,7 @@ let sqlResultTabCounter = 0;
  *   sql: string,
  * }} SqlResultTab
  * @typedef {{
- *   report: SqlValidationReport,
+ *   preflight: SqlDmlPreflightResult,
  *   request: SqlDmlCommitQuery,
  *   resultTabId: string,
  *   sessionId: string,
@@ -232,7 +234,7 @@ export function SqlWorkbenchPage() {
     isReadyConnection &&
     activeConnection?.capabilities.includes("RUN_READ_ONLY") === true;
   const canCommitDmlStatement =
-    isReadyConnection &&
+    activeConnection?.capabilities.includes("PREFLIGHT_DML") === true &&
     activeConnection?.capabilities.includes("COMMIT_DML") === true &&
     activeSession.transactionMode === "manual" &&
     isLikelyControlledDmlSql(activeSession.sql.trim());
@@ -911,20 +913,23 @@ export function SqlWorkbenchPage() {
     const sessionId = activeSession.id;
     const schema = activeSchema;
     const connection = activeConnection;
-    const request = /** @type {SqlDmlCommitQuery} */ (
-      buildSqlQueryRequest(
-        connection,
-        schema,
-        "COMMIT_DML",
-        sql,
-        "COMMIT_DML",
-      )
+    const preflightRequest = buildSqlQueryRequest(
+      connection,
+      schema,
+      "PREFLIGHT_DML",
+      sql,
+      "PREFLIGHT_DML",
     );
+    const request = /** @type {SqlDmlCommitQuery} */ ({
+      ...preflightRequest,
+      action: "COMMIT_DML",
+    });
     const resultTab = createResultTab(activeSession.resultTabs.length + 1, sql);
     appendResultTab(sessionId, resultTab);
 
     try {
-      const report = await validateSqlQuery(request);
+      const preflight = await preflightControlledSqlDml(preflightRequest);
+      const report = preflight.validation;
       updateSession(sessionId, {
         validation: report,
         errorMessage: null,
@@ -934,10 +939,12 @@ export function SqlWorkbenchPage() {
       if (report.validationLevel === "REJECTED") {
         throw new Error(buildDmlValidationDiagnosticMessage(report));
       }
-      let confirmation = null;
+      if (!preflight.impactPreview) {
+        throw new Error("服务端 DML 预检未返回影响预览，未提交执行请求。");
+      }
       if (report.risks.length > 0) {
         setPendingDmlRiskConfirmation({
-          report,
+          preflight,
           request,
           resultTabId: resultTab.id,
           sessionId,
@@ -945,9 +952,10 @@ export function SqlWorkbenchPage() {
         return;
       }
       const execution = await commitControlledSqlDml({
-        contractVersion: "1.0",
+        contractVersion: "1.1",
         query: request,
-        confirmation,
+        confirmation: null,
+        receipt: preflight.receipt,
       });
       updateResultTab(sessionId, resultTab.id, {
         execution,
@@ -981,13 +989,14 @@ export function SqlWorkbenchPage() {
     if (!pendingDmlRiskConfirmation || isDmlRiskCommitPending) {
       return;
     }
-    const { report, request, resultTabId, sessionId } = pendingDmlRiskConfirmation;
+    const { preflight, request, resultTabId, sessionId } = pendingDmlRiskConfirmation;
     setIsDmlRiskCommitPending(true);
     try {
       const execution = await commitControlledSqlDml({
-        contractVersion: "1.0",
+        contractVersion: "1.1",
         query: request,
-        confirmation: buildDmlRiskConfirmation(report),
+        confirmation: buildDmlRiskConfirmation(preflight.validation),
+        receipt: preflight.receipt,
       });
       updateResultTab(sessionId, resultTabId, {
         execution,
@@ -1485,7 +1494,7 @@ export function SqlWorkbenchPage() {
         onCancel={cancelDmlRiskConfirmation}
         onConfirm={confirmDmlRiskCommit}
         open={Boolean(pendingDmlRiskConfirmation)}
-        report={pendingDmlRiskConfirmation?.report ?? null}
+        preflight={pendingDmlRiskConfirmation?.preflight ?? null}
       />
     </SqlWorkbenchFrame>
   );
@@ -1966,7 +1975,9 @@ function ResultPanel({
       })),
     [resultPage?.columns],
   );
-  const executionErrorMessage = execution && execution.status !== "SUCCEEDED"
+  const executionErrorMessage = execution &&
+    execution.status !== "SUCCEEDED" &&
+    execution.status !== "UNKNOWN_REQUIRES_HANDOFF"
     ? `${execution.errorCode ? `${execution.errorCode}: ` : ""}${
         execution.errorMessage ?? execution.status
       }`
@@ -2010,6 +2021,9 @@ function ResultPanel({
       ) : null}
       {isLoading ? <QueryLoadingStatus execution={execution} /> : null}
       {visibleErrorMessage ? <ErrorSummary message={visibleErrorMessage} /> : null}
+      {execution?.status === "UNKNOWN_REQUIRES_HANDOFF" ? (
+        <p>需要人工接管以确认 DML 执行结果。</p>
+      ) : null}
       {resultPage && columns.length > 0 ? (
         <>
           <DataTable
@@ -2078,7 +2092,7 @@ function ResultPanel({
  *   onCancel: () => void,
  *   onConfirm: () => void,
  *   open: boolean,
- *   report: SqlValidationReport | null,
+ *   preflight: SqlDmlPreflightResult | null,
  * }} props
  */
 function DmlRiskConfirmationDialog({
@@ -2086,15 +2100,16 @@ function DmlRiskConfirmationDialog({
   onCancel,
   onConfirm,
   open,
-  report,
+  preflight,
 }) {
+  const report = preflight?.validation ?? null;
   return (
     <Dialog
       closeLabel="关闭 DML 风险确认"
       description="无 WHERE 条件的 UPDATE 或 DELETE 会影响更大范围，必须二次确认。"
       icon={<AlertTriangle aria-hidden="true" size={18} strokeWidth={2.35} />}
       onClose={isPending ? () => {} : onCancel}
-      open={open && Boolean(report)}
+      open={open && Boolean(preflight)}
       size="compact"
       title="确认 DML 风险"
     >
@@ -2121,6 +2136,7 @@ function DmlRiskConfirmationDialog({
               <dd>{report.sqlHash}</dd>
             </div>
           </dl>
+          <DmlImpactPreview preview={preflight?.impactPreview ?? null} />
           {report.unverifiedItems.length > 0 ? (
             <p className={styles.dmlRiskNote}>
               未验证项：{formatValues(report.unverifiedItems)}
@@ -2147,6 +2163,49 @@ function DmlRiskConfirmationDialog({
         </div>
       ) : null}
     </Dialog>
+  );
+}
+
+/**
+ * @param {{preview: SqlDmlPreflightResult["impactPreview"]}} props
+ */
+function DmlImpactPreview({ preview }) {
+  if (!preview) {
+    return null;
+  }
+
+  const columns = preview.sampleColumns.map((column, index) => ({
+    key: column.name,
+    header: column.name,
+    render: (/** @type {unknown} */ row) =>
+      Array.isArray(row) ? readResultCell(row, index) : "",
+  }));
+
+  return (
+    <section aria-label="DML 预检影响预览">
+      <dl className={styles.dmlRiskFacts}>
+        <div>
+          <dt>预计影响</dt>
+          <dd>
+            {preview.affectedRows === null ? "服务端未返回计数" : `预计影响 ${preview.affectedRows} 行`}
+          </dd>
+        </div>
+      </dl>
+      {columns.length > 0 && preview.sampleRows.length > 0 ? (
+        <DataTable
+          ariaLabel="DML 预检样本"
+          className={styles.resultTable}
+          columns={columns}
+          minWidth="420px"
+          rows={preview.sampleRows}
+        />
+      ) : null}
+      {preview.unverifiedItems.length > 0 ? (
+        <p className={styles.dmlRiskNote}>
+          预检未验证项：{formatValues(preview.unverifiedItems)}
+        </p>
+      ) : null}
+    </section>
   );
 }
 

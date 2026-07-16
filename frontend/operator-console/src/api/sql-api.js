@@ -5,6 +5,7 @@ import {
   sqlConnectionProbeResultSchema,
   sqlConnectionUpdateRequestSchema,
   sqlDmlCommitRequestSchema,
+  sqlDmlPreflightResultSchema,
   sqlAssistantRequestSchema,
   sqlAssistantResponseSchema,
   sqlQueryRunRequestSchema,
@@ -116,6 +117,19 @@ export function commitControlledSqlDml(input) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(request),
     schema: sqlQueryRunResultSchema,
+  });
+}
+
+/**
+ * @param {unknown} input
+ */
+export function preflightControlledSqlDml(input) {
+  const request = sqlQueryRequestSchema.parse(input);
+  return requestJson("/internal/sql-workbench/queries/preflight", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+    schema: sqlDmlPreflightResultSchema,
   });
 }
 

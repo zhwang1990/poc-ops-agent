@@ -337,29 +337,77 @@ describe("SqlWorkbenchPage", () => {
     expect(screen.queryByText("COL_045")).not.toBeInTheDocument();
   });
 
-  test("requires second confirmation before committing UPDATE without WHERE", async () => {
+  test("uses server preflight before showing DML confirmation", async () => {
     const user = userEvent.setup();
     const confirmSpy = vi.spyOn(window, "confirm").mockImplementation(() => {
       throw new Error("Browser confirm should not be used for DML risk confirmation");
     });
-    /** @type {unknown[]} */
-    const commitRequests = [];
     server.use(
       http.get("/internal/sql-workbench/connections", () =>
         HttpResponse.json(sqlConnections),
       ),
-      http.post("/internal/sql-workbench/queries/validate", () =>
-        HttpResponse.json({
-          contractVersion: "1.0",
-          statementType: "UPDATE",
-          validationLevel: "PARTIAL",
-          sqlHash: "sha256:update-without-where",
-          referencedObjects: ["ORDERS.ORDERS"],
-          risks: ["UPDATE_WITHOUT_WHERE"],
-          rejectionReasons: [],
-          unverifiedItems: ["impact count and masked sample require live read-only preflight"],
-        }),
+      http.post("/internal/sql-workbench/queries/preflight", () =>
+        HttpResponse.json(preflightWithRisk()),
       ),
+    );
+
+    renderAt("/sql");
+
+    await screen.findByText("已连接 · development");
+    await replaceSqlText(user, "update ORDERS.ORDERS set status = 'READY'");
+    const transactionControls = screen.getByRole("group", { name: "SQL 事务控制" });
+    const transactionModeButton = within(transactionControls).getByRole("button", {
+      name: "事务模式",
+    });
+    const manualCommitButton = within(transactionControls).getByRole("button", {
+      name: "提交当前受控 DML",
+    });
+
+    expect(transactionModeButton).toHaveAttribute("aria-pressed", "false");
+    expect(manualCommitButton).toBeDisabled();
+
+    await user.click(transactionModeButton);
+    expect(transactionModeButton).toHaveAttribute("aria-pressed", "true");
+    expect(manualCommitButton).toBeEnabled();
+    await user.click(manualCommitButton);
+
+    const riskDialog = await screen.findByRole("dialog", { name: "确认 DML 风险" });
+    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(await screen.findByText("预计影响 4 行")).toBeInTheDocument();
+    expect(within(riskDialog).getByText("UPDATE_WITHOUT_WHERE")).toBeInTheDocument();
+    expect(within(riskDialog).getByText("sha256:update-without-where")).toBeInTheDocument();
+  });
+
+  test("keeps DML submit disabled when server omits COMMIT_DML capability", async () => {
+    server.use(
+      http.get("/internal/sql-workbench/connections", () =>
+        HttpResponse.json(connectionWithoutDmlCapability()),
+      ),
+    );
+
+    renderAt("/sql");
+
+    await screen.findByText("已连接 · development");
+    expect(
+      screen.getByRole("button", { name: "提交当前受控 DML" }),
+    ).toBeDisabled();
+  });
+
+  test("forwards the server preflight receipt with the no-WHERE risk confirmation", async () => {
+    const user = userEvent.setup();
+    /** @type {unknown[]} */
+    const preflightRequests = [];
+    /** @type {unknown[]} */
+    const commitRequests = [];
+    const preflight = preflightWithRisk();
+    server.use(
+      http.get("/internal/sql-workbench/connections", () =>
+        HttpResponse.json(sqlConnections),
+      ),
+      http.post("/internal/sql-workbench/queries/preflight", async ({ request }) => {
+        preflightRequests.push(await request.json());
+        return HttpResponse.json(preflight);
+      }),
       http.post("/internal/sql-workbench/queries/commit", async ({ request }) => {
         commitRequests.push(await request.json());
         return HttpResponse.json({
@@ -380,32 +428,19 @@ describe("SqlWorkbenchPage", () => {
     await screen.findByText("已连接 · development");
     await replaceSqlText(user, "update ORDERS.ORDERS set status = 'READY'");
     const transactionControls = screen.getByRole("group", { name: "SQL 事务控制" });
-    const transactionModeButton = within(transactionControls).getByRole("button", {
-      name: "事务模式",
-    });
-    const manualCommitButton = within(transactionControls).getByRole("button", {
-      name: "手动提交",
-    });
-
-    expect(transactionModeButton).toHaveAttribute("aria-pressed", "false");
-    expect(manualCommitButton).toBeDisabled();
-
-    await user.click(transactionModeButton);
-    expect(transactionModeButton).toHaveAttribute("aria-pressed", "true");
-    expect(manualCommitButton).toBeEnabled();
-    await user.click(manualCommitButton);
+    await user.click(within(transactionControls).getByRole("button", { name: "事务模式" }));
+    await user.click(
+      within(transactionControls).getByRole("button", { name: "提交当前受控 DML" }),
+    );
 
     const riskDialog = await screen.findByRole("dialog", { name: "确认 DML 风险" });
-    expect(confirmSpy).not.toHaveBeenCalled();
-    expect(within(riskDialog).getByText("UPDATE_WITHOUT_WHERE")).toBeInTheDocument();
-    expect(within(riskDialog).getByText("sha256:update-without-where")).toBeInTheDocument();
-    expect(commitRequests).toHaveLength(0);
 
     await user.click(within(riskDialog).getByRole("button", { name: "确认提交" }));
 
     await waitFor(() => expect(commitRequests).toHaveLength(1));
+    expect(preflightRequests).toHaveLength(1);
     expect(commitRequests[0]).toMatchObject({
-      contractVersion: "1.0",
+      contractVersion: "1.1",
       query: {
         action: "COMMIT_DML",
         sql: "update ORDERS.ORDERS set status = 'READY'",
@@ -415,8 +450,53 @@ describe("SqlWorkbenchPage", () => {
         confirmedRisks: ["UPDATE_WITHOUT_WHERE"],
         confirmationCode: "CONFIRM_SQL_DML_RISK",
       },
+      receipt: preflight.receipt,
     });
+    expect(
+      /** @type {{query: {idempotencyKey: string}}} */ (commitRequests[0]).query.idempotencyKey,
+    ).toBe(
+      /** @type {{idempotencyKey: string}} */ (preflightRequests[0]).idempotencyKey,
+    );
     expect(await screen.findByText("DML 提交完成，影响 4 行。")).toBeInTheDocument();
+  });
+
+  test("shows a manual handoff for an unknown DML result without result rows", async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.get("/internal/sql-workbench/connections", () =>
+        HttpResponse.json(sqlConnections),
+      ),
+      http.post("/internal/sql-workbench/queries/preflight", () =>
+        HttpResponse.json(preflightWithoutRisk()),
+      ),
+      http.post("/internal/sql-workbench/queries/commit", () =>
+        HttpResponse.json({
+          contractVersion: "1.0",
+          executionRequestId: "execution-dml-unknown",
+          workflowId: "workflow-dml-unknown",
+          status: "UNKNOWN_REQUIRES_HANDOFF",
+          resultId: null,
+          errorCode: "SQL_DML_RESULT_UNKNOWN",
+          errorMessage: null,
+          affectedRows: null,
+        }),
+      ),
+    );
+
+    renderAt("/sql");
+
+    await screen.findByText("已连接 · development");
+    await replaceSqlText(user, "update ORDERS.ORDERS set status = 'READY' where order_id = 4");
+    const transactionControls = screen.getByRole("group", { name: "SQL 事务控制" });
+    await user.click(within(transactionControls).getByRole("button", { name: "事务模式" }));
+    await user.click(
+      within(transactionControls).getByRole("button", { name: "提交当前受控 DML" }),
+    );
+
+    expect(await screen.findByText("需要人工接管以确认 DML 执行结果。"))
+      .toBeInTheDocument();
+    expect(screen.getByText("workflow-dml-unknown")).toBeInTheDocument();
+    expect(screen.queryByRole("table", { name: "SQL SELECT 查询结果" })).not.toBeInTheDocument();
   });
 
   test("shows SQL session modes as functional tabs", async () => {
@@ -1417,7 +1497,8 @@ describe("SqlWorkbenchPage", () => {
     await waitFor(() => expect(separator).toHaveAttribute("aria-valuenow", "84"));
   });
 
-  test("blocks production connection data with DML capabilities at the contract boundary", async () => {
+  test("does not enable DML for a production connection when the server omits DML capabilities", async () => {
+    const user = userEvent.setup();
     server.use(
       http.get("/internal/sql-workbench/connections", () =>
         HttpResponse.json([
@@ -1426,6 +1507,7 @@ describe("SqlWorkbenchPage", () => {
             connectionId: "as400-production",
             displayName: "AS/400 Production",
             targetEnvironment: "production",
+            capabilities: ["VALIDATE", "RUN_READ_ONLY"],
           },
         ]),
       ),
@@ -1433,10 +1515,13 @@ describe("SqlWorkbenchPage", () => {
 
     renderAt("/sql");
 
-    expect(await screen.findByText("SQL 连接契约不兼容")).toBeInTheDocument();
-    expect(screen.getByLabelText("当前工作台")).toBeInTheDocument();
-    expect(screen.queryByText("as400-production")).not.toBeInTheDocument();
-    expect(screen.queryByText("AS/400 Production")).not.toBeInTheDocument();
+    await screen.findByText("已连接 · production");
+    await replaceSqlText(user, "update ORDERS.ORDERS set status = 'READY'");
+    const transactionControls = screen.getByRole("group", { name: "SQL 事务控制" });
+    await user.click(within(transactionControls).getByRole("button", { name: "事务模式" }));
+    expect(
+      within(transactionControls).getByRole("button", { name: "提交当前受控 DML" }),
+    ).toBeDisabled();
   });
 
   test("uses the AI SQL assistant as advisory input that is revalidated on execution", async () => {
@@ -1520,6 +1605,77 @@ describe("SqlWorkbenchPage", () => {
     expect(await screen.findByText("Use explicit columns.")).toBeInTheDocument();
   });
 });
+
+function connectionWithoutDmlCapability() {
+  return sqlConnections.map((connection) => ({
+    ...connection,
+    capabilities: connection.capabilities.filter((capability) => capability !== "COMMIT_DML"),
+  }));
+}
+
+function preflightWithRisk() {
+  return {
+    contractVersion: "1.1",
+    validation: {
+      contractVersion: "1.0",
+      statementType: "UPDATE",
+      validationLevel: "PARTIAL",
+      sqlHash: "sha256:update-without-where",
+      referencedObjects: ["ORDERS.ORDERS"],
+      risks: ["UPDATE_WITHOUT_WHERE"],
+      rejectionReasons: [],
+      unverifiedItems: ["索引选择由服务端预检限定"],
+    },
+    impactPreview: {
+      contractVersion: "1.0",
+      affectedRows: 4,
+      sampleColumns: [
+        { name: "ORDER_ID", type: "INTEGER", masked: false },
+        { name: "CUSTOMER_PHONE", type: "VARCHAR", masked: true },
+      ],
+      sampleRows: [[4, "***-****-1234"]],
+      unverifiedItems: ["预览计数不构成执行授权"],
+    },
+    receipt: preflightReceipt(),
+  };
+}
+
+function preflightWithoutRisk() {
+  return {
+    ...preflightWithRisk(),
+    validation: {
+      ...preflightWithRisk().validation,
+      risks: [],
+      sqlHash: "sha256:update-with-where",
+    },
+    impactPreview: {
+      ...preflightWithRisk().impactPreview,
+      affectedRows: 1,
+    },
+  };
+}
+
+function preflightReceipt() {
+  return {
+    contractVersion: "1.0",
+    receiptId: "receipt-dml-1",
+    keyId: "preflight-key-1",
+    issuedAt: "2026-07-17T08:00:00Z",
+    expiresAt: "2026-07-17T08:05:00Z",
+    operatorId: "operator-1",
+    requestHash: "a".repeat(64),
+    connectionId: "as400-development",
+    targetEnvironment: "development",
+    schema: "ORDERS",
+    sqlHash: "b".repeat(64),
+    parametersHash: "c".repeat(64),
+    policyVersion: "policy-v1",
+    policySelectionHash: "d".repeat(64),
+    impactPreviewHash: "e".repeat(64),
+    preflightHash: "f".repeat(64),
+    signature: "opaque-server-signature",
+  };
+}
 
 const sqlConnections = [
   {

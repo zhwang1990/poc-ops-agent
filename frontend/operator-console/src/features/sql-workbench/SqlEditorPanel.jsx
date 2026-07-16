@@ -127,9 +127,9 @@ export function SqlEditorPanel({
                     : "切换事务模式并输入 dev/sit/uat 环境的 INSERT、UPDATE 或 DELETE"
                 }
                 type="button"
-              >
-                <GitCommitHorizontal aria-hidden="true" size={15} />
-                手动提交
+                >
+                  <GitCommitHorizontal aria-hidden="true" size={15} />
+                提交当前受控 DML
               </button>
             </div>
             <div aria-label="SQL 文件操作" className={styles.editorFileActions} role="group">
