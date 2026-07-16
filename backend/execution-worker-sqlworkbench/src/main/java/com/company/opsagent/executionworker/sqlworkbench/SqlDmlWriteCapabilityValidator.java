@@ -12,14 +12,22 @@ public interface SqlDmlWriteCapabilityValidator {
 
   void assertCommitAllowed(SqlControlledDmlExecutionRequest request);
 
-  static SqlDmlWriteCapabilityValidator noOp() {
+  static SqlDmlWriteCapabilityValidator rejecting() {
     return new SqlDmlWriteCapabilityValidator() {
       @Override
       public void assertPreflightAllowed(SqlDmlPreflightExecutionRequest request) {
+        reject();
       }
 
       @Override
       public void assertCommitAllowed(SqlControlledDmlExecutionRequest request) {
+        reject();
+      }
+
+      private void reject() {
+        throw new WorkerSqlEgressException(
+            "SQL_DML_WORKER_DISABLED",
+            "SQL DML write capability validation is not configured");
       }
     };
   }

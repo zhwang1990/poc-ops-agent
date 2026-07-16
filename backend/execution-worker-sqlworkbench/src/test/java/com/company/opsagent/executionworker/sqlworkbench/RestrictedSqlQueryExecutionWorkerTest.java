@@ -90,6 +90,7 @@ class RestrictedSqlQueryExecutionWorkerTest {
         executor(2),
         request -> reactor.core.publisher.Mono.error(new UnsupportedOperationException()),
         enabledDmlPolicy(),
+        allowingWriteCapabilityValidator(),
         CLOCK);
 
     var result = worker.executeControlledDml(controlledDmlRequest(
@@ -97,6 +98,25 @@ class RestrictedSqlQueryExecutionWorkerTest {
 
     assertEquals("SUCCEEDED", result.status());
     assertEquals(2, result.affectedRows());
+  }
+
+  @Test
+  void rejectsControlledDmlWhenSixArgumentConstructorHasNoWriteCapabilityValidator() {
+    AtomicBoolean databaseAccessed = new AtomicBoolean();
+    var worker = new RestrictedSqlQueryExecutionWorker(
+        new CalciteSqlReadOnlyGuard(),
+        new CalciteSqlDmlGuard(),
+        executor(databaseAccessed),
+        request -> reactor.core.publisher.Mono.error(new UnsupportedOperationException()),
+        enabledDmlPolicy(),
+        CLOCK);
+
+    var result = worker.executeControlledDml(controlledDmlRequest(
+        "update ORDERS.ORDERS set status = 'READY' where order_id = 42"));
+
+    assertEquals("REJECTED", result.status());
+    assertEquals("SQL_DML_WORKER_DISABLED", result.errorCode());
+    assertFalse(databaseAccessed.get());
   }
 
   @Test
@@ -295,6 +315,7 @@ class RestrictedSqlQueryExecutionWorkerTest {
         jdbcExecutor,
         request -> reactor.core.publisher.Mono.error(new UnsupportedOperationException()),
         enabledDmlPolicy(),
+        allowingWriteCapabilityValidator(),
         clock);
 
     var result = worker.executeControlledDml(controlledDmlRequest(
@@ -462,6 +483,18 @@ class RestrictedSqlQueryExecutionWorkerTest {
     return new WorkerSqlDmlExecutionPolicy(List.of(descriptor(true, "as400-sit-writer")));
   }
 
+  private SqlDmlWriteCapabilityValidator allowingWriteCapabilityValidator() {
+    return new SqlDmlWriteCapabilityValidator() {
+      @Override
+      public void assertPreflightAllowed(SqlDmlPreflightExecutionRequest request) {
+      }
+
+      @Override
+      public void assertCommitAllowed(SqlControlledDmlExecutionRequest request) {
+      }
+    };
+  }
+
   private WorkerSqlConnectionDescriptor descriptor(boolean dmlEnabled, String dmlCredentialAlias) {
     return new WorkerSqlConnectionDescriptor(
         "as400-development",
@@ -473,6 +506,7 @@ class RestrictedSqlQueryExecutionWorkerTest {
         "as400-sit-readonly",
         true,
         dmlEnabled,
+        dmlCredentialAlias,
         dmlCredentialAlias);
   }
 

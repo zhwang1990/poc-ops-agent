@@ -49,7 +49,8 @@ public final class WorkerSqlDmlExecutionPolicy {
     if (descriptor == null
         || !descriptor.enabled()
         || !descriptor.dmlEnabled()
-        || isBlank(descriptor.dmlCredentialAlias())) {
+        || isBlank(descriptor.dmlCredentialAlias())
+        || isBlank(descriptor.dmlUsername())) {
       throw new WorkerSqlEgressException(
           "SQL_DML_WORKER_DISABLED",
           "SQL DML is not enabled with a write credential for this worker connection");

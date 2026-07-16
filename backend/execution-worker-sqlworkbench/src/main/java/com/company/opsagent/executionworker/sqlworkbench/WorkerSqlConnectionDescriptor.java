@@ -16,7 +16,8 @@ public record WorkerSqlConnectionDescriptor(
     String username,
     boolean enabled,
     boolean dmlEnabled,
-    String dmlCredentialAlias) {
+    String dmlCredentialAlias,
+    String dmlUsername) {
 
   private static final Set<String> SUPPORTED_PLATFORM_TYPES = Set.of("DB2_FOR_I", "H2", "MYSQL");
 
@@ -27,7 +28,7 @@ public record WorkerSqlConnectionDescriptor(
       int port,
       String credentialAlias,
       boolean enabled) {
-    this(connectionId, targetEnvironment, "DB2_FOR_I", host, port, credentialAlias, credentialAlias, enabled, false, null);
+    this(connectionId, targetEnvironment, "DB2_FOR_I", host, port, credentialAlias, credentialAlias, enabled, false, null, null);
   }
 
   public WorkerSqlConnectionDescriptor(
@@ -38,7 +39,7 @@ public record WorkerSqlConnectionDescriptor(
       String credentialAlias,
       String username,
       boolean enabled) {
-    this(connectionId, targetEnvironment, "DB2_FOR_I", host, port, credentialAlias, username, enabled, false, null);
+    this(connectionId, targetEnvironment, "DB2_FOR_I", host, port, credentialAlias, username, enabled, false, null, null);
   }
 
   public WorkerSqlConnectionDescriptor(
@@ -60,6 +61,32 @@ public record WorkerSqlConnectionDescriptor(
         username,
         enabled,
         false,
+        null,
+        null);
+  }
+
+  public WorkerSqlConnectionDescriptor(
+      String connectionId,
+      String targetEnvironment,
+      String platformType,
+      String host,
+      int port,
+      String credentialAlias,
+      String username,
+      boolean enabled,
+      boolean dmlEnabled,
+      String dmlCredentialAlias) {
+    this(
+        connectionId,
+        targetEnvironment,
+        platformType,
+        host,
+        port,
+        credentialAlias,
+        username,
+        enabled,
+        dmlEnabled,
+        dmlCredentialAlias,
         null);
   }
 
@@ -77,6 +104,7 @@ public record WorkerSqlConnectionDescriptor(
     credentialAlias = requiredText(credentialAlias, "credentialAlias");
     username = requiredText(username, "username");
     dmlCredentialAlias = optionalText(dmlCredentialAlias);
+    dmlUsername = optionalText(dmlUsername);
   }
 
   public WorkerSqlEgressTarget target() {

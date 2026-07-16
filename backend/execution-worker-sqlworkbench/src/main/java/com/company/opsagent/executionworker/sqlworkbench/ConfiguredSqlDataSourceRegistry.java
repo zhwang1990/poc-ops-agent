@@ -59,7 +59,9 @@ public final class ConfiguredSqlDataSourceRegistry
   }
 
   private DataSource createWriteDataSource(WorkerSqlConnectionDescriptor descriptor) {
-    if (!descriptor.dmlEnabled() || isBlank(descriptor.dmlCredentialAlias())) {
+    if (!descriptor.dmlEnabled()
+        || isBlank(descriptor.dmlCredentialAlias())
+        || isBlank(descriptor.dmlUsername())) {
       throw new WorkerSqlEgressException(
           "SQL_DML_WORKER_DISABLED",
           "SQL DML is not enabled with a write credential for this worker connection");
@@ -67,10 +69,10 @@ public final class ConfiguredSqlDataSourceRegistry
     char[] password = requiredWritePassword(descriptor.dmlCredentialAlias());
     try {
       return switch (descriptor.platformType()) {
-        case "H2" -> h2DataSourceFactory.createWrite(descriptor);
+        case "H2" -> h2DataSourceFactory.createWrite(descriptor, password);
         case "DB2_FOR_I" -> jt400DataSourceFactory.create(
             descriptor.host(),
-            descriptor.dmlCredentialAlias(),
+            descriptor.dmlUsername(),
             password);
         default -> throw new WorkerSqlEgressException(
             "SQL_PLATFORM_NOT_SUPPORTED",

@@ -45,7 +45,7 @@ public class RestrictedSqlQueryExecutionWorker {
         executor,
         request -> Mono.error(new UnsupportedOperationException("SQL DML preview is not configured")),
         new WorkerSqlDmlExecutionPolicy(List.of()),
-        SqlDmlWriteCapabilityValidator.noOp(),
+        SqlDmlWriteCapabilityValidator.rejecting(),
         clock);
   }
 
@@ -62,7 +62,7 @@ public class RestrictedSqlQueryExecutionWorker {
         executor,
         previewExecutor,
         dmlExecutionPolicy,
-        SqlDmlWriteCapabilityValidator.noOp(),
+        SqlDmlWriteCapabilityValidator.rejecting(),
         clock);
   }
 

@@ -18,22 +18,40 @@ public final class H2SqlDataSourceFactory {
   public DataSource create(WorkerSqlConnectionDescriptor descriptor) {
     return dataSources.computeIfAbsent(
         dataSourceKey(descriptor.connectionId(), "read"),
-        ignored -> createDataSource(descriptor.connectionId()));
+        ignored -> {
+          initializeDatabase(descriptor.connectionId(), null, null);
+          return createDataSource(descriptor.connectionId(), null, null, true);
+        });
   }
 
-  public DataSource createWrite(WorkerSqlConnectionDescriptor descriptor) {
+  public DataSource createWrite(WorkerSqlConnectionDescriptor descriptor, char[] password) {
     return dataSources.computeIfAbsent(
         dataSourceKey(descriptor.connectionId(), "write"),
-        ignored -> createDataSource(descriptor.connectionId()));
+        ignored -> {
+          initializeDatabase(descriptor.connectionId(), descriptor.dmlUsername(), password);
+          return createDataSource(descriptor.connectionId(), descriptor.dmlUsername(), password, false);
+        });
   }
 
-  private DataSource createDataSource(String connectionId) {
-    JdbcDataSource dataSource = new JdbcDataSource();
-    dataSource.setURL("jdbc:h2:mem:" + databaseName(connectionId) + ";DB_CLOSE_DELAY=-1;DATABASE_TO_UPPER=TRUE");
+  private void initializeDatabase(String connectionId, String username, char[] password) {
     initializedDatabases.computeIfAbsent(connectionId, ignored -> {
+      DataSource dataSource = createDataSource(connectionId, username, password, true);
       initialize(dataSource);
       return dataSource;
     });
+  }
+
+  private DataSource createDataSource(
+      String connectionId,
+      String username,
+      char[] password,
+      boolean applyDatabaseSettings) {
+    JdbcDataSource dataSource = new JdbcDataSource();
+    dataSource.setURL(connectionUrl(connectionId, applyDatabaseSettings));
+    if (username != null) {
+      dataSource.setUser(username);
+      dataSource.setPassword(new String(password));
+    }
     return dataSource;
   }
 
@@ -129,5 +147,10 @@ public final class H2SqlDataSourceFactory {
 
   private String dataSourceKey(String connectionId, String role) {
     return connectionId + "|" + role;
+  }
+
+  private String connectionUrl(String connectionId, boolean applyDatabaseSettings) {
+    String url = "jdbc:h2:mem:" + databaseName(connectionId);
+    return applyDatabaseSettings ? url + ";DB_CLOSE_DELAY=-1;DATABASE_TO_UPPER=TRUE" : url;
   }
 }

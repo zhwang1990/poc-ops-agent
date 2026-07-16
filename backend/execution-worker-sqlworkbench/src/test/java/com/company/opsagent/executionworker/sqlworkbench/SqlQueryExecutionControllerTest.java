@@ -200,6 +200,7 @@ class SqlQueryExecutionControllerTest {
         request -> reactor.core.publisher.Mono.just(new SqlDmlImpactPreview(
             "1.0", 2L, List.of(), List.of(), List.of())),
         new WorkerSqlDmlExecutionPolicy(List.of(dmlDescriptor())),
+        allowingWriteCapabilityValidator(),
         CLOCK);
     return controller(worker, store);
   }
@@ -245,6 +246,7 @@ class SqlQueryExecutionControllerTest {
         "as400-dev-readonly",
         true,
         true,
+        "as400-dev-writer",
         "as400-dev-writer");
   }
 
@@ -259,7 +261,20 @@ class SqlQueryExecutionControllerTest {
         "as400-dev-readonly",
         true,
         false,
+        null,
         null);
+  }
+
+  private SqlDmlWriteCapabilityValidator allowingWriteCapabilityValidator() {
+    return new SqlDmlWriteCapabilityValidator() {
+      @Override
+      public void assertPreflightAllowed(SqlDmlPreflightExecutionRequest request) {
+      }
+
+      @Override
+      public void assertCommitAllowed(SqlControlledDmlExecutionRequest request) {
+      }
+    };
   }
 
   private SqlConnectionProbeWorker probeWorker() {
