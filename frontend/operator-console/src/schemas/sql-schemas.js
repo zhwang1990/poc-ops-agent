@@ -149,6 +149,12 @@ export const sqlQueryRunRequestSchema = sqlQueryRequestBaseSchema
   })
   .strict();
 
+export const sqlDmlPreflightRequestSchema = sqlQueryRequestBaseSchema
+  .extend({
+    action: z.literal("PREFLIGHT_DML"),
+  })
+  .strict();
+
 const sqlDmlPreviewColumnSchema = z
   .object({
     name: nonBlankString,
@@ -202,7 +208,7 @@ const sqlDmlConfirmationSchema = z
   .object({
     contractVersion: z.literal("1.0"),
     sqlHash: nonBlankString,
-    confirmedRisks: z.array(nonBlankString).min(1),
+    confirmedRisks: z.array(nonBlankString),
     confirmationCode: z.literal("CONFIRM_SQL_DML_RISK"),
   })
   .strict();
@@ -213,7 +219,7 @@ export const sqlDmlCommitRequestSchema = z
     query: sqlQueryRequestBaseSchema
       .extend({ action: z.literal("COMMIT_DML") })
       .strict(),
-    confirmation: sqlDmlConfirmationSchema.nullable().optional(),
+    confirmation: sqlDmlConfirmationSchema,
     receipt: sqlDmlPreflightReceiptSchema,
   })
   .strict();

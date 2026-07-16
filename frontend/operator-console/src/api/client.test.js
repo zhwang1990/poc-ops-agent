@@ -16,7 +16,12 @@ import {
 } from "./agent-api.js";
 import { ApiError, SESSION_EXPIRED_EVENT, requestJson } from "./client.js";
 import { getSkill, listSkills } from "./skill-api.js";
-import { commitControlledSqlDml, listSqlConnections, validateSqlQuery } from "./sql-api.js";
+import {
+  commitControlledSqlDml,
+  listSqlConnections,
+  preflightControlledSqlDml,
+  validateSqlQuery,
+} from "./sql-api.js";
 import {
   listReleaseScriptProfiles,
   listReleaseApplications,
@@ -282,6 +287,27 @@ describe("feature API modules", () => {
       ["POST", "/internal/sql-workbench/queries/validate", sqlRequest],
       ["POST", "/internal/sql-workbench/queries/commit", sqlDmlCommitRequest],
     ]);
+  });
+
+  test("accepts only PREFLIGHT_DML input for controlled SQL preflight", async () => {
+    /** @type {unknown[]} */
+    const preflightRequests = [];
+    server.use(
+      http.post("/internal/sql-workbench/queries/preflight", async ({ request }) => {
+        preflightRequests.push(await request.json());
+        return HttpResponse.json(sqlDmlPreflightResult);
+      }),
+    );
+
+    expect(() =>
+      preflightControlledSqlDml({ ...sqlRequest, action: "COMMIT_DML" }),
+    ).toThrow();
+    expect(preflightRequests).toHaveLength(0);
+
+    await expect(
+      preflightControlledSqlDml({ ...sqlRequest, action: "PREFLIGHT_DML" }),
+    ).resolves.toEqual(sqlDmlPreflightResult);
+    expect(preflightRequests).toHaveLength(1);
   });
 
   test("posts main AgentScope diagnostic tasks to the primary control-plane endpoint", async () => {
@@ -608,7 +634,7 @@ const sqlRequest = {
 };
 
 const sqlDmlCommitRequest = {
-  contractVersion: "1.0",
+  contractVersion: "1.1",
   query: {
     ...sqlRequest,
     targetEnvironment: "dev",
@@ -616,8 +642,58 @@ const sqlDmlCommitRequest = {
     sql: "update ORDERS.ORDERS set status = 'READY' where order_id = 1",
     idempotencyKey: "sql-commit-1",
   },
-  confirmation: null,
+  confirmation: {
+    contractVersion: "1.0",
+    sqlHash: "sha256:commit",
+    confirmedRisks: [],
+    confirmationCode: "CONFIRM_SQL_DML_RISK",
+  },
+  receipt: createSqlDmlPreflightReceipt(),
 };
+
+const sqlDmlPreflightResult = {
+  contractVersion: "1.1",
+  validation: {
+    contractVersion: "1.0",
+    statementType: "UPDATE",
+    validationLevel: "VALIDATED",
+    sqlHash: "sha256:commit",
+    referencedObjects: ["ORDERS.ORDERS"],
+    risks: [],
+    rejectionReasons: [],
+    unverifiedItems: [],
+  },
+  impactPreview: {
+    contractVersion: "1.0",
+    affectedRows: 1,
+    sampleColumns: [],
+    sampleRows: [],
+    unverifiedItems: [],
+  },
+  receipt: createSqlDmlPreflightReceipt(),
+};
+
+function createSqlDmlPreflightReceipt() {
+  return {
+    contractVersion: "1.0",
+    receiptId: "receipt-dml-1",
+    keyId: "preflight-key-1",
+    issuedAt: "2026-07-17T08:00:00Z",
+    expiresAt: "2026-07-17T08:05:00Z",
+    operatorId: "operator-1",
+    requestHash: "a".repeat(64),
+    connectionId: "as400-development",
+    targetEnvironment: "development",
+    schema: "ORDERS",
+    sqlHash: "b".repeat(64),
+    parametersHash: "c".repeat(64),
+    policyVersion: "policy-v1",
+    policySelectionHash: "d".repeat(64),
+    impactPreviewHash: "e".repeat(64),
+    preflightHash: "f".repeat(64),
+    signature: "opaque-server-signature",
+  };
+}
 
 const validationReport = {
   contractVersion: "1.0",

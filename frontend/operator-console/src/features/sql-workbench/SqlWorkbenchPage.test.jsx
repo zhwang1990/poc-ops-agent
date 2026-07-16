@@ -460,6 +460,53 @@ describe("SqlWorkbenchPage", () => {
     expect(await screen.findByText("DML 提交完成，影响 4 行。")).toBeInTheDocument();
   });
 
+  test("sends an explicit empty risk confirmation for a no-risk DML preflight", async () => {
+    const user = userEvent.setup();
+    /** @type {unknown[]} */
+    const commitRequests = [];
+    const preflight = preflightWithoutRisk();
+    server.use(
+      http.get("/internal/sql-workbench/connections", () =>
+        HttpResponse.json(sqlConnections),
+      ),
+      http.post("/internal/sql-workbench/queries/preflight", () => HttpResponse.json(preflight)),
+      http.post("/internal/sql-workbench/queries/commit", async ({ request }) => {
+        commitRequests.push(await request.json());
+        return HttpResponse.json({
+          contractVersion: "1.0",
+          executionRequestId: "execution-dml-no-risk",
+          workflowId: "workflow-dml-no-risk",
+          status: "SUCCEEDED",
+          resultId: null,
+          errorCode: null,
+          errorMessage: null,
+          affectedRows: 1,
+        });
+      }),
+    );
+
+    renderAt("/sql");
+
+    await screen.findByText("已连接 · development");
+    await replaceSqlText(user, "update ORDERS.ORDERS set status = 'READY' where order_id = 4");
+    const transactionControls = screen.getByRole("group", { name: "SQL 事务控制" });
+    await user.click(within(transactionControls).getByRole("button", { name: "事务模式" }));
+    await user.click(
+      within(transactionControls).getByRole("button", { name: "提交当前受控 DML" }),
+    );
+
+    await waitFor(() => expect(commitRequests).toHaveLength(1));
+    expect(commitRequests[0]).toMatchObject({
+      confirmation: {
+        contractVersion: "1.0",
+        sqlHash: "sha256:update-with-where",
+        confirmedRisks: [],
+        confirmationCode: "CONFIRM_SQL_DML_RISK",
+      },
+      receipt: preflight.receipt,
+    });
+  });
+
   test("shows a manual handoff for an unknown DML result without result rows", async () => {
     const user = userEvent.setup();
     server.use(
@@ -493,9 +540,14 @@ describe("SqlWorkbenchPage", () => {
       within(transactionControls).getByRole("button", { name: "提交当前受控 DML" }),
     );
 
-    expect(await screen.findByText("需要人工接管以确认 DML 执行结果。"))
-      .toBeInTheDocument();
-    expect(screen.getByText("workflow-dml-unknown")).toBeInTheDocument();
+    expect(await screen.findByLabelText("DML 人工接管结果")).toBeInTheDocument();
+    expect(screen.getByText("需要人工接管以确认 DML 执行结果。")).toBeInTheDocument();
+    expect(screen.getAllByText("workflow-dml-unknown")).toHaveLength(1);
+    expect(screen.queryByText("执行事实")).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "查询结果" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tablist", { name: "SQL 执行结果" })).not.toBeInTheDocument();
+    expect(screen.queryByText("execution-dml-unknown")).not.toBeInTheDocument();
+    expect(screen.queryByText("resultId")).not.toBeInTheDocument();
     expect(screen.queryByRole("table", { name: "SQL SELECT 查询结果" })).not.toBeInTheDocument();
   });
 

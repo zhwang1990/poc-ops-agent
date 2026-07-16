@@ -954,7 +954,7 @@ export function SqlWorkbenchPage() {
       const execution = await commitControlledSqlDml({
         contractVersion: "1.1",
         query: request,
-        confirmation: null,
+        confirmation: buildDmlRiskConfirmation(report),
         receipt: preflight.receipt,
       });
       updateResultTab(sessionId, resultTab.id, {
@@ -1779,9 +1779,10 @@ function InfoPanel({
   onApplyAssistantSuggestion,
   onRequestAssistant,
 }) {
+  const requiresHandoff = execution?.status === "UNKNOWN_REQUIRES_HANDOFF";
   return (
     <aside aria-label="SQL 信息面板" className={styles.infoPanel}>
-      <ExecutionFacts execution={execution} />
+      {requiresHandoff ? null : <ExecutionFacts execution={execution} />}
       <AiSqlAssistantPanel
         assistant={assistant}
         errorMessage={assistantErrorMessage}
@@ -1995,6 +1996,10 @@ function ResultPanel({
     );
   }
 
+  if (execution?.status === "UNKNOWN_REQUIRES_HANDOFF") {
+    return <DmlHandoffOutcome workflowId={execution.workflowId} />;
+  }
+
   return (
     <section className={styles.resultPanel}>
       <PanelHeading
@@ -2021,9 +2026,6 @@ function ResultPanel({
       ) : null}
       {isLoading ? <QueryLoadingStatus execution={execution} /> : null}
       {visibleErrorMessage ? <ErrorSummary message={visibleErrorMessage} /> : null}
-      {execution?.status === "UNKNOWN_REQUIRES_HANDOFF" ? (
-        <p>需要人工接管以确认 DML 执行结果。</p>
-      ) : null}
       {resultPage && columns.length > 0 ? (
         <>
           <DataTable
@@ -2082,6 +2084,19 @@ function ResultPanel({
           onRequest={onRequestAssistant}
         />
       ) : null}
+    </section>
+  );
+}
+
+/**
+ * @param {{workflowId: string}} props
+ */
+function DmlHandoffOutcome({ workflowId }) {
+  return (
+    <section aria-label="DML 人工接管结果" className={styles.resultPanel}>
+      <PanelHeading compact detail="请按工作流完成人工确认" icon={AlertTriangle} title="需要人工接管" />
+      <p>需要人工接管以确认 DML 执行结果。</p>
+      <p>{workflowId}</p>
     </section>
   );
 }

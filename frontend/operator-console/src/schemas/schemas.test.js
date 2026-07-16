@@ -32,6 +32,7 @@ import {
   sqlQueryRequestSchema,
   sqlValidationReportSchema,
 } from "./sql-schemas.js";
+import * as sqlSchemas from "./sql-schemas.js";
 import {
   jsonRepairAssistantRequestSchema,
   jsonRepairAssistantResponseSchema,
@@ -153,7 +154,7 @@ describe("SQL schemas", () => {
     ).toThrow();
   });
 
-  test("accepts production SQL connections only with query capabilities", () => {
+  test("accepts server-provided SQL capabilities without applying browser environment policy", () => {
     expect(
       sqlConnectionListSchema.parse([
         {
@@ -163,31 +164,17 @@ describe("SQL schemas", () => {
           targetEnvironment: "production",
           platformType: "DB2_FOR_I",
           allowedSchemas: ["ORDERS"],
-          capabilities: ["VALIDATE", "RUN_READ_ONLY"],
+          capabilities: ["VALIDATE", "RUN_READ_ONLY", "PREFLIGHT_DML", "COMMIT_DML"],
         },
       ]),
     ).toHaveLength(1);
-
-    expect(() =>
-      sqlConnectionListSchema.parse([
-        {
-          contractVersion: "1.0",
-          connectionId: "as400-production",
-          displayName: "AS/400 Production",
-          targetEnvironment: "production",
-          platformType: "DB2_FOR_I",
-          allowedSchemas: ["ORDERS"],
-          capabilities: ["VALIDATE", "RUN_READ_ONLY", "COMMIT_DML"],
-        },
-      ]),
-    ).toThrow();
   });
 
   test("accepts the real validation report fields", () => {
     expect(sqlValidationReportSchema.parse(validationReport)).toEqual(validationReport);
   });
 
-  test("accepts production read-only SQL requests and rejects production DML", () => {
+  test("parses DML requests without making browser authorization decisions", () => {
     expect(
       sqlQueryRequestSchema.parse({
         ...sqlRequest,
@@ -196,23 +183,64 @@ describe("SQL schemas", () => {
       }).targetEnvironment,
     ).toBe("production");
 
-    expect(() =>
+    expect(
       sqlQueryRequestSchema.parse({
         ...sqlRequest,
         targetEnvironment: "production",
         action: "COMMIT_DML",
-      }),
-    ).toThrow();
+      }).action,
+    ).toBe("COMMIT_DML");
 
-    expect(() =>
+    expect(
       sqlDmlCommitRequestSchema.parse({
-        contractVersion: "1.0",
+        contractVersion: "1.1",
         query: {
           ...sqlRequest,
           targetEnvironment: "production",
           action: "COMMIT_DML",
         },
+        confirmation: {
+          contractVersion: "1.0",
+          sqlHash: "sha256:commit",
+          confirmedRisks: [],
+          confirmationCode: "CONFIRM_SQL_DML_RISK",
+        },
+        receipt: sqlDmlPreflightReceipt,
+      }).confirmation?.confirmedRisks,
+    ).toEqual([]);
+  });
+
+  test("requires a non-null confirmation for a controlled DML commit", () => {
+    expect(() =>
+      sqlDmlCommitRequestSchema.parse({
+        contractVersion: "1.1",
+        query: {
+          ...sqlRequest,
+          action: "COMMIT_DML",
+        },
         confirmation: null,
+        receipt: sqlDmlPreflightReceipt,
+      }),
+    ).toThrow();
+  });
+
+  test("accepts only PREFLIGHT_DML in the preflight request contract", () => {
+    const preflightSchema = sqlSchemas.sqlDmlPreflightRequestSchema;
+    expect(preflightSchema).toBeDefined();
+    if (!preflightSchema) {
+      return;
+    }
+    expect(
+      preflightSchema.parse({
+        ...sqlRequest,
+        action: "PREFLIGHT_DML",
+      }).action,
+    ).toBe("PREFLIGHT_DML");
+
+    expect(() =>
+      preflightSchema.parse({
+        ...sqlRequest,
+        action: "COMMIT_DML",
       }),
     ).toThrow();
   });
@@ -709,6 +737,26 @@ const sqlRequest = {
   parameters: [],
   limits: { maxRows: 500, maxBytes: 5000000, timeoutSeconds: 30 },
   idempotencyKey: "sql-validate-1",
+};
+
+const sqlDmlPreflightReceipt = {
+  contractVersion: "1.0",
+  receiptId: "receipt-dml-1",
+  keyId: "preflight-key-1",
+  issuedAt: "2026-07-17T08:00:00Z",
+  expiresAt: "2026-07-17T08:05:00Z",
+  operatorId: "operator-1",
+  requestHash: "a".repeat(64),
+  connectionId: "as400-development",
+  targetEnvironment: "development",
+  schema: "ORDERS",
+  sqlHash: "b".repeat(64),
+  parametersHash: "c".repeat(64),
+  policyVersion: "policy-v1",
+  policySelectionHash: "d".repeat(64),
+  impactPreviewHash: "e".repeat(64),
+  preflightHash: "f".repeat(64),
+  signature: "opaque-server-signature",
 };
 
 const sqlAssistantRequest = {

@@ -5,6 +5,7 @@ import {
   sqlConnectionProbeResultSchema,
   sqlConnectionUpdateRequestSchema,
   sqlDmlCommitRequestSchema,
+  sqlDmlPreflightRequestSchema,
   sqlDmlPreflightResultSchema,
   sqlAssistantRequestSchema,
   sqlAssistantResponseSchema,
@@ -124,7 +125,7 @@ export function commitControlledSqlDml(input) {
  * @param {unknown} input
  */
 export function preflightControlledSqlDml(input) {
-  const request = sqlQueryRequestSchema.parse(input);
+  const request = sqlDmlPreflightRequestSchema.parse(input);
   return requestJson("/internal/sql-workbench/queries/preflight", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
