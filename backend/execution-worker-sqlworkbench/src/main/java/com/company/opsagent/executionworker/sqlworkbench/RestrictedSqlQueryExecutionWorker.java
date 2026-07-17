@@ -25,6 +25,7 @@ public class RestrictedSqlQueryExecutionWorker {
   private final SqlDmlImpactPreviewExecutor previewExecutor;
   private final WorkerSqlDmlExecutionPolicy dmlExecutionPolicy;
   private final SqlDmlWriteCapabilityValidator dmlWriteCapabilityValidator;
+  private final SqlDmlExecutionReplayGuard dmlExecutionReplayGuard;
   private final Clock clock;
 
   public RestrictedSqlQueryExecutionWorker(
@@ -63,6 +64,7 @@ public class RestrictedSqlQueryExecutionWorker {
         previewExecutor,
         dmlExecutionPolicy,
         SqlDmlWriteCapabilityValidator.rejecting(),
+        SqlDmlExecutionReplayGuard.unavailable(),
         clock);
   }
 
@@ -74,12 +76,33 @@ public class RestrictedSqlQueryExecutionWorker {
       WorkerSqlDmlExecutionPolicy dmlExecutionPolicy,
       SqlDmlWriteCapabilityValidator dmlWriteCapabilityValidator,
       Clock clock) {
+    this(
+        readOnlyGuard,
+        dmlGuard,
+        executor,
+        previewExecutor,
+        dmlExecutionPolicy,
+        dmlWriteCapabilityValidator,
+        SqlDmlExecutionReplayGuard.unavailable(),
+        clock);
+  }
+
+  public RestrictedSqlQueryExecutionWorker(
+      SqlReadOnlyGuard readOnlyGuard,
+      SqlDmlGuard dmlGuard,
+      SqlQueryExecutor executor,
+      SqlDmlImpactPreviewExecutor previewExecutor,
+      WorkerSqlDmlExecutionPolicy dmlExecutionPolicy,
+      SqlDmlWriteCapabilityValidator dmlWriteCapabilityValidator,
+      SqlDmlExecutionReplayGuard dmlExecutionReplayGuard,
+      Clock clock) {
     this.readOnlyGuard = readOnlyGuard;
     this.dmlGuard = dmlGuard;
     this.executor = executor;
     this.previewExecutor = previewExecutor;
     this.dmlExecutionPolicy = dmlExecutionPolicy;
     this.dmlWriteCapabilityValidator = dmlWriteCapabilityValidator;
+    this.dmlExecutionReplayGuard = dmlExecutionReplayGuard;
     this.clock = clock;
   }
 
@@ -142,6 +165,13 @@ public class RestrictedSqlQueryExecutionWorker {
             "SQL_NOT_CONTROLLED_DML",
             "Worker accepts exactly one controlled INSERT, UPDATE, or DELETE statement");
       }
+      dmlWriteCapabilityValidator.assertCommitConfigured(request);
+      if (!dmlExecutionReplayGuard.consume(request.executionRequestId())) {
+        return rejected(
+            request,
+            "SQL_DML_EXECUTION_REPLAYED",
+            "SQL DML execution request has already been consumed");
+      }
       dmlWriteCapabilityValidator.assertCommitAllowed(request);
       int affectedRows = executor.executeDml(legacyRequest(request));
       return new SqlQueryExecutionResult(
@@ -155,6 +185,13 @@ public class RestrictedSqlQueryExecutionWorker {
           affectedRows);
     } catch (WorkerSqlEgressException exception) {
       return rejected(request, exception.errorCode(), exception.safeMessage());
+    } catch (SqlDmlCommitOutcomeUnknownException exception) {
+      return unknownCommitOutcome(request);
+    } catch (SqlDmlReplayStateException exception) {
+      return rejected(
+          request,
+          "SQL_DML_REPLAY_STATE_UNAVAILABLE",
+          "SQL DML replay protection is unavailable");
     } catch (RuntimeException exception) {
       return failed(request, exception);
     }
@@ -214,6 +251,19 @@ public class RestrictedSqlQueryExecutionWorker {
         null,
         "SQL_EXECUTION_FAILED",
         safeExecutionFailureMessage(exception));
+  }
+
+  private SqlQueryExecutionResult unknownCommitOutcome(
+      SqlControlledDmlExecutionRequest request) {
+    return new SqlQueryExecutionResult(
+        "1.0",
+        request.executionRequestId(),
+        request.workflowId(),
+        "UNKNOWN_REQUIRES_HANDOFF",
+        null,
+        "SQL_DML_COMMIT_OUTCOME_UNKNOWN",
+        null,
+        null);
   }
 
   private void assertNotExpired(OffsetDateTime expiresAt) {

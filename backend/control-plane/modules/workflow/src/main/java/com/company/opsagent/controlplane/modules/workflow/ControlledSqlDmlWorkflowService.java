@@ -64,8 +64,7 @@ public final class ControlledSqlDmlWorkflowService {
     }
     if (receiptFailure != null) {
       if (existing != null && existing.status() == ControlledSqlDmlWorkflow.Status.CREATED) {
-        markUnknownOrFail(existing.workflowId());
-        throw workflowFailure(RESULT_UNKNOWN, "DML result requires human handoff");
+        return handoffResult(existing.workflowId());
       }
       throw receiptFailure;
     }
@@ -100,8 +99,7 @@ public final class ControlledSqlDmlWorkflowService {
     try {
       receiptVerifier.verifyUsableForDispatch(request);
     } catch (RuntimeException exception) {
-      markUnknownOrFail(workflow.workflowId());
-      throw workflowFailure(RESULT_UNKNOWN, "DML result requires human handoff");
+      return handoffResult(workflow.workflowId());
     }
 
     OffsetDateTime submittedAt = OffsetDateTime.now(clock);
@@ -131,8 +129,7 @@ public final class ControlledSqlDmlWorkflowService {
     try {
       result = workerGateway.execute(workerRequest);
     } catch (RuntimeException exception) {
-      markUnknownOrFail(workflowId);
-      throw workflowFailure(RESULT_UNKNOWN, "DML result requires human handoff");
+      return handoffResult(workflowId);
     }
     return complete(workflowId, executionRequestId, result);
   }
@@ -204,8 +201,7 @@ public final class ControlledSqlDmlWorkflowService {
     if (result == null
         || !executionRequestId.equals(result.executionRequestId())
         || !workflowId.equals(result.workflowId())) {
-      markUnknownOrFail(workflowId);
-      throw workflowFailure(RESULT_UNKNOWN, "DML result requires human handoff");
+      return handoffResult(workflowId);
     }
     OffsetDateTime completedAt = OffsetDateTime.now(clock);
     if ("SUCCEEDED".equals(result.status())
@@ -214,8 +210,7 @@ public final class ControlledSqlDmlWorkflowService {
       try {
         store.markSucceeded(workflowId, result.affectedRows(), completedAt).block();
       } catch (RuntimeException exception) {
-        markUnknownOrFail(workflowId);
-        throw workflowFailure(RESULT_UNKNOWN, "DML result requires human handoff");
+        return handoffResult(workflowId);
       }
       return successfulResult(workflowId, result.affectedRows());
     }
@@ -224,13 +219,11 @@ public final class ControlledSqlDmlWorkflowService {
       try {
         store.markFailed(workflowId, failureCode, completedAt).block();
       } catch (RuntimeException exception) {
-        markUnknownOrFail(workflowId);
-        throw workflowFailure(RESULT_UNKNOWN, "DML result requires human handoff");
+        return handoffResult(workflowId);
       }
       return failedResult(workflowId, failureCode);
     }
-    markUnknownOrFail(workflowId);
-    throw workflowFailure(RESULT_UNKNOWN, "DML result requires human handoff");
+    return handoffResult(workflowId);
   }
 
   private SqlQueryExecutionResult reuse(
@@ -239,8 +232,7 @@ public final class ControlledSqlDmlWorkflowService {
     return switch (workflow.status()) {
       case SUCCEEDED -> successfulResult(workflow.workflowId(), workflow.affectedRowCount());
       case FAILED -> failedResult(workflow.workflowId(), safeFailureCode(workflow.failureCode()));
-      case UNKNOWN_REQUIRES_HANDOFF -> throw workflowFailure(
-          RESULT_UNKNOWN, "DML result requires human handoff");
+      case UNKNOWN_REQUIRES_HANDOFF -> unknownResult(workflow.workflowId());
       case RUNNING -> reuseRunningWorkflow(workflow);
       case CREATED -> dispatchCreatedWorkflow(request, workflow);
     };
@@ -261,11 +253,27 @@ public final class ControlledSqlDmlWorkflowService {
         null, failureCode, "Controlled DML worker rejected the request", null);
   }
 
+  private SqlQueryExecutionResult handoffResult(String workflowId) {
+    markUnknownOrFail(workflowId);
+    return unknownResult(workflowId);
+  }
+
+  private SqlQueryExecutionResult unknownResult(String workflowId) {
+    return new SqlQueryExecutionResult(
+        "1.0",
+        executionRequestId(workflowId),
+        workflowId,
+        "UNKNOWN_REQUIRES_HANDOFF",
+        null,
+        RESULT_UNKNOWN,
+        null,
+        null);
+  }
+
   private SqlQueryExecutionResult reuseRunningWorkflow(ControlledSqlDmlWorkflow workflow) {
     OffsetDateTime executionExpiresAt = workflow.executionExpiresAt();
     if (executionExpiresAt == null || !executionExpiresAt.isAfter(OffsetDateTime.now(clock))) {
-      markUnknownOrFail(workflow.workflowId());
-      throw workflowFailure(RESULT_UNKNOWN, "DML result requires human handoff");
+      return handoffResult(workflow.workflowId());
     }
     throw workflowFailure(
         "SQL_DML_WORKFLOW_IN_PROGRESS", "Controlled DML workflow is already in progress");

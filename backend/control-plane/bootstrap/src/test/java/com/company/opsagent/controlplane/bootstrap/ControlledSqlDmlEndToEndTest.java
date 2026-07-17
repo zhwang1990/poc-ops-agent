@@ -3,6 +3,7 @@ package com.company.opsagent.controlplane.bootstrap;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -73,6 +74,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.Test;
@@ -213,13 +215,17 @@ class ControlledSqlDmlEndToEndTest {
     Harness harness = Harness.configured(CLOCK, CLOCK, DispatchMode.THROW_AFTER_WRITE);
     SqlDmlCommitRequest commit = harness.prepareCommit(insertSql(904), "unknown-904");
 
-    SqlWorkbenchException first = assertThrows(
-        SqlWorkbenchException.class, () -> harness.commit(commit));
-    SqlWorkbenchException duplicate = assertThrows(
-        SqlWorkbenchException.class, () -> harness.commit(commit));
+    SqlQueryExecutionResult first = harness.commit(commit);
+    SqlQueryExecutionResult duplicate = harness.commit(commit);
 
-    assertEquals("SQL_DML_RESULT_UNKNOWN", first.code());
-    assertEquals("SQL_DML_RESULT_UNKNOWN", duplicate.code());
+    assertEquals("UNKNOWN_REQUIRES_HANDOFF", first.status());
+    assertEquals("SQL_DML_RESULT_UNKNOWN", first.errorCode());
+    assertEquals(first, duplicate);
+    assertTrue(!first.workflowId().isBlank());
+    assertEquals(first.workflowId() + "-dml", first.executionRequestId());
+    assertNull(first.resultId());
+    assertNull(first.errorMessage());
+    assertNull(first.affectedRows());
     assertEquals(1, harness.workerClient.commitDispatchCount.get());
     assertEquals(1, harness.countRows("select count(*) from PUBLIC.ORDERS where ORDER_ID = 904"));
     assertEquals("UNKNOWN_REQUIRES_HANDOFF", harness.workflowStatus("unknown-904"));
@@ -246,6 +252,21 @@ class ControlledSqlDmlEndToEndTest {
     assertFalse(workerDefault.isDmlEnabled());
     assertTrue(workerDefault.getDmlCredentialAlias() == null
         || workerDefault.getDmlCredentialAlias().isBlank());
+
+    StandardEnvironment controlProfiles = environmentFor(
+        List.of(
+            new ClassPathResource("application-demo.yaml"),
+            new ClassPathResource("application.yaml")),
+        Map.of());
+    StandardEnvironment workerProfiles = environmentFor(
+        List.of(
+            workerConfiguration("application-demo.yaml"),
+            workerConfiguration("application.yaml")),
+        Map.of());
+    assertEquals("false", controlProfiles.getProperty(
+        "ops-agent.worker.transport-auth.enabled"));
+    assertEquals("false", workerProfiles.getProperty(
+        "ops-agent.worker.transport-auth.enabled"));
 
     Path workerDemoProfile = workerConfigurationPath("application-demo.yaml");
     assertTrue(Files.isRegularFile(workerDemoProfile));
@@ -413,6 +434,7 @@ class ControlledSqlDmlEndToEndTest {
           new Jt400DataSourceFactory(),
           h2Factory);
       ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
+      var consumedExecutionRequestIds = ConcurrentHashMap.<String>newKeySet();
       RestrictedSqlQueryExecutionWorker worker = new RestrictedSqlQueryExecutionWorker(
           new CalciteSqlReadOnlyGuard(),
           new CalciteSqlDmlGuard(),
@@ -421,6 +443,7 @@ class ControlledSqlDmlEndToEndTest {
           new JdbcSqlDmlImpactPreviewExecutor(registry, objectMapper),
           new WorkerSqlDmlExecutionPolicy(List.of(descriptor)),
           registry,
+          consumedExecutionRequestIds::add,
           signingClock);
       workerClient = new RecordingWorkerClient(worker, dispatchMode);
       verificationDataSource = h2Factory.create(descriptor);

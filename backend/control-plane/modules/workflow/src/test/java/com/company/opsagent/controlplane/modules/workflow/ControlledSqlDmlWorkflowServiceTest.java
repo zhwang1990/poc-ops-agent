@@ -1,6 +1,7 @@
 package com.company.opsagent.controlplane.modules.workflow;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -141,15 +142,11 @@ class ControlledSqlDmlWorkflowServiceTest {
   void leavesUnknownResultForHumanHandoffWhenWorkerTimesOutAndNeverRetries() {
     gateway.timeout = true;
 
-    ControlledSqlDmlWorkflowService.WorkflowException first = assertThrows(
-        ControlledSqlDmlWorkflowService.WorkflowException.class,
-        () -> service.execute(request(BINDING_HASH)));
-    ControlledSqlDmlWorkflowService.WorkflowException second = assertThrows(
-        ControlledSqlDmlWorkflowService.WorkflowException.class,
-        () -> service.execute(request(BINDING_HASH)));
+    SqlQueryExecutionResult first = service.execute(request(BINDING_HASH));
+    SqlQueryExecutionResult second = service.execute(request(BINDING_HASH));
 
-    assertEquals("SQL_DML_RESULT_UNKNOWN", first.code());
-    assertEquals("SQL_DML_RESULT_UNKNOWN", second.code());
+    assertHandoffResult(first, first.workflowId());
+    assertEquals(first, second);
     assertEquals(1, gateway.requests.size());
     assertEquals(
         ControlledSqlDmlWorkflow.Status.UNKNOWN_REQUIRES_HANDOFF,
@@ -158,14 +155,12 @@ class ControlledSqlDmlWorkflowServiceTest {
 
   @Test
   void convertsExpiredRunningWorkflowToHandoffBeforeReturningDuplicate() {
-    ControlledSqlDmlWorkflow workflow = createRunningWorkflow(
+    createRunningWorkflow(
         "workflow-expired", OffsetDateTime.now(CLOCK).minusSeconds(1));
 
-    ControlledSqlDmlWorkflowService.WorkflowException exception = assertThrows(
-        ControlledSqlDmlWorkflowService.WorkflowException.class,
-        () -> service.execute(request(BINDING_HASH)));
+    SqlQueryExecutionResult result = service.execute(request(BINDING_HASH));
 
-    assertEquals("SQL_DML_RESULT_UNKNOWN", exception.code());
+    assertHandoffResult(result, "workflow-expired");
     assertEquals(0, gateway.requests.size());
     assertEquals(ControlledSqlDmlWorkflow.Status.UNKNOWN_REQUIRES_HANDOFF, persisted().status());
     assertEquals(
@@ -175,18 +170,16 @@ class ControlledSqlDmlWorkflowServiceTest {
 
   @Test
   void reconcilesStaleRunningWorkflowAfterReceiptExpiryWithoutWorkerReplay() {
-    ControlledSqlDmlWorkflow workflow = createRunningWorkflow(
+    createRunningWorkflow(
         "workflow-expired", OffsetDateTime.now(CLOCK).minusSeconds(1));
     RecordingReceiptVerifier receiptVerifier = new RecordingReceiptVerifier();
     receiptVerifier.expired = true;
     ControlledSqlDmlWorkflowService recovered = new ControlledSqlDmlWorkflowService(
         store, gateway, receiptVerifier, CLOCK);
 
-    ControlledSqlDmlWorkflowService.WorkflowException exception = assertThrows(
-        ControlledSqlDmlWorkflowService.WorkflowException.class,
-        () -> recovered.execute(request(BINDING_HASH)));
+    SqlQueryExecutionResult result = recovered.execute(request(BINDING_HASH));
 
-    assertEquals("SQL_DML_RESULT_UNKNOWN", exception.code());
+    assertHandoffResult(result, "workflow-expired");
     assertEquals(ControlledSqlDmlWorkflow.Status.UNKNOWN_REQUIRES_HANDOFF, persisted().status());
     assertEquals(0, gateway.requests.size());
     assertEquals(1, receiptVerifier.authenticityAndBindingChecks);
@@ -214,17 +207,15 @@ class ControlledSqlDmlWorkflowServiceTest {
 
   @Test
   void movesCreatedWorkflowToAuditedHandoffWhenReceiptHasExpired() {
-    ControlledSqlDmlWorkflow workflow = createCreatedWorkflow("workflow-created");
+    createCreatedWorkflow("workflow-created");
     RecordingReceiptVerifier receiptVerifier = new RecordingReceiptVerifier();
     receiptVerifier.expired = true;
     ControlledSqlDmlWorkflowService recovered = new ControlledSqlDmlWorkflowService(
         store, gateway, receiptVerifier, CLOCK);
 
-    ControlledSqlDmlWorkflowService.WorkflowException exception = assertThrows(
-        ControlledSqlDmlWorkflowService.WorkflowException.class,
-        () -> recovered.execute(request(BINDING_HASH)));
+    SqlQueryExecutionResult result = recovered.execute(request(BINDING_HASH));
 
-    assertEquals("SQL_DML_RESULT_UNKNOWN", exception.code());
+    assertHandoffResult(result, "workflow-created");
     assertEquals(ControlledSqlDmlWorkflow.Status.UNKNOWN_REQUIRES_HANDOFF, persisted().status());
     assertEquals(0, gateway.requests.size());
     assertTrue(auditTrail.snapshot().stream().map(AuditEvent::action)
@@ -241,11 +232,9 @@ class ControlledSqlDmlWorkflowServiceTest {
     ControlledSqlDmlWorkflowService recovered = new ControlledSqlDmlWorkflowService(
         store, gateway, receiptVerifier, CLOCK);
 
-    ControlledSqlDmlWorkflowService.WorkflowException exception = assertThrows(
-        ControlledSqlDmlWorkflowService.WorkflowException.class,
-        () -> recovered.execute(request(BINDING_HASH)));
+    SqlQueryExecutionResult result = recovered.execute(request(BINDING_HASH));
 
-    assertEquals("SQL_DML_RESULT_UNKNOWN", exception.code());
+    assertHandoffResult(result, "workflow-created");
     assertEquals(ControlledSqlDmlWorkflow.Status.UNKNOWN_REQUIRES_HANDOFF, persisted().status());
     assertEquals(0, gateway.requests.size());
     assertTrue(auditTrail.snapshot().stream().map(AuditEvent::action)
@@ -315,6 +304,20 @@ class ControlledSqlDmlWorkflowServiceTest {
   }
 
   @Test
+  void persistsWorkerUnknownOutcomeAndReturnsSanitizedHandoffWithoutReplay() {
+    gateway.unknown = true;
+
+    SqlQueryExecutionResult first = service.execute(request(BINDING_HASH));
+    SqlQueryExecutionResult duplicate = service.execute(request(BINDING_HASH));
+
+    assertHandoffResult(first, first.workflowId());
+    assertEquals(first, duplicate);
+    assertEquals(ControlledSqlDmlWorkflow.Status.UNKNOWN_REQUIRES_HANDOFF, persisted().status());
+    assertEquals(1, gateway.requests.size());
+    assertEquals("SQL_DML_HANDOFF_REQUIRED", auditTrail.snapshot().getLast().action());
+  }
+
+  @Test
   void mapsWorkflowLookupInfrastructureFailureWithoutCallingWorker() {
     ControlledSqlDmlWorkflowService unavailable = serviceWithFailingLookup(
         new IllegalStateException("workflow database is unavailable"));
@@ -342,6 +345,16 @@ class ControlledSqlDmlWorkflowServiceTest {
 
   private ControlledSqlDmlWorkflow persisted() {
     return store.findByIdempotency("dml-key-1", "operator-1", "sit").block();
+  }
+
+  private void assertHandoffResult(SqlQueryExecutionResult result, String workflowId) {
+    assertEquals("UNKNOWN_REQUIRES_HANDOFF", result.status());
+    assertEquals(workflowId, result.workflowId());
+    assertEquals(workflowId + "-dml", result.executionRequestId());
+    assertEquals("SQL_DML_RESULT_UNKNOWN", result.errorCode());
+    assertNull(result.resultId());
+    assertNull(result.errorMessage());
+    assertNull(result.affectedRows());
   }
 
   private ControlledSqlDmlWorkflowService serviceWithFailingLookup(RuntimeException failure) {
@@ -484,6 +497,7 @@ class ControlledSqlDmlWorkflowServiceTest {
 
     private final List<SqlControlledDmlExecutionRequest> requests = new ArrayList<>();
     private boolean timeout;
+    private boolean unknown;
     private String rejectionCode;
 
     @Override
@@ -491,6 +505,17 @@ class ControlledSqlDmlWorkflowServiceTest {
       requests.add(request);
       if (timeout) {
         throw new IllegalStateException("worker response timed out");
+      }
+      if (unknown) {
+        return new SqlQueryExecutionResult(
+            "1.0",
+            request.executionRequestId(),
+            request.workflowId(),
+            "UNKNOWN_REQUIRES_HANDOFF",
+            "internal-result-id",
+            "SQL_DML_COMMIT_OUTCOME_UNKNOWN",
+            "internal JDBC commit detail",
+            99);
       }
       if (rejectionCode != null) {
         return new SqlQueryExecutionResult(

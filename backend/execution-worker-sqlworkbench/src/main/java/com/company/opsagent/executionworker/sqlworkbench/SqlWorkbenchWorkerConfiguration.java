@@ -13,7 +13,8 @@ import org.springframework.context.annotation.Configuration;
 @EnableConfigurationProperties({
     WorkerSqlEgressProperties.class,
     SqlWorkerTransportAuthProperties.class,
-    WorkerSqlCredentialProperties.class
+    WorkerSqlCredentialProperties.class,
+    WorkerSqlDmlReplayProperties.class
 })
 public class SqlWorkbenchWorkerConfiguration {
 
@@ -34,6 +35,26 @@ public class SqlWorkbenchWorkerConfiguration {
         properties.getConnections().stream()
             .map(WorkerSqlEgressProperties.Connection::toDescriptor)
             .toList());
+  }
+
+  /**
+   * 构建受控 DML 的持久化防重放边界；启用写能力但缺少目录时启动失败。
+   */
+  @Bean
+  SqlDmlExecutionReplayGuard sqlDmlExecutionReplayGuard(
+      WorkerSqlDmlReplayProperties replayProperties,
+      WorkerSqlEgressProperties egressProperties,
+      Clock workerClock) {
+    boolean dmlEnabled = egressProperties.getConnections().stream()
+        .anyMatch(WorkerSqlEgressProperties.Connection::isDmlEnabled);
+    if (!replayProperties.isConfigured()) {
+      if (dmlEnabled) {
+        throw new IllegalStateException(
+            "SQL DML replay directory is required when controlled DML is enabled");
+      }
+      return SqlDmlExecutionReplayGuard.unavailable();
+    }
+    return new FileSqlDmlExecutionReplayGuard(replayProperties.directoryPath(), workerClock);
   }
 
   /**
@@ -135,6 +156,7 @@ public class SqlWorkbenchWorkerConfiguration {
       SqlQueryExecutor sqlQueryExecutor,
       SqlDmlImpactPreviewExecutor sqlDmlImpactPreviewExecutor,
       WorkerSqlDmlExecutionPolicy workerSqlDmlExecutionPolicy,
+      SqlDmlExecutionReplayGuard sqlDmlExecutionReplayGuard,
       ConfiguredSqlDataSourceRegistry sqlDataSourceRegistry) {
     return new RestrictedSqlQueryExecutionWorker(
         new CalciteSqlReadOnlyGuard(),
@@ -143,6 +165,7 @@ public class SqlWorkbenchWorkerConfiguration {
         sqlDmlImpactPreviewExecutor,
         workerSqlDmlExecutionPolicy,
         sqlDataSourceRegistry,
+        sqlDmlExecutionReplayGuard,
         workerClock);
   }
 }

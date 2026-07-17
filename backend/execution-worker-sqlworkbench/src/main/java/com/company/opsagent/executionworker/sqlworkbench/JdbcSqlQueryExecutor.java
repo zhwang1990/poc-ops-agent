@@ -76,7 +76,6 @@ public class JdbcSqlQueryExecutor implements SqlQueryExecutor {
     }
 
     boolean autoCommitDisabled = false;
-    boolean committed = false;
     try {
       connection.setReadOnly(false);
       connection.setAutoCommit(false);
@@ -88,16 +87,21 @@ public class JdbcSqlQueryExecutor implements SqlQueryExecutor {
         bindParameters(statement, request.query().parameters());
         affectedRows = statement.executeUpdate();
       }
-      connection.commit();
-      committed = true;
+      try {
+        connection.commit();
+      } catch (SQLException | RuntimeException exception) {
+        throw new SqlDmlCommitOutcomeUnknownException(exception);
+      }
       return affectedRows;
+    } catch (SqlDmlCommitOutcomeUnknownException exception) {
+      throw exception;
     } catch (SQLException exception) {
-      if (autoCommitDisabled && !committed) {
+      if (autoCommitDisabled) {
         rollbackQuietly(connection);
       }
       throw new IllegalStateException("controlled JDBC DML failed", exception);
     } catch (RuntimeException exception) {
-      if (autoCommitDisabled && !committed) {
+      if (autoCommitDisabled) {
         rollbackQuietly(connection);
       }
       throw exception;

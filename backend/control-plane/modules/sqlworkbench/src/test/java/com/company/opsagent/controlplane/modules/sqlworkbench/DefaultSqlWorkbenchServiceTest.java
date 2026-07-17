@@ -1,6 +1,7 @@
 package com.company.opsagent.controlplane.modules.sqlworkbench;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -312,6 +313,36 @@ class DefaultSqlWorkbenchServiceTest {
         () -> service.commitControlledDml(commitRequest, operator(), policy(), trace()));
 
     assertEquals("SQL_DML_RESULT_UNKNOWN", exception.code());
+  }
+
+  @Test
+  void passesTypedUnknownHandoffThroughSqlWorkbenchBoundary() {
+    SqlQueryRequest request = request(
+        "ORDERS",
+        SqlQueryAction.COMMIT_DML,
+        "update ORDERS.ORDERS set status = 'READY' where order_id = 42");
+    dmlExecutor.result = new SqlQueryExecutionResult(
+        "1.0",
+        "workflow-handoff-dml",
+        "workflow-handoff",
+        "UNKNOWN_REQUIRES_HANDOFF",
+        null,
+        "SQL_DML_RESULT_UNKNOWN",
+        null,
+        null);
+
+    SqlQueryExecutionResult result = service.commitControlledDml(
+        commitRequest(request, List.of("CONTROLLED_DML_CONFIRMED")),
+        operator(),
+        policy(),
+        trace());
+
+    assertEquals("UNKNOWN_REQUIRES_HANDOFF", result.status());
+    assertEquals("workflow-handoff", result.workflowId());
+    assertEquals("SQL_DML_RESULT_UNKNOWN", result.errorCode());
+    assertNull(result.resultId());
+    assertNull(result.errorMessage());
+    assertNull(result.affectedRows());
   }
 
   @Test
@@ -855,6 +886,7 @@ class DefaultSqlWorkbenchServiceTest {
     private int executeCount;
     private ControlledSqlDmlWorkflowRequest lastRequest;
     private RuntimeException failure;
+    private SqlQueryExecutionResult result;
 
     @Override
     public SqlQueryExecutionResult apply(ControlledSqlDmlWorkflowRequest request) {
@@ -862,6 +894,9 @@ class DefaultSqlWorkbenchServiceTest {
       lastRequest = request;
       if (failure != null) {
         throw failure;
+      }
+      if (result != null) {
+        return result;
       }
       return new SqlQueryExecutionResult(
           "1.0",

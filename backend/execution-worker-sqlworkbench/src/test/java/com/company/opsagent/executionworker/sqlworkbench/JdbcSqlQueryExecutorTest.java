@@ -156,6 +156,32 @@ class JdbcSqlQueryExecutorTest {
     verify(connection, never()).rollback();
   }
 
+  @Test
+  void doesNotRollbackWhenCommitOutcomeIsUnknownAfterStatementExecution() throws Exception {
+    Connection connection = mock(Connection.class);
+    PreparedStatement statement = mock(PreparedStatement.class);
+    DataSource dataSource = mock(DataSource.class);
+    when(dataSource.getConnection()).thenReturn(connection);
+    when(connection.prepareStatement("update ORDERS set STATUS = ? where ORDER_ID = 1")).thenReturn(statement);
+    when(statement.executeUpdate()).thenReturn(1);
+    doThrow(new SQLException("commit acknowledgement was lost")).when(connection).commit();
+    JdbcSqlQueryExecutor executor = executor(dataSource);
+
+    IllegalStateException exception = assertThrows(
+        IllegalStateException.class,
+        () -> executor.executeDml(dmlRequest(
+            "PUBLIC",
+            List.of(new SqlTypedParameter(
+                "status",
+                "STRING",
+                new com.fasterxml.jackson.databind.node.TextNode("READY"))))));
+
+    assertEquals("controlled JDBC DML commit outcome is unknown", exception.getMessage());
+    verify(statement).executeUpdate();
+    verify(connection).commit();
+    verify(connection, never()).rollback();
+  }
+
   private SqlQueryExecutionRequest request() {
     return request(
         SqlQueryAction.RUN_READ_ONLY,

@@ -58,6 +58,13 @@ public final class ConfiguredSqlDataSourceRegistry
         request.commitRequest().query().targetEnvironment());
   }
 
+  @Override
+  public void assertCommitConfigured(SqlControlledDmlExecutionRequest request) {
+    validateWriteConfiguration(
+        request.commitRequest().query().connectionId(),
+        request.commitRequest().query().targetEnvironment());
+  }
+
   private DataSource createWriteDataSource(WorkerSqlConnectionDescriptor descriptor) {
     if (!descriptor.dmlEnabled()
         || isBlank(descriptor.dmlCredentialAlias())
@@ -114,13 +121,26 @@ public final class ConfiguredSqlDataSourceRegistry
 
   private void validateWriteCapability(String connectionId, String targetEnvironment) {
     WorkerSqlConnectionDescriptor descriptor =
-        egressPolicy.validateDmlConnection(connectionId, targetEnvironment);
+        validateWriteConfiguration(connectionId, targetEnvironment);
     DataSource writeDataSource = createWriteDataSource(descriptor);
     try (var connection = writeDataSource.getConnection()) {
       // 打开并关闭隔离的写数据源，以验证其配置的连接边界。
     } catch (SQLException | RuntimeException exception) {
       throw dmlDisabled();
     }
+  }
+
+  private WorkerSqlConnectionDescriptor validateWriteConfiguration(
+      String connectionId,
+      String targetEnvironment) {
+    WorkerSqlConnectionDescriptor descriptor =
+        egressPolicy.validateDmlConnection(connectionId, targetEnvironment);
+    if (!descriptor.dmlEnabled()
+        || isBlank(descriptor.dmlCredentialAlias())
+        || isBlank(descriptor.dmlUsername())) {
+      throw dmlDisabled();
+    }
+    return descriptor;
   }
 
   private char[] requiredWritePassword(String credentialAlias) {

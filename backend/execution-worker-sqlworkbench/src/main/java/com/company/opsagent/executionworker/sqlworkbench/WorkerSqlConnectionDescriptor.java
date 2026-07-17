@@ -105,6 +105,12 @@ public record WorkerSqlConnectionDescriptor(
     username = requiredText(username, "username");
     dmlCredentialAlias = optionalText(dmlCredentialAlias);
     dmlUsername = optionalText(dmlUsername);
+    if (sameIdentity(credentialAlias, dmlCredentialAlias)) {
+      throw new IllegalArgumentException("dmlCredentialAlias must differ from credentialAlias");
+    }
+    if (sameIdentity(username, dmlUsername)) {
+      throw new IllegalArgumentException("dmlUsername must differ from username");
+    }
   }
 
   public WorkerSqlEgressTarget target() {
@@ -120,5 +126,9 @@ public record WorkerSqlConnectionDescriptor(
 
   private static String optionalText(String value) {
     return value == null || value.isBlank() ? null : value.trim();
+  }
+
+  private static boolean sameIdentity(String readIdentity, String writeIdentity) {
+    return writeIdentity != null && readIdentity.equalsIgnoreCase(writeIdentity);
   }
 }

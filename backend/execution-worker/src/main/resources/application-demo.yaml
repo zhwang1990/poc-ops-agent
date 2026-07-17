@@ -1,5 +1,7 @@
 ops-agent:
   worker:
+    sql-dml-replay:
+      directory: ${OPS_AGENT_SQL_DML_REPLAY_DIRECTORY:}
     sql-egress:
       # This profile is limited to the sit H2 demo and Task 7 E2E path.
       # Default Worker configuration remains read-only.

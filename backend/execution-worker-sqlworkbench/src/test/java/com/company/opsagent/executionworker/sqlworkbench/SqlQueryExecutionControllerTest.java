@@ -32,6 +32,7 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
@@ -257,6 +258,7 @@ class SqlQueryExecutionControllerTest {
             "1.0", 2L, List.of(), List.of(), List.of())),
         new WorkerSqlDmlExecutionPolicy(List.of(dmlDescriptor())),
         allowingWriteCapabilityValidator(),
+        consumingReplayGuard(),
         CLOCK);
     return controller(worker, store);
   }
@@ -277,6 +279,7 @@ class SqlQueryExecutionControllerTest {
             "1.0", 2L, List.of(), List.of(), List.of())),
         new WorkerSqlDmlExecutionPolicy(List.of(dmlDescriptor())),
         allowingWriteCapabilityValidator(),
+        consumingReplayGuard(),
         CLOCK);
     return new SqlQueryExecutionController(worker, store, authenticator, probeWorker(), metadataReader());
   }
@@ -345,6 +348,11 @@ class SqlQueryExecutionControllerTest {
       public void assertCommitAllowed(SqlControlledDmlExecutionRequest request) {
       }
     };
+  }
+
+  private SqlDmlExecutionReplayGuard consumingReplayGuard() {
+    var consumedRequestIds = ConcurrentHashMap.<String>newKeySet();
+    return consumedRequestIds::add;
   }
 
   private SqlDmlWriteCapabilityValidator denyingWriteCapabilityValidator(

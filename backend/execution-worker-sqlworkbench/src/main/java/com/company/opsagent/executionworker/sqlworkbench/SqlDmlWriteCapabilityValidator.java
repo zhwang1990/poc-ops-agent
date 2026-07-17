@@ -10,12 +10,21 @@ public interface SqlDmlWriteCapabilityValidator {
 
   void assertPreflightAllowed(SqlDmlPreflightExecutionRequest request);
 
+  default void assertCommitConfigured(SqlControlledDmlExecutionRequest request) {
+    // Implementations may reject locally disabled write capability without database access.
+  }
+
   void assertCommitAllowed(SqlControlledDmlExecutionRequest request);
 
   static SqlDmlWriteCapabilityValidator rejecting() {
     return new SqlDmlWriteCapabilityValidator() {
       @Override
       public void assertPreflightAllowed(SqlDmlPreflightExecutionRequest request) {
+        reject();
+      }
+
+      @Override
+      public void assertCommitConfigured(SqlControlledDmlExecutionRequest request) {
         reject();
       }
 

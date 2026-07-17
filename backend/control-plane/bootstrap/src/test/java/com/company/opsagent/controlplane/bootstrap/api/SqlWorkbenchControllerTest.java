@@ -2,6 +2,7 @@ package com.company.opsagent.controlplane.bootstrap.api;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 import com.company.opsagent.contracts.sqlworkbench.SqlConnectionCreateRequest;
 import com.company.opsagent.contracts.sqlworkbench.SqlConnectionProbeResult;
@@ -226,6 +227,52 @@ class SqlWorkbenchControllerTest {
   }
 
   @Test
+  void returnsTypedUnknownHandoffWithoutInternalResultDetails() throws Exception {
+    service.commitResult = new SqlQueryExecutionResult(
+        "1.0",
+        "workflow-handoff-dml",
+        "workflow-handoff",
+        "UNKNOWN_REQUIRES_HANDOFF",
+        null,
+        "SQL_DML_RESULT_UNKNOWN",
+        null,
+        null);
+    var request = objectMapper.readTree("""
+        {
+          "contractVersion": "1.0",
+          "query": {
+            "contractVersion": "1.0",
+            "connectionId": "as400-dev",
+            "targetEnvironment": "dev",
+            "schema": "ORDERS",
+            "action": "COMMIT_DML",
+            "sql": "update ORDERS.ORDERS set status = 'READY' where order_id = 42",
+            "parameters": [],
+            "limits": {"maxRows": 500, "maxBytes": 5000000, "timeoutSeconds": 30},
+            "idempotencyKey": "commit-key-unknown"
+          },
+          "confirmation": {
+            "contractVersion": "1.0",
+            "sqlHash": "sha256:test",
+            "confirmedRisks": ["CONTROLLED_DML_CONFIRMED"],
+            "confirmationCode": "CONFIRM_SQL_DML_RISK"
+          }
+        }
+        """);
+
+    StepVerifier.create(controller.commit(request, exchange()))
+        .assertNext(response -> {
+          assertEquals("UNKNOWN_REQUIRES_HANDOFF", response.status());
+          assertEquals("workflow-handoff", response.workflowId());
+          assertEquals("SQL_DML_RESULT_UNKNOWN", response.errorCode());
+          assertNull(response.resultId());
+          assertNull(response.errorMessage());
+          assertNull(response.affectedRows());
+        })
+        .verifyComplete();
+  }
+
+  @Test
   void parsesAndForwardsVersionedDmlPreflightReceipt() throws Exception {
     var request = objectMapper.readTree("""
         {
@@ -370,6 +417,7 @@ class SqlWorkbenchControllerTest {
     private OperatorContext lastPreflightOperator;
     private PolicyDecisionReference lastPreflightPolicy;
     private SqlDmlCommitRequest lastCommitRequest;
+    private SqlQueryExecutionResult commitResult;
 
     @Override
     public List<SqlConnectionSummary> listConnections() {
@@ -478,6 +526,9 @@ class SqlWorkbenchControllerTest {
         TraceContext trace) {
       commitCount.incrementAndGet();
       lastCommitRequest = request;
+      if (commitResult != null) {
+        return commitResult;
+      }
       return new SqlQueryExecutionResult(
           "1.0",
           "execution-1",

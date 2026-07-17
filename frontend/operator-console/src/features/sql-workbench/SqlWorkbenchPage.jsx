@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   ChevronLeft,
@@ -19,7 +19,6 @@ import {
   commitControlledSqlDml,
   preflightControlledSqlDml,
   runReadOnlySqlQuery,
-  validateSqlQuery,
 } from "../../api/sql-api.js";
 import { DataTable } from "../../components/data-display/DataTable.jsx";
 import { StatusPill } from "../../components/data-display/StatusPill.jsx";
@@ -93,6 +92,10 @@ let sqlResultTabCounter = 0;
  *   resultTabId: string,
  *   sessionId: string,
  * }} PendingDmlRiskConfirmation
+ * @typedef {{
+ *   context: string,
+ *   idempotencyKey: string,
+ * }} DmlSubmissionIdentity
  * @typedef {{
  *   assistant: SqlAssistantResponse | null,
  *   assistantErrorMessage: string | null,
@@ -194,6 +197,9 @@ export function SqlWorkbenchPage() {
     /** @type {PendingDmlRiskConfirmation | null} */ (null),
   );
   const [isDmlRiskCommitPending, setIsDmlRiskCommitPending] = useState(false);
+  const dmlSubmissionIdentities = useRef(
+    /** @type {Map<string, DmlSubmissionIdentity>} */ (new Map()),
+  );
   const { isWorkspaceExpanded } = useWorkspaceLayout();
   const [editorResultSplit, setEditorResultSplit] = useState(DEFAULT_EDITOR_RESULT_SPLIT);
 
@@ -237,6 +243,7 @@ export function SqlWorkbenchPage() {
     activeConnection?.capabilities.includes("PREFLIGHT_DML") === true &&
     activeConnection?.capabilities.includes("COMMIT_DML") === true &&
     activeSession.transactionMode === "manual" &&
+    currentExecution?.status !== "UNKNOWN_REQUIRES_HANDOFF" &&
     isLikelyControlledDmlSql(activeSession.sql.trim());
   const canUseAssistant =
     canValidate &&
@@ -913,12 +920,19 @@ export function SqlWorkbenchPage() {
     const sessionId = activeSession.id;
     const schema = activeSchema;
     const connection = activeConnection;
+    const idempotencyKey = dmlIdempotencyKeyFor(
+      sessionId,
+      connection,
+      schema,
+      sql,
+    );
     const preflightRequest = buildSqlQueryRequest(
       connection,
       schema,
       "PREFLIGHT_DML",
       sql,
       "PREFLIGHT_DML",
+      idempotencyKey,
     );
     const request = /** @type {SqlDmlCommitQuery} */ ({
       ...preflightRequest,
@@ -937,9 +951,11 @@ export function SqlWorkbenchPage() {
         assistantErrorMessage: null,
       });
       if (report.validationLevel === "REJECTED") {
+        clearDmlSubmissionIdentity(sessionId, idempotencyKey);
         throw new Error(buildDmlValidationDiagnosticMessage(report));
       }
       if (!preflight.impactPreview) {
+        clearDmlSubmissionIdentity(sessionId, idempotencyKey);
         throw new Error("服务端 DML 预检未返回影响预览，未提交执行请求。");
       }
       if (report.risks.length > 0) {
@@ -957,6 +973,7 @@ export function SqlWorkbenchPage() {
         confirmation: buildDmlRiskConfirmation(report),
         receipt: preflight.receipt,
       });
+      completeDmlSubmissionIdentity(sessionId, idempotencyKey, execution);
       updateResultTab(sessionId, resultTab.id, {
         execution,
         errorMessage: execution.errorMessage ?? null,
@@ -998,6 +1015,7 @@ export function SqlWorkbenchPage() {
         confirmation: buildDmlRiskConfirmation(preflight.validation),
         receipt: preflight.receipt,
       });
+      completeDmlSubmissionIdentity(sessionId, request.idempotencyKey, execution);
       updateResultTab(sessionId, resultTabId, {
         execution,
         errorMessage: execution.errorMessage ?? null,
@@ -1043,7 +1061,50 @@ export function SqlWorkbenchPage() {
         isPending: false,
       },
     );
+    clearDmlSubmissionIdentity(
+      pendingDmlRiskConfirmation.sessionId,
+      pendingDmlRiskConfirmation.request.idempotencyKey,
+    );
     setPendingDmlRiskConfirmation(null);
+  }
+
+  /**
+   * @param {string} sessionId
+   * @param {SqlConnectionSummary} connection
+   * @param {string} schema
+   * @param {string} sql
+   */
+  function dmlIdempotencyKeyFor(sessionId, connection, schema, sql) {
+    const context = dmlSubmissionContext(connection, schema, sql);
+    const existing = dmlSubmissionIdentities.current.get(sessionId);
+    if (existing?.context === context) {
+      return existing.idempotencyKey;
+    }
+    const idempotencyKey = createSqlIdempotencyKey("COMMIT_DML");
+    dmlSubmissionIdentities.current.set(sessionId, { context, idempotencyKey });
+    return idempotencyKey;
+  }
+
+  /**
+   * @param {string} sessionId
+   * @param {string} idempotencyKey
+   * @param {SqlQueryRunResult} execution
+   */
+  function completeDmlSubmissionIdentity(sessionId, idempotencyKey, execution) {
+    if (execution.status !== "UNKNOWN_REQUIRES_HANDOFF") {
+      clearDmlSubmissionIdentity(sessionId, idempotencyKey);
+    }
+  }
+
+  /**
+   * @param {string} sessionId
+   * @param {string} idempotencyKey
+   */
+  function clearDmlSubmissionIdentity(sessionId, idempotencyKey) {
+    const existing = dmlSubmissionIdentities.current.get(sessionId);
+    if (existing?.idempotencyKey === idempotencyKey) {
+      dmlSubmissionIdentities.current.delete(sessionId);
+    }
   }
 
   /**
@@ -3010,8 +3071,16 @@ function buildLimits(connection) {
  * @param {"VALIDATE" | "PREFLIGHT_DML" | "RUN_READ_ONLY" | "COMMIT_DML"} action
  * @param {string} sql
  * @param {string} idempotencyAction
+ * @param {string} [idempotencyKey]
  */
-function buildSqlQueryRequest(connection, schema, action, sql, idempotencyAction) {
+function buildSqlQueryRequest(
+  connection,
+  schema,
+  action,
+  sql,
+  idempotencyAction,
+  idempotencyKey = createSqlIdempotencyKey(idempotencyAction),
+) {
   return {
     contractVersion: "1.0",
     connectionId: connection.connectionId,
@@ -3021,8 +3090,27 @@ function buildSqlQueryRequest(connection, schema, action, sql, idempotencyAction
     sql,
     parameters: [],
     limits: buildLimits(connection),
-    idempotencyKey: createSqlIdempotencyKey(idempotencyAction),
+    idempotencyKey,
   };
+}
+
+/**
+ * @param {SqlConnectionSummary} connection
+ * @param {string} schema
+ * @param {string} sql
+ */
+function dmlSubmissionContext(connection, schema, sql) {
+  const limits = buildLimits(connection);
+  return JSON.stringify([
+    connection.connectionId,
+    connection.targetEnvironment,
+    schema,
+    sql,
+    [],
+    limits.maxRows,
+    limits.maxBytes,
+    limits.timeoutSeconds,
+  ]);
 }
 
 /**

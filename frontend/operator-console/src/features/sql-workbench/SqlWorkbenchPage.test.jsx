@@ -73,6 +73,18 @@ async function clickRunSqlButton(user, index = 0) {
   await user.click(runButtons[index]);
 }
 
+/**
+ * @param {ReturnType<typeof userEvent.setup>} user
+ */
+async function enableManualDml(user) {
+  const transactionControls = screen.getByRole("group", { name: "SQL 事务控制" });
+  const modeButton = within(transactionControls).getByRole("button", { name: "事务模式" });
+  if (modeButton.getAttribute("aria-pressed") !== "true") {
+    await user.click(modeButton);
+  }
+  return within(transactionControls).getByRole("button", { name: "提交当前受控 DML" });
+}
+
 function expectDirectSqlToolbarActionsHidden() {
   expect(screen.queryByRole("button", { name: "校验" })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "执行 SELECT" })).not.toBeInTheDocument();
@@ -507,6 +519,134 @@ describe("SqlWorkbenchPage", () => {
     });
   });
 
+  test("reuses one DML idempotency key after a lost commit response", async () => {
+    const user = userEvent.setup();
+    /** @type {Array<{idempotencyKey: string}>} */
+    const preflightRequests = [];
+    /** @type {Array<{query: {idempotencyKey: string}}>} */
+    const commitRequests = [];
+    server.use(
+      http.get("/internal/sql-workbench/connections", () =>
+        HttpResponse.json(sqlConnections),
+      ),
+      http.post("/internal/sql-workbench/queries/preflight", async ({ request }) => {
+        preflightRequests.push(
+          /** @type {{idempotencyKey: string}} */ (await request.json()),
+        );
+        return HttpResponse.json(preflightWithoutRisk());
+      }),
+      http.post("/internal/sql-workbench/queries/commit", async ({ request }) => {
+        commitRequests.push(
+          /** @type {{query: {idempotencyKey: string}}} */ (await request.json()),
+        );
+        if (commitRequests.length === 1) {
+          return HttpResponse.error();
+        }
+        return HttpResponse.json(successfulDmlExecution("retry"));
+      }),
+    );
+
+    renderAt("/sql");
+
+    await screen.findByText("已连接 · development");
+    await replaceSqlText(
+      user,
+      "update ORDERS.ORDERS set status = 'READY' where order_id = 41",
+    );
+    await user.click(await enableManualDml(user));
+    expect(await screen.findByText("Network request failed")).toBeInTheDocument();
+
+    await user.click(await enableManualDml(user));
+    await waitFor(() => expect(commitRequests).toHaveLength(2));
+
+    expect(preflightRequests).toHaveLength(2);
+    expect(preflightRequests[1].idempotencyKey).toBe(preflightRequests[0].idempotencyKey);
+    expect(commitRequests[0].query.idempotencyKey).toBe(preflightRequests[0].idempotencyKey);
+    expect(commitRequests[1].query.idempotencyKey).toBe(preflightRequests[0].idempotencyKey);
+  });
+
+  test("rotates the DML idempotency key when submission SQL changes", async () => {
+    const user = userEvent.setup();
+    /** @type {Array<{query: {idempotencyKey: string}}>} */
+    const commitRequests = [];
+    server.use(
+      http.get("/internal/sql-workbench/connections", () =>
+        HttpResponse.json(sqlConnections),
+      ),
+      http.post("/internal/sql-workbench/queries/preflight", () =>
+        HttpResponse.json(preflightWithoutRisk()),
+      ),
+      http.post("/internal/sql-workbench/queries/commit", async ({ request }) => {
+        commitRequests.push(
+          /** @type {{query: {idempotencyKey: string}}} */ (await request.json()),
+        );
+        if (commitRequests.length === 1) {
+          return HttpResponse.error();
+        }
+        return HttpResponse.json(successfulDmlExecution("changed-sql"));
+      }),
+    );
+
+    renderAt("/sql");
+
+    await screen.findByText("已连接 · development");
+    await replaceSqlText(
+      user,
+      "update ORDERS.ORDERS set status = 'READY' where order_id = 42",
+    );
+    await user.click(await enableManualDml(user));
+    expect(await screen.findByText("Network request failed")).toBeInTheDocument();
+
+    await replaceSqlText(
+      user,
+      "update ORDERS.ORDERS set status = 'READY' where order_id = 43",
+    );
+    await user.click(await enableManualDml(user));
+    await waitFor(() => expect(commitRequests).toHaveLength(2));
+
+    expect(commitRequests[1].query.idempotencyKey).not.toBe(
+      commitRequests[0].query.idempotencyKey,
+    );
+  });
+
+  test("rotates the DML idempotency key after terminal completion", async () => {
+    const user = userEvent.setup();
+    /** @type {Array<{query: {idempotencyKey: string}}>} */
+    const commitRequests = [];
+    server.use(
+      http.get("/internal/sql-workbench/connections", () =>
+        HttpResponse.json(sqlConnections),
+      ),
+      http.post("/internal/sql-workbench/queries/preflight", () =>
+        HttpResponse.json(preflightWithoutRisk()),
+      ),
+      http.post("/internal/sql-workbench/queries/commit", async ({ request }) => {
+        commitRequests.push(
+          /** @type {{query: {idempotencyKey: string}}} */ (await request.json()),
+        );
+        return HttpResponse.json(successfulDmlExecution(String(commitRequests.length)));
+      }),
+    );
+
+    renderAt("/sql");
+
+    await screen.findByText("已连接 · development");
+    await replaceSqlText(
+      user,
+      "update ORDERS.ORDERS set status = 'READY' where order_id = 44",
+    );
+    await user.click(await enableManualDml(user));
+    await waitFor(() => expect(commitRequests).toHaveLength(1));
+    expect(await screen.findByText("DML 提交完成，影响 1 行。")).toBeInTheDocument();
+
+    await user.click(await enableManualDml(user));
+    await waitFor(() => expect(commitRequests).toHaveLength(2));
+
+    expect(commitRequests[1].query.idempotencyKey).not.toBe(
+      commitRequests[0].query.idempotencyKey,
+    );
+  });
+
   test("shows a manual handoff for an unknown DML result without result rows", async () => {
     const user = userEvent.setup();
     server.use(
@@ -549,6 +689,11 @@ describe("SqlWorkbenchPage", () => {
     expect(screen.queryByText("execution-dml-unknown")).not.toBeInTheDocument();
     expect(screen.queryByText("resultId")).not.toBeInTheDocument();
     expect(screen.queryByRole("table", { name: "SQL SELECT 查询结果" })).not.toBeInTheDocument();
+    expect(
+      within(screen.getByRole("group", { name: "SQL 事务控制" })).getByRole("button", {
+        name: "提交当前受控 DML",
+      }),
+    ).toBeDisabled();
   });
 
   test("prioritizes unknown DML handoff after the session mode changes during a pending commit", async () => {
@@ -1768,6 +1913,22 @@ function preflightWithoutRisk() {
       ...preflightWithRisk().impactPreview,
       affectedRows: 1,
     },
+  };
+}
+
+/**
+ * @param {string} suffix
+ */
+function successfulDmlExecution(suffix) {
+  return {
+    contractVersion: "1.0",
+    executionRequestId: `execution-dml-${suffix}`,
+    workflowId: `workflow-dml-${suffix}`,
+    status: "SUCCEEDED",
+    resultId: null,
+    errorCode: null,
+    errorMessage: null,
+    affectedRows: 1,
   };
 }
 
