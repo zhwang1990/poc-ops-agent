@@ -41,8 +41,18 @@ findstr /I /C:"spring-boot.run.profiles=demo" "%START_SCRIPT%" >nul || (
   exit /b 1
 )
 
-findstr /I /C:"Admin#2026Demo" "%START_SCRIPT%" >nul || (
-  echo start-demo.cmd must show the fixed demo password
+findstr /I /C:"OPS_AGENT_DEMO_ADMIN_PASSWORD" "%START_SCRIPT%" >nul || (
+  echo start-demo.cmd must require the injected demo admin password
+  exit /b 1
+)
+
+findstr /I /C:"OPS_AGENT_SQL_DML_RECEIPT_HMAC_SECRET" "%START_SCRIPT%" >nul || (
+  echo start-demo.cmd must require the DML receipt signing secret
+  exit /b 1
+)
+
+findstr /I /C:"Starting Worker on 127.0.0.1:8091 with demo profile" "%START_SCRIPT%" >nul || (
+  echo start-demo.cmd must enable the demo profile for the Worker
   exit /b 1
 )
 
@@ -138,6 +148,21 @@ findstr /I /C:"java %%OPS_AGENT_JAVA_OPTS%% -jar" "%START_BACKEND_JARS_SCRIPT%" 
 
 findstr /I /C:"--spring.profiles.active=demo" "%START_BACKEND_JARS_SCRIPT%" >nul || (
   echo start-backend-jars.cmd must enable the demo profile for control plane
+  exit /b 1
+)
+
+findstr /I /C:"Starting Worker on 127.0.0.1:8091 with demo profile" "%START_BACKEND_JARS_SCRIPT%" >nul || (
+  echo start-backend-jars.cmd must enable the demo profile for the Worker
+  exit /b 1
+)
+
+findstr /I /C:"OPS_AGENT_DEMO_ADMIN_PASSWORD" "%START_BACKEND_JARS_SCRIPT%" >nul || (
+  echo start-backend-jars.cmd must require the injected demo admin password
+  exit /b 1
+)
+
+findstr /I /C:"OPS_AGENT_SQL_DML_RECEIPT_HMAC_SECRET" "%START_BACKEND_JARS_SCRIPT%" >nul || (
+  echo start-backend-jars.cmd must require the DML receipt signing secret
   exit /b 1
 )
 

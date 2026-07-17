@@ -25,9 +25,7 @@ ops-agent:
           port: 9092
           credential-alias: h2-local-readonly
           enabled: true
-          dml-enabled: true
-          dml-credential-alias: h2-local-dml-writer
-          dml-username: H2_LOCAL_DML_WRITER
+          dml-enabled: false
     # Configure only through deployment secrets. Empty config fails closed.
     sql-credentials: {}
     http-egress:

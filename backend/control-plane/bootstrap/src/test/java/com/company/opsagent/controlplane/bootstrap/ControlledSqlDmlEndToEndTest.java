@@ -1,6 +1,7 @@
 package com.company.opsagent.controlplane.bootstrap;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -57,6 +58,7 @@ import com.company.opsagent.executionworker.sqlworkbench.WorkerSqlEgressProperti
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.r2dbc.spi.ConnectionFactories;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.SecureRandom;
 import java.time.Clock;
@@ -224,8 +226,8 @@ class ControlledSqlDmlEndToEndTest {
   }
 
   @Test
-  void demoConfigurationIsNarrowAndDefaultControlPlaneRemainsDisabled() throws Exception {
-    ConfiguredProperties configured = configuredProperties();
+  void baseConfigurationsKeepDmlDisabledAndDemoProfilesActivateOnlyTheSitH2Slice()
+      throws Exception {
     ControlledSqlDmlProperties defaults = bind(
         List.of(new ClassPathResource("application.yaml")),
         Map.of(),
@@ -233,6 +235,22 @@ class ControlledSqlDmlEndToEndTest {
         ControlledSqlDmlProperties.class);
 
     assertEquals(Set.of(), defaults.getEnabledEnvironments());
+    assertTrue(defaults.getRules().isEmpty());
+
+    WorkerSqlEgressProperties workerDefaults = bind(
+        List.of(workerConfiguration("application.yaml")),
+        Map.of(),
+        "ops-agent.worker.sql-egress",
+        WorkerSqlEgressProperties.class);
+    WorkerSqlEgressProperties.Connection workerDefault = workerDefaults.getConnections().getFirst();
+    assertFalse(workerDefault.isDmlEnabled());
+    assertTrue(workerDefault.getDmlCredentialAlias() == null
+        || workerDefault.getDmlCredentialAlias().isBlank());
+
+    Path workerDemoProfile = workerConfigurationPath("application-demo.yaml");
+    assertTrue(Files.isRegularFile(workerDemoProfile));
+
+    ConfiguredProperties configured = configuredProperties();
     assertEquals(Set.of("sit"), configured.control().getEnabledEnvironments());
     assertEquals(3, configured.control().getRules().size());
     assertEquals(1, configured.worker().getConnections().size());
@@ -282,8 +300,9 @@ class ControlledSqlDmlEndToEndTest {
         "ops-agent.controlled-sql-dml.preflight-receipt",
         SqlDmlPreflightReceiptProperties.class);
     WorkerSqlEgressProperties worker = bind(
-        List.of(new FileSystemResource(Path.of(
-            "..", "..", "execution-worker", "src", "main", "resources", "application.yaml"))),
+        List.of(
+            workerConfiguration("application-demo.yaml"),
+            workerConfiguration("application.yaml")),
         Map.of(),
         "ops-agent.worker.sql-egress",
         WorkerSqlEgressProperties.class);
@@ -309,6 +328,14 @@ class ControlledSqlDmlEndToEndTest {
     }
     return Binder.get(environment).bind(prefix, Bindable.of(type))
         .orElseThrow(() -> new IllegalStateException(prefix + " is not configured"));
+  }
+
+  private static FileSystemResource workerConfiguration(String fileName) {
+    return new FileSystemResource(workerConfigurationPath(fileName));
+  }
+
+  private static Path workerConfigurationPath(String fileName) {
+    return Path.of("..", "..", "execution-worker", "src", "main", "resources", fileName);
   }
 
   private static String runtimeKeyMaterial() {

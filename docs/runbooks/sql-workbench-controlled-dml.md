@@ -12,8 +12,9 @@
 
 - 控制面使用数据库审计主存储，即 `ops-agent.audit.storage-mode=database`，且审计迁移已完成。
 - 控制面配置显式回执密钥标识 `task7-sql-dml-receipt-v1`。HMAC 密钥只能由部署密钥源注入 `OPS_AGENT_SQL_DML_RECEIPT_HMAC_SECRET`，不得写入 YAML、文档、日志、测试数据或制品。
+- 控制面 `demo` profile 的管理员种子口令必须由 `OPS_AGENT_DEMO_ADMIN_PASSWORD` 注入，且没有默认值。它必须是一次性生成的受控演示口令，不得写入 YAML、脚本、文档、测试数据或制品。
 - 预检和提交使用 v1.1 服务端签发回执。控制面未获得签名密钥时必须失败关闭，并返回稳定的回执不可用错误；客户端自造或旧版回执不得进入 Worker。
-- Worker 本地 KeyStore 已创建独立写凭据别名 `h2-local-dml-writer`，并与只读别名 `h2-local-readonly` 分离。真实环境的 KeyStore 解锁材料只能通过已批准的部署密钥注入方式提供。
+- Worker 基础 `application.yaml` 的 DML 必须关闭。只有 `demo` profile 的 `h2-local-test` 连接使用独立写凭据别名 `h2-local-dml-writer`，并与只读别名 `h2-local-readonly` 分离；真实环境的 KeyStore 解锁材料只能通过已批准的部署密钥注入方式提供。
 - 服务端策略、允许表、允许列、谓词、影响预览和确认规则已经过 M02、M05、M07 安全评审。
 - 不存在尚未完成人工核对的 `UNKNOWN_REQUIRES_HANDOFF` 工作流。
 
@@ -21,10 +22,10 @@
 
 1. 记录当前控制面和 Worker 配置版本，确认数据库审计可写且可回读。
 2. 使用仓库批准的 SQL 凭据管理工具，在 Worker 本地 KeyStore 中写入专用写凭据别名 `h2-local-dml-writer`。不得在命令历史、配置文件或工单中记录凭据明文。
-3. 通过部署密钥源向控制面进程注入 `OPS_AGENT_SQL_DML_RECEIPT_HMAC_SECRET`，并确认配置的回执 key ID 为 `task7-sql-dml-receipt-v1`。
+3. 通过部署密钥源向控制面进程注入 `OPS_AGENT_SQL_DML_RECEIPT_HMAC_SECRET` 和一次性 `OPS_AGENT_DEMO_ADMIN_PASSWORD`，并确认配置的回执 key ID 为 `task7-sql-dml-receipt-v1`。
 4. 在控制面配置中保持数据库审计，且只将 `sit` 加入 `ops-agent.controlled-sql-dml.enabled-environments`；逐条配置允许的表、语句类型、变更列、谓词列和谓词操作符。
-5. 在 Worker 的 `h2-local-test` 数据源上设置 `dml-enabled: true`、`dml-credential-alias: h2-local-dml-writer` 和对应的最小权限数据库用户名。其他数据源保持默认关闭。
-6. 先启动 Worker，再启动控制面。任何签名、审计、策略、凭据或数据源检查失败时停止启用，不得临时绕过门禁。
+5. 仅在 `sit` H2 演示和 E2E 路径以 `demo` profile 启动 Worker；该 profile 才包含 `h2-local-test` 的 `dml-enabled: true`、`dml-credential-alias: h2-local-dml-writer` 和对应最小权限数据库用户名。不得在 `dev`、`uat` 或生产启用该 profile。
+6. 先以 `demo` profile 启动 Worker，再以 `demo` profile 启动控制面。任何签名、审计、策略、凭据或数据源检查失败时停止启用，不得临时绕过门禁。
 
 ## 4. 验证步骤
 

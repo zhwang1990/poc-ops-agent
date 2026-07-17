@@ -19,6 +19,7 @@ Worker 和控制面使用固定端口约束：Worker 只能使用 `8091`，控�
 - Java 21，并确保 `java.exe` 在 `PATH` 中。
 - Node.js 20+，并确保 `npm.cmd` 在 `PATH` 中。
 - Windows 命令处理器 `cmd.exe`。
+- 通过批准的部署密钥源向启动进程注入一次性 `OPS_AGENT_DEMO_ADMIN_PASSWORD` 和 `OPS_AGENT_SQL_DML_RECEIPT_HMAC_SECRET`；启动器不提供默认口令或签名密钥。
 
 脚本不调用 PowerShell、Docker、WSL 或 Kubernetes。
 
@@ -43,6 +44,8 @@ tools\demo\start-demo.cmd "C:\path\to\jdk-21\bin"
 ```text
 http://127.0.0.1:5173
 ```
+
+Worker 和控制面都会以 `demo` profile 启动。该 profile 只用于 `sit` H2 演示，Worker 的基础配置始终关闭 DML；不要在 `dev`、`uat` 或生产环境激活该 profile。
 
 如果前端已经内嵌进控制面 JAR，且后端两个 JAR 已经单独拷贝出来，可以把脚本复制到这两个 JAR 所在目录后双击运行：
 
@@ -81,10 +84,10 @@ http://127.0.0.1:8080
 
 ```text
 用户名：admin
-密码：Admin#2026Demo
+密码：由启动进程注入的 OPS_AGENT_DEMO_ADMIN_PASSWORD
 ```
 
-该账号只在 `demo` profile 下自动预置，是公开 demo 凭据。不要把它用于生产、测试长期环境或真实系统接入。
+该账号只在 `demo` profile 下自动预置。口令必须是一次性受控演示值；不要把它用于生产、测试长期环境或真实系统接入。
 
 ## 4. 停止
 
@@ -173,7 +176,7 @@ tools\demo\stop-demo.cmd
 检查：
 
 - `control-plane.log` 是否显示启动成功。
-- 是否使用了 `admin / Admin#2026Demo`。
+- 启动进程是否已注入 `OPS_AGENT_DEMO_ADMIN_PASSWORD`。
 - 是否以 `demo` profile 启动。
 
 ### SQL 查询没有结果
@@ -194,7 +197,7 @@ tools\demo\stop-demo.cmd
 ## 8. 安全提醒
 
 - 本启动器不是生产部署方案。
-- 不保存真实数据库密码、模型 API Key 或生产连接串。
+- 不保存管理员口令、真实数据库密码、模型 API Key 或生产连接串。
 - 生产 SQL 连接只能用于查询，不开放生产写执行。
 - 不开放任意脚本执行。
 - 前端仍只调用控制面，不直接调用 Worker 或 H2。

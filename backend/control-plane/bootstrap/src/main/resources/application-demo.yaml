@@ -63,7 +63,7 @@ ops-agent:
     identity-seed:
       enabled: true
       username: admin
-      password: "Admin#2026Demo"
+      password: ${OPS_AGENT_DEMO_ADMIN_PASSWORD}
       roles:
         - ROLE_ops-admin
         - ROLE_ops-reader

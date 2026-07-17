@@ -44,6 +44,18 @@ if defined DEMO_JDK21_BIN (
 )
 call :requireCommand npm.cmd "Node.js 20+ and npm are required. Install Node.js and make sure npm.cmd is on PATH." || goto :fail
 
+if not defined OPS_AGENT_DEMO_ADMIN_PASSWORD (
+  echo Missing required OPS_AGENT_DEMO_ADMIN_PASSWORD secure environment injection.
+  echo Provide a one-time demo administrator password through the current process environment, then rerun this launcher.
+  goto :fail
+)
+
+if not defined OPS_AGENT_SQL_DML_RECEIPT_HMAC_SECRET (
+  echo Missing required OPS_AGENT_SQL_DML_RECEIPT_HMAC_SECRET secure environment injection.
+  echo Provide the DML receipt signing secret through the current process environment, then rerun this launcher.
+  goto :fail
+)
+
 if not exist "%BACKEND_DIR%\mvnw.cmd" (
   echo Missing Maven Wrapper: %BACKEND_DIR%\mvnw.cmd
   goto :fail
@@ -62,8 +74,8 @@ echo   Control Plane:   %CONTROL_LOG%
 echo   Operator Console:%CONSOLE_LOG%
 echo.
 
-echo Starting Worker on 127.0.0.1:8091...
-start "%WORKER_TITLE%" /D "%BACKEND_DIR%" cmd /k "title %WORKER_TITLE% && call mvnw.cmd -f execution-worker\pom.xml spring-boot:run ^>^> ^"%WORKER_LOG%^" 2^>^&1"
+echo Starting Worker on 127.0.0.1:8091 with demo profile...
+start "%WORKER_TITLE%" /D "%BACKEND_DIR%" cmd /k "title %WORKER_TITLE% && call mvnw.cmd -f execution-worker\pom.xml spring-boot:run -Dspring-boot.run.profiles=demo ^>^> ^"%WORKER_LOG%^" 2^>^&1"
 timeout /t 2 /nobreak >nul
 call :recordWindowPid worker "%WORKER_TITLE%"
 
@@ -95,7 +107,7 @@ if "%CONTROL_READY%"=="0" if "%CONSOLE_READY%"=="0" (
 echo ============================================================
 echo URL:      http://127.0.0.1:5173
 echo Username: admin
-echo Password: Admin#2026Demo
+echo Password: supplied through OPS_AGENT_DEMO_ADMIN_PASSWORD
 echo.
 echo SQL Workbench connection: h2-local-test
 echo Sample SQL:

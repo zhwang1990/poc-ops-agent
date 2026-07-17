@@ -84,3 +84,51 @@ git diff --check
 - 前端测试输出包含既有的无效 `--localstorage-file` 路径警告，未造成测试失败。
 - 用户指定的 `C:\Users\Lenovo\Documents\ops-agent` 事实源路径在当前环境不存在；实现使用当前工作树内同名 `AGENTS.md`、模块图和规划文档，并遵循用户消息中提供的全局规则。
 - 本次只交付 `sit` / `h2-local-test` 切片。`dev` / `uat` 真实数据库、外部 KeyStore/密钥系统联调、安全评审和环境演练仍是后续工作；生产写执行保持禁止。
+
+## 6. Review 阻塞项修复记录
+
+本节追加于原始 Task 7 提交后的 review 修复，并以本节结果覆盖第 4.3 节关于既有 demo 身份种子口令未修改的历史说明。
+
+### 6.1 RED
+
+1. 基础 Worker DML 默认关闭测试：
+
+```powershell
+.\mvnw.cmd -am -pl control-plane/bootstrap "-Dtest=ControlledSqlDmlEndToEndTest#baseConfigurationsKeepDmlDisabledAndDemoProfilesActivateOnlyTheSitH2Slice" "-Dsurefire.failIfNoSpecifiedTests=false" test
+```
+
+结果：1 项测试执行，0 错误、1 失败；`dml-enabled` 实际为 `true`，断言期望 `false`。失败定位到 Worker 基础 `application.yaml`。
+
+2. 必需 demo identity seed 注入测试：
+
+```powershell
+.\mvnw.cmd -am -pl control-plane/bootstrap "-Dtest=DemoIdentityBootstrapConfigurationTest#demoProfileKeepsLocalBuiltInIdentityAndLoopbackWorker" "-Dsurefire.failIfNoSpecifiedTests=false" test
+```
+
+结果：1 项测试执行，0 错误、1 失败；配置实际为固定字符串，断言期望无默认值的 `${OPS_AGENT_DEMO_ADMIN_PASSWORD}`。
+
+3. demo 启动器自检：`cmd /c tools\demo\test-demo-scripts.cmd` 在新增的签名密钥要求下失败，并输出 `start-demo.cmd must require the DML receipt signing secret`。
+
+### 6.2 GREEN
+
+- Worker 基础 `application.yaml` 显式 `dml-enabled: false`，不含 DML 写凭据别名或用户名。
+- 新增 Worker `application-demo.yaml`，仅为 `sit` / `h2-local-test` 配置 `dml-enabled: true`、独立 `h2-local-dml-writer` 别名和最小权限用户名。H2 E2E 显式加载该 profile；两个 demo 启动器也仅在 demo 路径激活该 profile。
+- 控制面 `application-demo.yaml` 使用无默认值的 `${OPS_AGENT_DEMO_ADMIN_PASSWORD}`。`DemoIdentityBootstrapConfigurationTest` 的所有测试口令改由 `SecureRandom` 在运行时生成。
+- `start-demo.cmd` 与 `start-backend-jars.cmd` 都要求 `OPS_AGENT_DEMO_ADMIN_PASSWORD` 和 `OPS_AGENT_SQL_DML_RECEIPT_HMAC_SECRET` 注入，且不显示口令值。
+- 中文 SQL DML、demo 启动器和 backend-only 打包文档已同步要求一次性环境注入和 Worker demo profile。
+
+聚焦 GREEN 命令：
+
+```powershell
+.\mvnw.cmd -am -pl control-plane/bootstrap,execution-worker-sqlworkbench "-Dtest=ControlledSqlDmlEndToEndTest,DemoIdentityBootstrapConfigurationTest,ConfiguredSqlDataSourceRegistryTest,WorkerSqlEgressPropertiesTest,DefaultApplicationConfigurationTest,SqlWorkbenchConfigurationTest,SecurityConfigurationAuditStorageTest" "-Dsurefire.failIfNoSpecifiedTests=false" test
+cmd /c tools\demo\test-demo-scripts.cmd
+```
+
+结果：Maven 24 项测试通过，0 失败、0 错误、0 跳过；demo 启动器自检通过。
+
+### 6.3 最终验证
+
+- 后端：`backend` 工作目录执行 `.\mvnw.cmd test`，17 个 reactor 模块全部 SUCCESS；Surefire 129 个报告、578 项测试通过，0 失败、0 错误、0 跳过；耗时 1 分 49 秒。
+- 前端：`npm --prefix frontend/operator-console run check` 通过；`npm --prefix frontend/operator-console test -- --run` 为 29 个测试文件、358 项测试通过，0 失败，耗时 21.42 秒。
+- `git diff --check` 通过。
+- `tools/ci/scan-secrets.ps1` 通过；对 Task 7 修改的配置、测试、运行手册和 demo 启动器检索固定 demo 口令无命中。新增敏感词引用仅为环境变量名、凭据别名或运行时生成变量，没有提交 HMAC 密钥、数据库凭据或口令值。

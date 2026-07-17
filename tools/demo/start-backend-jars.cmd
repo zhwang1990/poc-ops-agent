@@ -46,6 +46,18 @@ if defined DEMO_JDK21_BIN (
 call :findSingleJar "%JAR_DIR%" "control-plane-bootstrap-*.jar" CONTROL_PLANE_JAR "control plane" || goto :fail
 call :findSingleJar "%JAR_DIR%" "execution-worker-*.jar" WORKER_JAR "execution worker" || goto :fail
 
+if not defined OPS_AGENT_DEMO_ADMIN_PASSWORD (
+  echo Missing required OPS_AGENT_DEMO_ADMIN_PASSWORD secure environment injection.
+  echo Provide a one-time demo administrator password through the current process environment, then rerun this launcher.
+  goto :fail
+)
+
+if not defined OPS_AGENT_SQL_DML_RECEIPT_HMAC_SECRET (
+  echo Missing required OPS_AGENT_SQL_DML_RECEIPT_HMAC_SECRET secure environment injection.
+  echo Provide the DML receipt signing secret through the current process environment, then rerun this launcher.
+  goto :fail
+)
+
 call :freePort 8091 "Worker" || goto :fail
 call :freePort 8080 "Control Plane" || goto :fail
 
@@ -58,8 +70,8 @@ echo   Worker:        %WORKER_LOG%
 echo   Control Plane: %CONTROL_LOG%
 echo.
 
-echo Starting Worker on 127.0.0.1:8091 from copied JAR...
-start "%WORKER_TITLE%" /D "%JAR_DIR%" cmd /k "title %WORKER_TITLE% && java %OPS_AGENT_JAVA_OPTS% -jar ^"%WORKER_JAR%^" ^>^> ^"%WORKER_LOG%^" 2^>^&1"
+echo Starting Worker on 127.0.0.1:8091 with demo profile from copied JAR...
+start "%WORKER_TITLE%" /D "%JAR_DIR%" cmd /k "title %WORKER_TITLE% && java %OPS_AGENT_JAVA_OPTS% -jar ^"%WORKER_JAR%^" --spring.profiles.active=demo ^>^> ^"%WORKER_LOG%^" 2^>^&1"
 timeout /t 2 /nobreak >nul
 call :recordWindowPid worker "%WORKER_TITLE%"
 
@@ -83,7 +95,7 @@ if "%CONTROL_READY%"=="0" (
 echo ============================================================
 echo URL:      http://127.0.0.1:8080
 echo Username: admin
-echo Password: Admin#2026Demo
+echo Password: supplied through OPS_AGENT_DEMO_ADMIN_PASSWORD
 echo.
 echo To stop the backend demo, close the Worker and Control Plane windows,
 echo or run tools\demo\stop-demo.cmd from the repository checkout.
