@@ -175,3 +175,48 @@ git diff --cached --check
 2. `UNKNOWN_REQUIRES_HANDOFF` 是不可自动恢复终态。值班人员必须按 `workflowId` 核实目标数据库事实并完成人工接管，不能重新提交同一执行请求。
 3. 前端完整构建仍输出既有的 Node `--localstorage-file` 路径警告和 Vite 大于 500 kB 的 chunk 警告；两者均不导致测试、静态检查或构建失败，也不属于本次安全修复范围。
 4. 后端测试会输出 Mockito 动态 Agent 提示；测试通过，提示不影响本次结果，但后续 Java 工具链升级时应统一处理测试 Agent 配置。
+
+## 8. 提交信封重试补充修复
+
+### 8.1 修复内容
+
+补齐操作台丢失提交响应后的 DML 重试语义。每个未变化的提交上下文现在在首次 `COMMIT_DML`
+请求发出前缓存完整、强类型的提交信封：查询和幂等键、服务端签发的不可解释预检回执、以及确认中的
+SQL 哈希与风险列表。网络响应丢失后的同一上下文重试直接提交该缓存信封，不会再次调用预检接口，
+也不会使用可能已变化的数据库影响预览、回执、SQL 哈希或风险重新构造请求。
+
+缓存只在提交上下文发生实质变化时被替换，或收到已确认的 `SUCCEEDED`、`FAILED`、`REJECTED`、
+`EXPIRED` 终态结果后清除。`QUEUED`、`RUNNING` 和 `UNKNOWN_REQUIRES_HANDOFF` 不会清除该信封；
+其中未知结果仍由操作台禁用同一 SQL 的再次提交，不会形成自动重试路径。
+
+### 8.2 TDD 红灯证据
+
+1. 新增“丢失提交响应”页面测试后运行 `npm test -- SqlWorkbenchPage.test.jsx`：40 项中 1 项失败。
+   第二次点击因再次调用预检而被测试 Worker 拒绝，断言期望第二个 `COMMIT_DML` 请求但实际只有 1 个。
+   这证明旧实现仅复用幂等键，未缓存提交信封。
+2. 新增“非终态结果保留信封”页面测试后运行同一命令：41 项中 1 项失败。
+   `RUNNING` 响应错误地清除了缓存，第二次点击再次进入被拒绝的预检，仍只有 1 个提交请求。
+
+### 8.3 绿灯与检查证据
+
+```powershell
+npm test -- SqlWorkbenchPage.test.jsx
+npm run check
+git diff --check
+git diff --cached --check
+```
+
+结果：页面测试 1 个文件、41 项全部通过；`checkJs` 静态检查通过。首个新测试捕获两次 HTTP 请求的原始
+字节串，验证第二次 `POST /commit` 与首次字节完全一致、预检仅调用一次，并渲染原始
+`UNKNOWN_REQUIRES_HANDOFF` 的 `workflowId`。第二个测试验证非终态响应保留同一信封。
+工作区与暂存差异检查均要求零输出、退出码 0。
+
+### 8.4 变更范围与提交
+
+- `frontend/operator-console/src/features/sql-workbench/SqlWorkbenchPage.jsx`
+- `frontend/operator-console/src/features/sql-workbench/SqlWorkbenchPage.test.jsx`
+- `.superpowers/sdd/final-review-fixes.md`
+
+基线提交：`e76caeef5a1c9037bd33b6eec995a30968908c8d`。
+本补充修复的提交标题为 `Cache controlled DML retry envelopes`；提交哈希在提交完成后的交付结果中记录，
+以避免提交内容自引用尚未生成的哈希。

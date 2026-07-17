@@ -64,6 +64,7 @@ let sqlResultTabCounter = 0;
  * @typedef {import("../../schemas/sql-schemas.js").SqlConnectionSummary} SqlConnectionSummary
  * @typedef {import("../../schemas/sql-schemas.js").SqlValidationReport} SqlValidationReport
  * @typedef {import("../../schemas/sql-schemas.js").SqlDmlPreflightResult} SqlDmlPreflightResult
+ * @typedef {import("../../schemas/sql-schemas.js").SqlDmlCommitRequest} SqlDmlCommitRequest
  * @typedef {import("../../schemas/sql-schemas.js").SqlDmlCommitRequest["query"]} SqlDmlCommitQuery
  * @typedef {import("../../schemas/sql-schemas.js").SqlQueryRunResult} SqlQueryRunResult
  * @typedef {import("../../schemas/sql-schemas.js").SqlResultPage} SqlResultPage
@@ -93,6 +94,7 @@ let sqlResultTabCounter = 0;
  *   sessionId: string,
  * }} PendingDmlRiskConfirmation
  * @typedef {{
+ *   commitEnvelope: SqlDmlCommitRequest | null,
  *   context: string,
  *   idempotencyKey: string,
  * }} DmlSubmissionIdentity
@@ -920,59 +922,67 @@ export function SqlWorkbenchPage() {
     const sessionId = activeSession.id;
     const schema = activeSchema;
     const connection = activeConnection;
-    const idempotencyKey = dmlIdempotencyKeyFor(
+    const submission = dmlSubmissionFor(
       sessionId,
       connection,
       schema,
       sql,
     );
-    const preflightRequest = buildSqlQueryRequest(
-      connection,
-      schema,
-      "PREFLIGHT_DML",
-      sql,
-      "PREFLIGHT_DML",
-      idempotencyKey,
-    );
-    const request = /** @type {SqlDmlCommitQuery} */ ({
-      ...preflightRequest,
-      action: "COMMIT_DML",
-    });
+    const { idempotencyKey } = submission;
     const resultTab = createResultTab(activeSession.resultTabs.length + 1, sql);
     appendResultTab(sessionId, resultTab);
 
     try {
-      const preflight = await preflightControlledSqlDml(preflightRequest);
-      const report = preflight.validation;
-      updateSession(sessionId, {
-        validation: report,
-        errorMessage: null,
-        assistant: null,
-        assistantErrorMessage: null,
-      });
-      if (report.validationLevel === "REJECTED") {
-        clearDmlSubmissionIdentity(sessionId, idempotencyKey);
-        throw new Error(buildDmlValidationDiagnosticMessage(report));
-      }
-      if (!preflight.impactPreview) {
-        clearDmlSubmissionIdentity(sessionId, idempotencyKey);
-        throw new Error("服务端 DML 预检未返回影响预览，未提交执行请求。");
-      }
-      if (report.risks.length > 0) {
-        setPendingDmlRiskConfirmation({
-          preflight,
-          request,
-          resultTabId: resultTab.id,
-          sessionId,
+      let execution;
+      if (submission.commitEnvelope) {
+        execution = await commitControlledSqlDml(submission.commitEnvelope);
+      } else {
+        const preflightRequest = buildSqlQueryRequest(
+          connection,
+          schema,
+          "PREFLIGHT_DML",
+          sql,
+          "PREFLIGHT_DML",
+          idempotencyKey,
+        );
+        const request = /** @type {SqlDmlCommitQuery} */ ({
+          ...preflightRequest,
+          action: "COMMIT_DML",
         });
-        return;
+        const preflight = await preflightControlledSqlDml(preflightRequest);
+        const report = preflight.validation;
+        updateSession(sessionId, {
+          validation: report,
+          errorMessage: null,
+          assistant: null,
+          assistantErrorMessage: null,
+        });
+        if (report.validationLevel === "REJECTED") {
+          clearDmlSubmissionIdentity(sessionId, idempotencyKey);
+          throw new Error(buildDmlValidationDiagnosticMessage(report));
+        }
+        if (!preflight.impactPreview) {
+          clearDmlSubmissionIdentity(sessionId, idempotencyKey);
+          throw new Error("服务端 DML 预检未返回影响预览，未提交执行请求。");
+        }
+        if (report.risks.length > 0) {
+          setPendingDmlRiskConfirmation({
+            preflight,
+            request,
+            resultTabId: resultTab.id,
+            sessionId,
+          });
+          return;
+        }
+        const commitEnvelope = /** @type {SqlDmlCommitRequest} */ ({
+          contractVersion: "1.1",
+          query: request,
+          confirmation: buildDmlRiskConfirmation(report),
+          receipt: preflight.receipt,
+        });
+        cacheDmlCommitEnvelope(sessionId, idempotencyKey, commitEnvelope);
+        execution = await commitControlledSqlDml(commitEnvelope);
       }
-      const execution = await commitControlledSqlDml({
-        contractVersion: "1.1",
-        query: request,
-        confirmation: buildDmlRiskConfirmation(report),
-        receipt: preflight.receipt,
-      });
       completeDmlSubmissionIdentity(sessionId, idempotencyKey, execution);
       updateResultTab(sessionId, resultTab.id, {
         execution,
@@ -1009,12 +1019,14 @@ export function SqlWorkbenchPage() {
     const { preflight, request, resultTabId, sessionId } = pendingDmlRiskConfirmation;
     setIsDmlRiskCommitPending(true);
     try {
-      const execution = await commitControlledSqlDml({
+      const commitEnvelope = /** @type {SqlDmlCommitRequest} */ ({
         contractVersion: "1.1",
         query: request,
         confirmation: buildDmlRiskConfirmation(preflight.validation),
         receipt: preflight.receipt,
       });
+      cacheDmlCommitEnvelope(sessionId, request.idempotencyKey, commitEnvelope);
+      const execution = await commitControlledSqlDml(commitEnvelope);
       completeDmlSubmissionIdentity(sessionId, request.idempotencyKey, execution);
       updateResultTab(sessionId, resultTabId, {
         execution,
@@ -1074,15 +1086,31 @@ export function SqlWorkbenchPage() {
    * @param {string} schema
    * @param {string} sql
    */
-  function dmlIdempotencyKeyFor(sessionId, connection, schema, sql) {
+  function dmlSubmissionFor(sessionId, connection, schema, sql) {
     const context = dmlSubmissionContext(connection, schema, sql);
     const existing = dmlSubmissionIdentities.current.get(sessionId);
     if (existing?.context === context) {
-      return existing.idempotencyKey;
+      return existing;
     }
-    const idempotencyKey = createSqlIdempotencyKey("COMMIT_DML");
-    dmlSubmissionIdentities.current.set(sessionId, { context, idempotencyKey });
-    return idempotencyKey;
+    const submission = {
+      commitEnvelope: null,
+      context,
+      idempotencyKey: createSqlIdempotencyKey("COMMIT_DML"),
+    };
+    dmlSubmissionIdentities.current.set(sessionId, submission);
+    return submission;
+  }
+
+  /**
+   * @param {string} sessionId
+   * @param {string} idempotencyKey
+   * @param {SqlDmlCommitRequest} commitEnvelope
+   */
+  function cacheDmlCommitEnvelope(sessionId, idempotencyKey, commitEnvelope) {
+    const existing = dmlSubmissionIdentities.current.get(sessionId);
+    if (existing?.idempotencyKey === idempotencyKey) {
+      existing.commitEnvelope = commitEnvelope;
+    }
   }
 
   /**
@@ -1091,7 +1119,7 @@ export function SqlWorkbenchPage() {
    * @param {SqlQueryRunResult} execution
    */
   function completeDmlSubmissionIdentity(sessionId, idempotencyKey, execution) {
-    if (execution.status !== "UNKNOWN_REQUIRES_HANDOFF") {
+    if (isConfirmedDmlTerminalStatus(execution.status)) {
       clearDmlSubmissionIdentity(sessionId, idempotencyKey);
     }
   }
@@ -3196,6 +3224,13 @@ function buildDmlRiskConfirmation(report) {
     confirmedRisks: report.risks,
     confirmationCode: "CONFIRM_SQL_DML_RISK",
   };
+}
+
+/**
+ * @param {SqlQueryRunResult["status"]} status
+ */
+function isConfirmedDmlTerminalStatus(status) {
+  return ["SUCCEEDED", "FAILED", "REJECTED", "EXPIRED"].includes(status);
 }
 
 /**

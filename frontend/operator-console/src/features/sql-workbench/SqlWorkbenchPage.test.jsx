@@ -519,30 +519,94 @@ describe("SqlWorkbenchPage", () => {
     });
   });
 
-  test("reuses one DML idempotency key after a lost commit response", async () => {
+  test("retries a lost DML commit with its original envelope without re-running preflight", async () => {
     const user = userEvent.setup();
-    /** @type {Array<{idempotencyKey: string}>} */
-    const preflightRequests = [];
-    /** @type {Array<{query: {idempotencyKey: string}}>} */
-    const commitRequests = [];
+    /** @type {string[]} */
+    const preflightPayloads = [];
+    /** @type {string[]} */
+    const commitPayloads = [];
     server.use(
       http.get("/internal/sql-workbench/connections", () =>
         HttpResponse.json(sqlConnections),
       ),
       http.post("/internal/sql-workbench/queries/preflight", async ({ request }) => {
-        preflightRequests.push(
-          /** @type {{idempotencyKey: string}} */ (await request.json()),
-        );
+        preflightPayloads.push(await request.text());
+        if (preflightPayloads.length > 1) {
+          return HttpResponse.error();
+        }
+        return HttpResponse.json(preflightWithRisk());
+      }),
+      http.post("/internal/sql-workbench/queries/commit", async ({ request }) => {
+        commitPayloads.push(await request.text());
+        if (commitPayloads.length === 1) {
+          return HttpResponse.error();
+        }
+        return HttpResponse.json({
+          contractVersion: "1.0",
+          executionRequestId: "execution-dml-retry-handoff",
+          workflowId: "workflow-dml-retry-handoff",
+          status: "UNKNOWN_REQUIRES_HANDOFF",
+          resultId: null,
+          errorCode: "SQL_DML_RESULT_UNKNOWN",
+          errorMessage: null,
+          affectedRows: null,
+        });
+      }),
+    );
+
+    renderAt("/sql");
+
+    await screen.findByText("已连接 · development");
+    await replaceSqlText(
+      user,
+      "update ORDERS.ORDERS set status = 'READY'",
+    );
+    await user.click(await enableManualDml(user));
+    const riskDialog = await screen.findByRole("dialog", { name: "确认 DML 风险" });
+    await user.click(within(riskDialog).getByRole("button", { name: "确认提交" }));
+    expect(await screen.findByText("Network request failed")).toBeInTheDocument();
+
+    await user.click(await enableManualDml(user));
+    await waitFor(() => expect(commitPayloads).toHaveLength(2));
+
+    expect(preflightPayloads).toHaveLength(1);
+    expect(commitPayloads[1]).toBe(commitPayloads[0]);
+    expect(await screen.findByLabelText("DML 人工接管结果")).toBeInTheDocument();
+    expect(screen.getByText("workflow-dml-retry-handoff")).toBeInTheDocument();
+  });
+
+  test("retains the DML commit envelope until the execution result is terminal", async () => {
+    const user = userEvent.setup();
+    /** @type {string[]} */
+    const preflightPayloads = [];
+    /** @type {string[]} */
+    const commitPayloads = [];
+    server.use(
+      http.get("/internal/sql-workbench/connections", () =>
+        HttpResponse.json(sqlConnections),
+      ),
+      http.post("/internal/sql-workbench/queries/preflight", async ({ request }) => {
+        preflightPayloads.push(await request.text());
+        if (preflightPayloads.length > 1) {
+          return HttpResponse.error();
+        }
         return HttpResponse.json(preflightWithoutRisk());
       }),
       http.post("/internal/sql-workbench/queries/commit", async ({ request }) => {
-        commitRequests.push(
-          /** @type {{query: {idempotencyKey: string}}} */ (await request.json()),
-        );
-        if (commitRequests.length === 1) {
-          return HttpResponse.error();
+        commitPayloads.push(await request.text());
+        if (commitPayloads.length === 1) {
+          return HttpResponse.json({
+            contractVersion: "1.0",
+            executionRequestId: "execution-dml-running",
+            workflowId: "workflow-dml-running",
+            status: "RUNNING",
+            resultId: null,
+            errorCode: null,
+            errorMessage: null,
+            affectedRows: null,
+          });
         }
-        return HttpResponse.json(successfulDmlExecution("retry"));
+        return HttpResponse.json(successfulDmlExecution("running-retry"));
       }),
     );
 
@@ -554,15 +618,13 @@ describe("SqlWorkbenchPage", () => {
       "update ORDERS.ORDERS set status = 'READY' where order_id = 41",
     );
     await user.click(await enableManualDml(user));
-    expect(await screen.findByText("Network request failed")).toBeInTheDocument();
+    await waitFor(() => expect(commitPayloads).toHaveLength(1));
 
     await user.click(await enableManualDml(user));
-    await waitFor(() => expect(commitRequests).toHaveLength(2));
+    await waitFor(() => expect(commitPayloads).toHaveLength(2));
 
-    expect(preflightRequests).toHaveLength(2);
-    expect(preflightRequests[1].idempotencyKey).toBe(preflightRequests[0].idempotencyKey);
-    expect(commitRequests[0].query.idempotencyKey).toBe(preflightRequests[0].idempotencyKey);
-    expect(commitRequests[1].query.idempotencyKey).toBe(preflightRequests[0].idempotencyKey);
+    expect(preflightPayloads).toHaveLength(1);
+    expect(commitPayloads[1]).toBe(commitPayloads[0]);
   });
 
   test("rotates the DML idempotency key when submission SQL changes", async () => {
