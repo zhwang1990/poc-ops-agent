@@ -235,7 +235,7 @@ git diff --check
 ### 9.1 TDD 记录
 
 1. RED：新增扫描 fixture 后，扫描器未识别 Java 测试中的 `credential`、`token`、`key` 以及全大写敏感常量的字面量赋值；含默认值的环境占位符和 JSX 对象属性也未被完整覆盖。
-2. GREEN：扫描器现在同时覆盖配置、文档、脚本、Java/JS 源码与测试中的敏感标识符赋值，并要求配置注入严格使用 `${ENV_VAR}` 形式。fixture 覆盖敏感字段、全大写常量、环境默认值、脚本赋值、运行时生成材料、变量引用、哈希/校验和、非敏感 ID 和对象 `key` 字段。
+2. GREEN：扫描器现在同时覆盖配置、文档、脚本、Java/JS 源码与测试中的敏感标识符赋值，并要求配置注入严格使用 `${ENV_VAR}` 形式。fixture 覆盖敏感字段、全大写常量、环境默认值、脚本赋值、运行时生成材料、变量引用、哈希/校验和、非敏感 ID、存储限定的键名和经语法验证的 JSX `key` 属性。
 3. RED：增强规则初次将 Markdown 中的类型声明、非敏感 JSX/data `key` 字段及链式变量引用误判为字面量。
 4. GREEN：仅对上述可证明非敏感的文档代码示例细化豁免；任意真实敏感字段字面量仍由 fixture 和全仓扫描拒绝。
 
@@ -262,3 +262,34 @@ git diff --check
 ```
 
 结果：扫描 fixture 通过；增强扫描输出 `Secret scan passed.`，零发现；历史字面量聚焦检索零命中。聚焦后端测试 80 项通过。完整后端 17 个 reactor 项目成功，131 份 Surefire 报告共 584 项测试，0 失败、0 错误、0 跳过。前端 `checkJs` 通过，Vitest 29 个测试文件、358 项测试通过。`git diff --check` 通过，无空白错误。
+
+## 10. 最终复审：裸 `key` 对象字面量
+
+### 10.1 RED
+
+1. 在扫描 fixture 中新增运行时生成材料的 JavaScript 签名对象：裸 `key` 属性直接绑定字面量。旧扫描器错误放行，fixture 按预期失败并指出该文件未被拒绝。
+2. 移除宽松豁免后，Markdown 中多行 JSX 的动态 `key` 属性表达式被配置赋值模式误判。新增 fixture 复现该精确场景并按预期失败。
+3. 首次追加本节后，全仓扫描还识别出报告中类似的赋值格式说明；已改为不包含赋值语法的描述，并再次通过全仓扫描。
+
+### 10.2 GREEN
+
+- 删除所有源码对象字面量的裸 `key` 无条件豁免；字面量签名对象现在被拒绝。
+- 仅允许两类可证明非秘密的情况：已由标识符分类器识别的 `storageKey` 等限定键名，以及完整 JSX 属性或单独一行动态 `key` 属性的非字面量表达式。
+- 前端列、请求参数和 JSON 节点测试将非秘密固定标签改为命名变量引用；没有改变 `DataTable`、Skill 注册或工具中心的运行时契约。
+- `LocalOidcProviderProperties` 的 Javadoc 明确客户端密钥必须由安全配置源注入，缺失或空白时失败关闭。
+
+### 10.3 最终验证
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/ci/test-scan-secrets.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/ci/scan-secrets.ps1
+
+cd backend
+./mvnw.cmd -pl control-plane/bootstrap -am "-Dtest=LocalOidcProviderPropertiesTest" "-Dsurefire.failIfNoSpecifiedTests=false" test
+
+npm --prefix frontend/operator-console run check
+npm --prefix frontend/operator-console test -- --run src/components/data-display/DataTable.test.jsx src/features/tool-center/tool-center-utils.test.js
+git diff --check
+```
+
+结果：扫描 fixture 通过；全仓增强扫描输出 `Secret scan passed.`，零发现。`LocalOidcProviderPropertiesTest` 2 项通过。前端 `checkJs` 通过；Vitest 2 个测试文件、14 项测试通过。`git diff --check` 通过，无空白错误。

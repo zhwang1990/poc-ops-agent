@@ -65,6 +65,8 @@ Append tests inside `describe("tool center utilities", () => { ... })`:
     if (!result.ok) {
       return;
     }
+    const serviceNameKey = "name";
+    const secondPortIndex = "1";
     expect(result.root.path).toBe("$");
     expect(result.root.kind).toBe("object");
     expect(result.root.childCount).toBe(3);
@@ -73,14 +75,16 @@ Append tests inside `describe("tool center utilities", () => { ... })`:
       "$.ports",
       '$["release-window"]',
     ]);
-    expect(result.root.children[0].children[0]).toMatchObject({
-      key: "name",
+    const serviceNameNode = result.root.children[0].children[0];
+    const secondPortNode = result.root.children[1].children[1];
+    expect(serviceNameNode.key).toBe(serviceNameKey);
+    expect(serviceNameNode).toMatchObject({
       kind: "string",
       path: "$.service.name",
       preview: '"queFork"',
     });
-    expect(result.root.children[1].children[1]).toMatchObject({
-      key: "1",
+    expect(secondPortNode.key).toBe(secondPortIndex);
+    expect(secondPortNode).toMatchObject({
       kind: "null",
       path: "$.ports[1]",
       preview: "null",

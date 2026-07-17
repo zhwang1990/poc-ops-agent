@@ -57,6 +57,8 @@ try {
         "String token = `"" + $runtimeLiteral + "`";")
     Assert-ScannerFails "src/test/java/KeyFixtureTest.java" (
         "String key = `"" + $runtimeLiteral + "`";")
+    Assert-ScannerFails "src/test/js/SigningFixture.test.js" (
+        "const signing = { key: `"" + $runtimeLiteral + "`" };")
     Assert-ScannerFails "src/test/java/UppercaseFixtureTest.java" (
         "private static final String API_TOKEN = `"" + $runtimeLiteral + "`";")
     Assert-ScannerFails "application-with-default.yaml" (
@@ -79,16 +81,27 @@ String checksum = "sha256:fixture-checksum";
     }
 
     Write-Fixture "src/test/js/AllowedObjectKeyFixture.test.js" (
-        "const column = { key: `"non-sensitive-column`" };")
+        "const index = { storageKey: `"non-sensitive-index`" };")
     & $scanner -RepositoryRoot $fixtureRoot
     if (-not $?) {
         throw "Expected non-sensitive object key fields to pass secret scanner."
     }
 
+    Write-Fixture "src/test/js/AllowedReferencedKeyFixture.test.js" (
+        "const signing = { key: signingKeyReference };")
+    & $scanner -RepositoryRoot $fixtureRoot
+    if (-not $?) {
+        throw "Expected a non-literal key reference to pass secret scanner."
+    }
+
     Write-Fixture "docs/AllowedCodeExample.md" @"
-const column = <span key="non-sensitive-column" />;
-const object = { key: "name", };
-key: "name",
+const column = (
+  <span
+    key={column.id}
+  />
+);
+const object = { storageKey: "name", };
+storageKey: "name",
 type Request = { token: string };
 PasswordCredential credential = repository.findActive();
 PasswordCredential chainedCredential = repository.findActive(account.id()).orElseThrow();

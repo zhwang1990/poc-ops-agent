@@ -75,11 +75,16 @@ function Test-LiteralCredentialValue([string] $value, [bool] $isScriptAssignment
     return $true
 }
 
+function Test-NonSensitiveJsxKeyAttribute([string] $key, [string] $assignment, [string] $line) {
+    if ($key -cne "key" -or $assignment -ne "=") {
+        return $false
+    }
+    return $line -match '<[A-Za-z][A-Za-z0-9.:-]*(?:\s+[^<>]*)?\s+key\s*=' -or
+        $line -match '^\s*key\s*=\s*\{[A-Za-z_][A-Za-z0-9_.]*\}\s*$'
+}
+
 function Test-NonSensitiveDocumentationExample([string] $key, [string] $assignment, [string] $value) {
     $candidate = $value.Trim().Trim("'", '"', ',', ';')
-    if ($key -ceq "key" -and $candidate -match '^(?:\{|[A-Za-z0-9_-]+$)') {
-        return $true
-    }
     if ($assignment -eq ":" -and
         $candidate -match '^(?:string|number|boolean|unknown|any)(?:\s*[,;}\]])?$') {
         return $true
@@ -129,11 +134,10 @@ function Find-LiteralCredentialAssignments([System.IO.FileInfo] $file, [string] 
                 $value = $match.Groups["value"].Value
                 $assignment = $match.Groups["assignment"].Value
                 $isScriptAssignment = $pattern.Rule -eq "literal script credential assignment"
-                $isNonSensitiveObjectKey = $pattern.Rule -eq "literal source/test credential assignment" -and
-                    $assignment -eq ":" -and $key -ceq "key"
+                $isNonSensitiveJsxKeyAttribute = Test-NonSensitiveJsxKeyAttribute $key $assignment $line
                 $isNonSensitiveDocumentationExample = $file.Extension -eq ".md" -and
                     (Test-NonSensitiveDocumentationExample $key $assignment $value)
-                if (-not $isNonSensitiveObjectKey -and
+                if (-not $isNonSensitiveJsxKeyAttribute -and
                     -not $isNonSensitiveDocumentationExample -and
                     (Test-SensitiveCredentialIdentifier $key) -and
                     (Test-LiteralCredentialValue $value $isScriptAssignment)) {
