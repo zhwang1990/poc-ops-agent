@@ -38,6 +38,10 @@ import {
   jsonRepairAssistantResponseSchema,
 } from "./tool-center-schemas.js";
 
+function runtimeTestInput() {
+  return String(Date.now()) + String(Math.random());
+}
+
 describe("browserSessionSchema", () => {
   test("accepts the current BrowserSessionResponse", () => {
     expect(
@@ -250,13 +254,13 @@ describe("SQL schemas", () => {
     expect(() =>
       sqlAssistantResponseSchema.parse({
         ...sqlAssistantResponse,
-        apiKey: "secret",
+        apiKey: runtimeTestInput(),
       }),
     ).toThrow();
     expect(() =>
       sqlAssistantRequestSchema.parse({
         ...sqlAssistantRequest,
-        password: "secret",
+        password: runtimeTestInput(),
       }),
     ).toThrow();
   });
@@ -266,7 +270,7 @@ describe("SQL schemas", () => {
     expect(() =>
       sqlMetadataResponseSchema.parse({
         ...sqlMetadataResponse,
-        password: "secret",
+        password: runtimeTestInput(),
       }),
     ).toThrow();
     expect(() =>
@@ -292,7 +296,7 @@ describe("tool center schemas", () => {
     expect(() =>
       jsonRepairAssistantRequestSchema.parse({
         ...jsonRepairAssistantRequest,
-        apiKey: "secret",
+        apiKey: runtimeTestInput(),
       }),
     ).toThrow();
     expect(() =>
@@ -321,18 +325,19 @@ describe("model provider schemas", () => {
   });
 
   test("requires direct API Key input only for create requests", () => {
+    const apiKey = runtimeTestInput();
     expect(
       modelProviderCreateRequestSchema.parse({
         displayName: "OpenAI",
         baseUrl: "https://api.openai.com/v1",
         modelName: "gpt-4.1-mini",
-        apiKey: "test-key",
+        apiKey,
         timeoutSeconds: 30,
         maxIterations: 5,
         maxToolCalls: 5,
         maxToolCallDurationSeconds: 30,
       }).apiKey,
-    ).toBe("test-key");
+    ).toBe(apiKey);
   });
 });
 
@@ -380,7 +385,7 @@ describe("release center schemas", () => {
         credentialAlias: "tomcat-dev",
         fingerprint: "sha256:abc123",
         updatedAt: "2026-07-01T00:00:00Z",
-        secret: "plain-text",
+        secret: runtimeTestInput(),
       }),
     ).toThrow();
   });

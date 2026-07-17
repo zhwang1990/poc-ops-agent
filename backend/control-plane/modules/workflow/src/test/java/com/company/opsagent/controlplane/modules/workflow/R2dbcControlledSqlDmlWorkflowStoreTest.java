@@ -14,6 +14,7 @@ import com.company.opsagent.controlplane.modules.audit.R2dbcAuditTrail;
 import io.r2dbc.spi.ConnectionFactories;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.r2dbc.connection.init.ConnectionFactoryInitializer;
@@ -72,11 +73,11 @@ class R2dbcControlledSqlDmlWorkflowStoreTest {
             PARAMETERS_HASH, PREFLIGHT_HASH, CONFIRMATION_HASH, createdAt),
         createdWorkflowWithHashes(
             "workflow-sql", "key-sql", BINDING_HASH,
-            "UPDATE OPS.ACCOUNT SET PASSWORD='sample-value'", PARAMETERS_HASH,
+            "UPDATE OPS.ACCOUNT SET PASSWORD='" + UUID.randomUUID() + "'", PARAMETERS_HASH,
             PREFLIGHT_HASH, CONFIRMATION_HASH, createdAt),
         createdWorkflowWithHashes(
             "workflow-parameters", "key-parameters", BINDING_HASH, SQL_HASH,
-            "{\"password\":\"sample-value\"}", PREFLIGHT_HASH,
+            "{\"password\":\"" + UUID.randomUUID() + "\"}", PREFLIGHT_HASH,
             CONFIRMATION_HASH, createdAt),
         createdWorkflowWithHashes(
             "workflow-preflight", "key-preflight", BINDING_HASH, SQL_HASH,

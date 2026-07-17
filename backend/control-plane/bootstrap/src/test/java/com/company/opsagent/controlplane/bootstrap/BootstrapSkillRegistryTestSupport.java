@@ -23,6 +23,7 @@ public abstract class BootstrapSkillRegistryTestSupport {
   private static final String SIGNING_SECRET = runtimeSecret();
   private static final String SECURITY_SHARED_SECRET = runtimeSecret();
   private static final String LOCAL_OIDC_CLIENT_SECRET = runtimeSecret();
+  private static final String MODEL_PROVIDER_SECRET_MASTER_KEY = runtimeSecret();
   private static final Path SKILL_ROOT = signedTestSkillRoot();
 
   @DynamicPropertySource
@@ -33,6 +34,8 @@ public abstract class BootstrapSkillRegistryTestSupport {
     registry.add("ops-agent.security.shared-secret", () -> SECURITY_SHARED_SECRET);
     registry.add("ops-agent.local-oidc-provider.client-secret", () -> LOCAL_OIDC_CLIENT_SECRET);
     registry.add("OPS_AGENT_LOCAL_OIDC_CLIENT_SECRET", () -> LOCAL_OIDC_CLIENT_SECRET);
+    registry.add("ops-agent.agent-runtime.model-provider-secret-master-key",
+        () -> MODEL_PROVIDER_SECRET_MASTER_KEY);
   }
 
   private static Path signedTestSkillRoot() {

@@ -22,7 +22,7 @@
 
 1. 记录当前控制面和 Worker 配置版本，确认数据库审计可写且可回读。
 2. 使用仓库批准的 SQL 凭据管理工具，在 Worker 本地 KeyStore 中写入专用写凭据别名 `h2-local-dml-writer`。不得在命令历史、配置文件或工单中记录凭据明文。
-3. 通过部署密钥源向控制面进程注入 `OPS_AGENT_SQL_DML_RECEIPT_HMAC_SECRET` 和一次性 `OPS_AGENT_DEMO_ADMIN_PASSWORD`，并确认配置的回执 key ID 为 `task7-sql-dml-receipt-v1`。
+3. 通过部署密钥源向控制面进程同时注入 `OPS_AGENT_SQL_DML_RECEIPT_HMAC_SECRET`、`OPS_AGENT_DEMO_ADMIN_PASSWORD` 和 `OPS_AGENT_SKILL_REGISTRY_SIGNING_SECRET`，并确认配置的回执 key ID 为 `task7-sql-dml-receipt-v1`。三个变量均不得提供 YAML 默认值或命令行明文值。
 4. 在控制面配置中保持数据库审计，且只将 `sit` 加入 `ops-agent.controlled-sql-dml.enabled-environments`；逐条配置允许的表、语句类型、变更列、谓词列和谓词操作符。
 5. 仅在 `sit` H2 演示和 E2E 路径以 `demo` profile 启动 Worker；该 profile 才包含 `h2-local-test` 的 `dml-enabled: true`、`dml-credential-alias: h2-local-dml-writer` 和对应最小权限数据库用户名。不得在 `dev`、`uat` 或生产启用该 profile。
 6. 先以 `demo` profile 启动 Worker，再以 `demo` profile 启动控制面。任何签名、审计、策略、凭据或数据源检查失败时停止启用，不得临时绕过门禁。
@@ -35,8 +35,8 @@
 .\mvnw.cmd -am -pl control-plane/bootstrap "-Dtest=ControlledSqlDmlEndToEndTest" "-Dsurefire.failIfNoSpecifiedTests=false" test
 ```
 
-`demo` profile 启动必须同时注入 `OPS_AGENT_SQL_DML_RECEIPT_HMAC_SECRET` 与
-`OPS_AGENT_SKILL_REGISTRY_SIGNING_SECRET`；两者均没有空默认值。缺少任一变量时，启动必须在写入能力可用前失败关闭。
+`demo` profile 启动和验收验证必须同时注入 `OPS_AGENT_SQL_DML_RECEIPT_HMAC_SECRET`、`OPS_AGENT_DEMO_ADMIN_PASSWORD` 与
+`OPS_AGENT_SKILL_REGISTRY_SIGNING_SECRET`；三者均没有空默认值。缺少任一变量时，启动必须在写入能力可用前失败关闭。
 
 随后完成以下人工核对：
 

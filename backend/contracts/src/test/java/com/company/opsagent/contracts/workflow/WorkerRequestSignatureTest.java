@@ -19,6 +19,7 @@ import com.company.opsagent.contracts.sqlworkbench.SqlTypedParameter;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -28,7 +29,7 @@ class WorkerRequestSignatureTest {
 
   private static final String KEY_ID = "worker-key-a";
   private static final String TIMESTAMP = "2026-07-16T12:00:00Z";
-  private static final String SECRET = "worker-transport-test-secret";
+  private static final String SECRET = UUID.randomUUID().toString();
 
   @Test
   void controlledDmlSignatureChangesWhenSqlChanges() {

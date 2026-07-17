@@ -13,6 +13,7 @@ import com.company.opsagent.controlplane.modules.identity.infrastructure.Account
 import com.company.opsagent.controlplane.modules.identity.infrastructure.AccountSessionRepository;
 import com.company.opsagent.controlplane.modules.identity.infrastructure.PasswordCredentialRepository;
 import com.company.opsagent.controlplane.modules.identity.infrastructure.PasswordHasher;
+import com.company.opsagent.controlplane.modules.identity.IdentityTestSecretMaterial;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -28,6 +29,10 @@ import org.junit.jupiter.api.Test;
  */
 class IdentityBuiltInLifecycleTest {
 
+  private static final String INITIAL_PASSWORD = IdentityTestSecretMaterial.value();
+  private static final String TEMPORARY_PASSWORD = IdentityTestSecretMaterial.value();
+  private static final String CHANGED_PASSWORD = IdentityTestSecretMaterial.value();
+
   @Test
   void resetPasswordRevokesOldSessionAndRequiresPasswordChangeBeforeFullAccess() {
     Clock clock = Clock.fixed(Instant.parse("2026-06-07T12:00:00Z"), ZoneOffset.UTC);
@@ -36,7 +41,7 @@ class IdentityBuiltInLifecycleTest {
         new PasswordCredential("credential-1", "account-1", "pbkdf2", "i=310000", "placeholder", 1L, false));
     InMemoryAccountSessionRepository sessionRepository = new InMemoryAccountSessionRepository();
     Pbkdf2PasswordService passwordService = new Pbkdf2PasswordService(clock);
-    credentialRepository.save(passwordService.hash("account-1", "Start#2026", 1L, false));
+    credentialRepository.save(passwordService.hash("account-1", INITIAL_PASSWORD, 1L, false));
 
     DefaultIdentityAuthenticationService authenticationService = new DefaultIdentityAuthenticationService(
         accountRepository,
@@ -66,25 +71,27 @@ class IdentityBuiltInLifecycleTest {
         sessionRepository,
         clock);
 
-    IdentityAuthenticationResult initialLogin = authenticationService.authenticate(new PasswordLoginCommand("alice", "Start#2026"));
+    IdentityAuthenticationResult initialLogin = authenticationService.authenticate(
+        new PasswordLoginCommand("alice", INITIAL_PASSWORD));
     assertTrue(sessionQueryService.findOperatorIdentityBySessionId(initialLogin.sessionId()).isPresent());
 
     administrationService.resetPassword(new AdminResetPasswordCommand(
         "account-1",
         "routine reset",
-        "Temp#2026",
+        TEMPORARY_PASSWORD,
         true));
 
     assertTrue(sessionQueryService.findOperatorIdentityBySessionId(initialLogin.sessionId()).isEmpty());
 
-    IdentityAuthenticationResult resetLogin = authenticationService.authenticate(new PasswordLoginCommand("alice", "Temp#2026"));
+    IdentityAuthenticationResult resetLogin = authenticationService.authenticate(
+        new PasswordLoginCommand("alice", TEMPORARY_PASSWORD));
     assertTrue(resetLogin.passwordChangeRequired());
     assertTrue(sessionQueryService.findOperatorIdentityBySessionId(resetLogin.sessionId()).isEmpty());
     assertTrue(sessionQueryService.findSessionStatusBySessionId(resetLogin.sessionId()).orElseThrow().authenticated());
 
     IdentityAuthenticationResult changedPassword = passwordManagementService.changePassword(
         resetLogin.sessionId(),
-        new PasswordChangeCommand("Temp#2026", "Changed#2026"));
+        new PasswordChangeCommand(TEMPORARY_PASSWORD, CHANGED_PASSWORD));
 
     assertEquals("account-1", changedPassword.identity().subject());
     assertTrue(sessionQueryService.findOperatorIdentityBySessionId(changedPassword.sessionId()).isPresent());

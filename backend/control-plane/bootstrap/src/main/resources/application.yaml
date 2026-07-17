@@ -169,7 +169,7 @@ ops-agent:
     max-tool-calls: 5
     max-tool-call-duration: 30s
     max-iterations: 5
-    model-provider-secret-master-key: ${OPS_AGENT_MODEL_SECRET_MASTER_KEY:OPS_AGENT_MODEL_SECRET_MASTER_KEY_REPLACE_ME}
+    model-provider-secret-master-key: ${OPS_AGENT_MODEL_SECRET_MASTER_KEY}
     p1-read-only-only: true
     workspace-id: workspace-default
     workspace-code: default

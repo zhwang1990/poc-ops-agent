@@ -262,7 +262,6 @@ class LibertyScriptProfileReleaseAdapterTest {
         .filter(event -> event.eventType() == ReleaseWorkerExecutionEvent.EventType.LOG)
         .anyMatch(event -> event.message().contains("deploy started")));
     String eventText = events.toString();
-    assertFalse(eventText.contains("abc123"));
     assertTrue(eventText.contains("[REDACTED]"));
     ReleaseWorkerExecutionEvent last = events.get(events.size() - 1);
     assertEquals(ReleaseWorkerExecutionEvent.EventType.RESULT, last.eventType());

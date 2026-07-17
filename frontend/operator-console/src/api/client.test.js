@@ -30,6 +30,10 @@ import {
   streamReleasePlanEvents,
   uploadTomcatWar,
 } from "./release-center-api.js";
+
+function runtimeTestInput() {
+  return String(Date.now()) + String(Math.random());
+}
 import { server } from "../test/server.js";
 
 describe("requestJson", () => {
@@ -186,6 +190,7 @@ describe("requestJson", () => {
 
 describe("feature API modules", () => {
   test("maps authentication endpoints to the browser session and built-in login contract", async () => {
+    const loginPassword = runtimeTestInput();
     /** @type {unknown[]} */
     const loginRequests = [];
     server.use(
@@ -213,10 +218,10 @@ describe("feature API modules", () => {
 
     await expect(getBrowserSession()).resolves.toMatchObject({ username: "alice" });
     await expect(
-      loginWithPassword({ username: "alice", password: "Start#2026" }),
+      loginWithPassword({ username: "alice", password: loginPassword }),
     ).resolves.toMatchObject({ username: "alice" });
     await expect(logout()).resolves.toBeUndefined();
-    expect(loginRequests).toEqual([{ username: "alice", password: "Start#2026" }]);
+    expect(loginRequests).toEqual([{ username: "alice", password: loginPassword }]);
     expect(getLoginUrl()).toBe("/auth/login");
     expect(getLogoutUrl()).toBe("/auth/logout");
   });
@@ -328,6 +333,7 @@ describe("feature API modules", () => {
   });
 
   test("maps release center configuration endpoints to control-plane paths", async () => {
+    const rotatedSecret = runtimeTestInput();
     /** @type {Array<[string, string, unknown?]>} */
     const calls = [];
     server.use(
@@ -355,7 +361,7 @@ describe("feature API modules", () => {
     await rotateReleaseCredential({
       credentialAlias: "tomcat-dev",
       serverType: "TOMCAT",
-      secret: "secret-value",
+      secret: rotatedSecret,
     });
 
     expect(calls).toEqual([
@@ -365,7 +371,7 @@ describe("feature API modules", () => {
       [
         "POST",
         "/internal/release-center/credentials",
-        { credentialAlias: "tomcat-dev", serverType: "TOMCAT", secret: "secret-value" },
+        { credentialAlias: "tomcat-dev", serverType: "TOMCAT", secret: rotatedSecret },
       ],
     ]);
   });

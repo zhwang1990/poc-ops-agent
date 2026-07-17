@@ -42,17 +42,20 @@ class IdentityProductionSkeletonTest {
 
   @Test
   void rejectsBlankPasswordLoginUsername() {
-    assertThrows(IllegalArgumentException.class, () -> new PasswordLoginCommand(" ", "secret"));
+    assertThrows(IllegalArgumentException.class, () -> new PasswordLoginCommand(
+        " ", IdentityTestSecretMaterial.value()));
   }
 
   @Test
   void rejectsBlankPasswordChangeNewPassword() {
-    assertThrows(IllegalArgumentException.class, () -> new PasswordChangeCommand("current", " "));
+    assertThrows(IllegalArgumentException.class, () -> new PasswordChangeCommand(
+        IdentityTestSecretMaterial.value(), " "));
   }
 
   @Test
   void rejectsBlankAdminResetPasswordReason() {
-    assertThrows(IllegalArgumentException.class, () -> new AdminResetPasswordCommand("account-1", " ", "Temp#2026", true));
+    assertThrows(IllegalArgumentException.class, () -> new AdminResetPasswordCommand(
+        "account-1", " ", IdentityTestSecretMaterial.value(), true));
   }
 
   @Test

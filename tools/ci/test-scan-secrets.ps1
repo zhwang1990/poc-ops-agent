@@ -51,6 +51,52 @@ try {
     Assert-ScannerFails "scripts/start.cmd" (
         "set `"OPS_AGENT_LOCAL_OIDC_CLIENT_SECRET=" + $runtimeLiteral + "`"")
     Assert-ScannerFails "docs/runbook.md" ("password: " + $runtimeLiteral)
+    Assert-ScannerFails "src/test/java/CredentialFixtureTest.java" (
+        "String credential = `"" + $runtimeLiteral + "`";")
+    Assert-ScannerFails "src/test/java/TokenFixtureTest.java" (
+        "String token = `"" + $runtimeLiteral + "`";")
+    Assert-ScannerFails "src/test/java/KeyFixtureTest.java" (
+        "String key = `"" + $runtimeLiteral + "`";")
+    Assert-ScannerFails "src/test/java/UppercaseFixtureTest.java" (
+        "private static final String API_TOKEN = `"" + $runtimeLiteral + "`";")
+    Assert-ScannerFails "application-with-default.yaml" (
+        "client-secret: `${OPS_AGENT_LOCAL_OIDC_CLIENT_SECRET:insecure-default}")
+    Assert-ScannerFails "src/test/js/LoginFixture.test.jsx" (
+        "const request = { password: `"" + $runtimeLiteral + "`" };")
+
+    Get-ChildItem -LiteralPath $fixtureRoot -Force | Remove-Item -Force -Recurse
+    Write-Fixture "src/test/java/AllowedCredentialFixtureTest.java" @"
+String credential = generatedCredential;
+String token = java.util.UUID.randomUUID().toString();
+String key = System.getenv("OPS_AGENT_TEST_KEY");
+String keyId = "non-sensitive-id";
+String lastAgentResultKey = "non-sensitive-storage-key";
+String checksum = "sha256:fixture-checksum";
+"@
+    & $scanner -RepositoryRoot $fixtureRoot
+    if (-not $?) {
+        throw "Expected generated material, hashes, IDs, and variable references to pass secret scanner."
+    }
+
+    Write-Fixture "src/test/js/AllowedObjectKeyFixture.test.js" (
+        "const column = { key: `"non-sensitive-column`" };")
+    & $scanner -RepositoryRoot $fixtureRoot
+    if (-not $?) {
+        throw "Expected non-sensitive object key fields to pass secret scanner."
+    }
+
+    Write-Fixture "docs/AllowedCodeExample.md" @"
+const column = <span key="non-sensitive-column" />;
+const object = { key: "name", };
+key: "name",
+type Request = { token: string };
+PasswordCredential credential = repository.findActive();
+PasswordCredential chainedCredential = repository.findActive(account.id()).orElseThrow();
+"@
+    & $scanner -RepositoryRoot $fixtureRoot
+    if (-not $?) {
+        throw "Expected non-sensitive documentation code examples to pass secret scanner."
+    }
 
     Write-Host "Secret scanner targeted tests passed."
 } finally {

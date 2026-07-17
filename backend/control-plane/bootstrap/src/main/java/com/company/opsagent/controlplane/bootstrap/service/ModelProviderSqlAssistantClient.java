@@ -25,7 +25,7 @@ import java.util.List;
 
 public class ModelProviderSqlAssistantClient implements SqlAssistantClient {
 
-  private static final String LOCAL_FAKE_API_KEY = "OPS_AGENT_FAKE_API_KEY_REPLACE_ME";
+  private static final String LOCAL_DEMO_PROVIDER_ID = "local-deepseek-default";
   private static final Duration FALLBACK_TIMEOUT = Duration.ofSeconds(30);
 
   private final ModelProviderStore store;
@@ -55,14 +55,14 @@ public class ModelProviderSqlAssistantClient implements SqlAssistantClient {
     if (provider.providerType() != ModelProviderType.OPENAI_COMPATIBLE) {
       return failed(prompt.assistantAction(), "SQL assistant provider type is not supported.");
     }
+    if (LOCAL_DEMO_PROVIDER_ID.equals(provider.providerId())) {
+      return notConfigured(prompt.assistantAction());
+    }
     String apiKey = secretCodec.decrypt(new ModelProviderSecretCodec.EncryptedSecret(
         provider.apiKeyCiphertext(),
         provider.apiKeyNonce(),
         provider.apiKeyAlgorithm(),
         provider.apiKeyFingerprint()));
-    if (LOCAL_FAKE_API_KEY.equals(apiKey)) {
-      return notConfigured(prompt.assistantAction());
-    }
     try {
       HttpResponse<String> response = httpClient.send(
           request(provider, apiKey, prompt),

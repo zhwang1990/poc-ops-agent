@@ -12,7 +12,9 @@ import com.nimbusds.jose.crypto.MACSigner;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
 import java.time.Instant;
+import java.util.Base64;
 import java.util.Date;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -25,7 +27,7 @@ import reactor.test.StepVerifier;
  */
 class ConfigurableJwtOperatorIdentityAuthenticatorTest {
 
-  private static final String SECRET = "ops-agent-dev-secret-2026-06-06-0001";
+  private static final String SECRET = runtimeSecret();
   private static final String ISSUER = "ops-agent-dev";
   private static final String AUDIENCE = "ops-agent-internal";
 
@@ -183,5 +185,11 @@ class ConfigurableJwtOperatorIdentityAuthenticatorTest {
     } catch (JOSEException exception) {
       throw new IllegalStateException("failed to create test token", exception);
     }
+  }
+
+  private static String runtimeSecret() {
+    byte[] bytes = new byte[32];
+    new SecureRandom().nextBytes(bytes);
+    return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
   }
 }

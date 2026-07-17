@@ -15,7 +15,7 @@ import java.util.Map;
  */
 public final class OpenAiCompatibleModelProviderProbe implements ModelProviderProbe {
 
-  private static final String LOCAL_FAKE_API_KEY = "OPS_AGENT_FAKE_API_KEY_REPLACE_ME";
+  private static final String LOCAL_DEMO_PROVIDER_ID = "local-deepseek-default";
 
   private final ModelProviderSecretCodec secretCodec;
   private final HttpClient httpClient;
@@ -39,16 +39,16 @@ public final class OpenAiCompatibleModelProviderProbe implements ModelProviderPr
     if (!provider.enabled()) {
       return new ModelProviderProbeResult("FAILED", "Model provider is disabled.");
     }
+    if (LOCAL_DEMO_PROVIDER_ID.equals(provider.providerId())) {
+      return new ModelProviderProbeResult(
+          "SKIPPED_FAKE_API_KEY",
+          "Local demo model provider was not contacted.");
+    }
     String apiKey = secretCodec.decrypt(new ModelProviderSecretCodec.EncryptedSecret(
         provider.apiKeyCiphertext(),
         provider.apiKeyNonce(),
         provider.apiKeyAlgorithm(),
         provider.apiKeyFingerprint()));
-    if (LOCAL_FAKE_API_KEY.equals(apiKey)) {
-      return new ModelProviderProbeResult(
-          "SKIPPED_FAKE_API_KEY",
-          "Local fake API key placeholder was not sent to the provider.");
-    }
     HttpRequest request = HttpRequest.newBuilder(OpenAiCompatibleEndpoint.chatCompletionsUri(provider.baseUrl()))
         .timeout(probeTimeout(provider.timeout()))
         .header("Authorization", "Bearer " + apiKey)

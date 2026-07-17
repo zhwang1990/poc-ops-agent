@@ -12,9 +12,12 @@ import reactor.test.StepVerifier;
 
 class DynamicModelProviderAgentscopeAgentClientTest {
 
+  private static final String MASTER_KEY = ModelProviderTestSecretMaterial.value();
+  private static final String API_KEY = ModelProviderTestSecretMaterial.value();
+
   @Test
   void resolvesActiveClientFromCurrentDefaultProvider() {
-    var codec = new AesGcmModelProviderSecretCodec("0123456789abcdef0123456789abcdef");
+    var codec = new AesGcmModelProviderSecretCodec(MASTER_KEY);
     var store = new InMemoryModelProviderStore();
     var provider = new DefaultModelProviderManagementService(
         store,
@@ -25,7 +28,7 @@ class DynamicModelProviderAgentscopeAgentClientTest {
             "OpenAI",
             "https://api.openai.com/v1",
             "gpt-4.1-mini",
-            "CONSOLE_API_KEY_PLACEHOLDER",
+            API_KEY,
             Duration.ofSeconds(17),
             7,
             4,
@@ -56,7 +59,7 @@ class DynamicModelProviderAgentscopeAgentClientTest {
         .assertNext(response -> assertEquals("SUCCEEDED", response.status()))
         .verifyComplete();
 
-    assertEquals("CONSOLE_API_KEY_PLACEHOLDER", captured.get().apiKey());
+    assertEquals(API_KEY, captured.get().apiKey());
     assertEquals("gpt-4.1-mini", captured.get().modelName());
     assertEquals("https://api.openai.com/v1", captured.get().baseUrl());
     assertEquals(7, captured.get().maxIters());
@@ -67,7 +70,7 @@ class DynamicModelProviderAgentscopeAgentClientTest {
 
   @Test
   void normalizesSpringAiStyleBaseUrlBeforeCreatingClient() {
-    var codec = new AesGcmModelProviderSecretCodec("0123456789abcdef0123456789abcdef");
+    var codec = new AesGcmModelProviderSecretCodec(MASTER_KEY);
     var store = new InMemoryModelProviderStore();
     var provider = new DefaultModelProviderManagementService(
         store,
@@ -78,7 +81,7 @@ class DynamicModelProviderAgentscopeAgentClientTest {
             "OpenAI",
             "https://model-provider.example/base",
             "gpt-4.1-mini",
-            "CONSOLE_API_KEY_PLACEHOLDER",
+            API_KEY,
             Duration.ofSeconds(17),
             7,
             4,

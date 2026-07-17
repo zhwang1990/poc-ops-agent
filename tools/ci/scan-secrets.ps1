@@ -25,24 +25,68 @@ $secretPatterns = @(
     "sk-[A-Za-z0-9]{32,}"
 )
 $configurationAssignment = [regex]::new(
-    '(?i)(?<key>[A-Za-z0-9_.-]*(?:secret|password))\s*[:=]\s*(?<value>.+?)\s*$')
+    '(?i)(?<key>[A-Za-z][A-Za-z0-9_.-]*)\s*(?<assignment>[:=])\s*(?<value>.+?)\s*$')
 $sourceAssignment = [regex]::new(
-    '(?i)(?<key>[A-Za-z_][A-Za-z0-9_]*(?:secret|password))\s*=\s*[''"](?<value>[^''"]+)[''"]')
+    '(?i)(?<key>[A-Za-z_][A-Za-z0-9_]*)\s*(?<assignment>=|:)\s*[''"](?<value>[^''"]+)[''"]')
 $sourcePropertyAssignment = [regex]::new(
-    '(?i)[''"](?<key>[A-Za-z0-9_.-]*(?:secret|password))=(?<value>[^''"]+)[''"]')
+    '(?i)[''"](?<key>[A-Za-z][A-Za-z0-9_.-]*)=(?<value>[^''"]+)[''"]')
 $environmentMapAssignment = [regex]::new(
-    '(?i)(?:[''"](?<quotedKey>OPS_AGENT_[A-Z0-9_]*(?:SECRET|PASSWORD))[''"]|(?<bareKey>OPS_AGENT_[A-Z0-9_]*(?:SECRET|PASSWORD)))\s*(?:,|:)\s*[''"](?<value>[^''"]+)[''"]')
+    '(?i)(?:[''"](?<quotedKey>OPS_AGENT_[A-Z0-9_]+)[''"]|(?<bareKey>OPS_AGENT_[A-Z0-9_]+))\s*(?:,|:)\s*[''"](?<value>[^''"]+)[''"]')
 $scriptEnvironmentAssignment = [regex]::new(
-    '(?i)(?:\$env:|set\s+[''"]?)(?<key>[A-Za-z0-9_]*(?:secret|password))\s*=\s*[''"]?(?<value>[^''"\r\n]+)')
+    '(?i)(?:\$env:|set\s+[''"]?)(?<key>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*[''"]?(?<value>[^''"\r\n]+)')
 
 function Test-AllowedInjection([string] $value) {
     $candidate = $value.Trim().Trim("'", '"')
     return $candidate -match '^\$\{[A-Z][A-Z0-9_]*\}$'
 }
 
-function Test-LiteralScriptValue([string] $value) {
+function Test-SensitiveCredentialIdentifier([string] $key) {
+    $normalized = [regex]::Replace($key, '(?<=[a-z0-9])(?=[A-Z])', '_').ToLowerInvariant()
+    $segments = @($normalized -split '[_.-]+' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    if ($segments.Count -eq 0) {
+        return $false
+    }
+    $lastSegment = $segments[-1]
+
+    if ($lastSegment -in @("credential", "token", "secret", "password")) {
+        return $true
+    }
+    if ($lastSegment -ne "key") {
+        return $false
+    }
+    if ($segments.Count -eq 1 -or $key -cmatch '^[A-Z][A-Z0-9_]*$') {
+        return $true
+    }
+
+    return $segments[-2] -in @(
+        "api", "master", "secret", "private", "signing", "encryption", "hmac", "shared", "access"
+    )
+}
+
+function Test-LiteralCredentialValue([string] $value, [bool] $isScriptAssignment) {
     $candidate = $value.Trim().Trim("'", '"')
-    return -not ($candidate -match '^(?:\$|New-|Get-|Convert-|Join-Path|\[)')
+    if (Test-AllowedInjection $candidate) {
+        return $false
+    }
+    if ($isScriptAssignment -and
+        $candidate -match '^(?:\$[A-Za-z_][A-Za-z0-9_]*|%[A-Za-z_][A-Za-z0-9_]*%|New-|Get-|Convert-|Join-Path|\[)') {
+        return $false
+    }
+    return $true
+}
+
+function Test-NonSensitiveDocumentationExample([string] $key, [string] $assignment, [string] $value) {
+    $candidate = $value.Trim().Trim("'", '"', ',', ';')
+    if ($key -ceq "key" -and $candidate -match '^(?:\{|[A-Za-z0-9_-]+$)') {
+        return $true
+    }
+    if ($assignment -eq ":" -and
+        $candidate -match '^(?:string|number|boolean|unknown|any)(?:\s*[,;}\]])?$') {
+        return $true
+    }
+    return $assignment -eq "=" -and
+        $candidate -match '^[A-Za-z_][A-Za-z0-9_.()]*$' -and
+        $candidate.Contains("(")
 }
 
 function New-Finding([string] $file, [int] $line, [string] $rule) {
@@ -74,12 +118,27 @@ function Find-LiteralCredentialAssignments([System.IO.FileInfo] $file, [string] 
         }
 
         foreach ($pattern in $patterns) {
-            $match = $pattern.Regex.Match($line)
-            $value = $match.Groups["value"].Value
-            $isLiteralScriptValue = $pattern.Rule -ne "literal script credential assignment" -or
-                (Test-LiteralScriptValue $value)
-            if ($match.Success -and $isLiteralScriptValue -and -not (Test-AllowedInjection $value)) {
-                $findings += New-Finding $relativePath $lineNumber $pattern.Rule
+            foreach ($match in $pattern.Regex.Matches($line)) {
+                $key = $match.Groups["key"].Value
+                if ([string]::IsNullOrWhiteSpace($key)) {
+                    $key = $match.Groups["quotedKey"].Value
+                }
+                if ([string]::IsNullOrWhiteSpace($key)) {
+                    $key = $match.Groups["bareKey"].Value
+                }
+                $value = $match.Groups["value"].Value
+                $assignment = $match.Groups["assignment"].Value
+                $isScriptAssignment = $pattern.Rule -eq "literal script credential assignment"
+                $isNonSensitiveObjectKey = $pattern.Rule -eq "literal source/test credential assignment" -and
+                    $assignment -eq ":" -and $key -ceq "key"
+                $isNonSensitiveDocumentationExample = $file.Extension -eq ".md" -and
+                    (Test-NonSensitiveDocumentationExample $key $assignment $value)
+                if (-not $isNonSensitiveObjectKey -and
+                    -not $isNonSensitiveDocumentationExample -and
+                    (Test-SensitiveCredentialIdentifier $key) -and
+                    (Test-LiteralCredentialValue $value $isScriptAssignment)) {
+                    $findings += New-Finding $relativePath $lineNumber $pattern.Rule
+                }
             }
         }
     }

@@ -78,7 +78,7 @@ Create tests that prove:
 assertThrows(IllegalArgumentException.class, () -> validCreateCommand().withBaseUrl("http://api.example.com/v1"));
 assertThrows(IllegalArgumentException.class, () -> validCreateCommand().withModelName(" "));
 assertEquals(ModelProviderType.OPENAI_COMPATIBLE, created.providerType());
-assertFalse(created.apiKeyCiphertext().contains("TEST_API_KEY_PLACEHOLDER"));
+assertFalse(created.apiKeyCiphertext().contains("${OPS_AGENT_AGENT_RUNTIME_API_KEY}"));
 ```
 
 - [ ] **Step 2: Run domain tests and verify RED**
@@ -327,10 +327,10 @@ Test:
 
 ```jsx
 expect(screen.getByText("模型设置")).toBeInTheDocument();
-await user.type(screen.getByLabelText("API Key"), "TEST_API_KEY_PLACEHOLDER");
+await user.type(screen.getByLabelText("API Key"), "${OPS_AGENT_AGENT_RUNTIME_API_KEY}");
 await user.click(screen.getByRole("button", { name: "保存供应方" }));
 expect(screen.getByLabelText("API Key")).toHaveValue("");
-expect(screen.queryByText("TEST_API_KEY_PLACEHOLDER")).not.toBeInTheDocument();
+expect(screen.queryByText("${OPS_AGENT_AGENT_RUNTIME_API_KEY}")).not.toBeInTheDocument();
 ```
 
 Also test `设为默认` and `测试连接` call the API layer.

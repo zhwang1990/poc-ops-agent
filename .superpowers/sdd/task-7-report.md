@@ -229,3 +229,36 @@ git diff --check
 - `git diff --check` 通过，无空白错误。
 
 已知非阻塞提示：Maven 输出仍包含既有 Mockito 动态 agent、SLF4J provider 和 Commons Logging classpath 提示；前端输出仍包含既有 `--localstorage-file` 路径提示。所有命令退出码均为 0。
+
+## 9. 最终复审：标识符赋值扫描强化与资料清理
+
+### 9.1 TDD 记录
+
+1. RED：新增扫描 fixture 后，扫描器未识别 Java 测试中的 `credential`、`token`、`key` 以及全大写敏感常量的字面量赋值；含默认值的环境占位符和 JSX 对象属性也未被完整覆盖。
+2. GREEN：扫描器现在同时覆盖配置、文档、脚本、Java/JS 源码与测试中的敏感标识符赋值，并要求配置注入严格使用 `${ENV_VAR}` 形式。fixture 覆盖敏感字段、全大写常量、环境默认值、脚本赋值、运行时生成材料、变量引用、哈希/校验和、非敏感 ID 和对象 `key` 字段。
+3. RED：增强规则初次将 Markdown 中的类型声明、非敏感 JSX/data `key` 字段及链式变量引用误判为字面量。
+4. GREEN：仅对上述可证明非敏感的文档代码示例细化豁免；任意真实敏感字段字面量仍由 fixture 和全仓扫描拒绝。
+
+### 9.2 清理范围
+
+- 控制面模型供应方主密钥改为无默认值的 `OPS_AGENT_MODEL_SECRET_MASTER_KEY` 注入；本地演示供应方按非敏感供应方 ID 跳过真实出网，不再依赖固定 API Key 占位值。
+- Worker 签名、SQL 探测、OIDC、身份、发布、模型供应方和前端测试均改为进程内运行时生成材料或变量引用；新增测试辅助类不保存固定值。
+- 受控 DML 运行手册的启用与验收步骤明确要求 `OPS_AGENT_SQL_DML_RECEIPT_HMAC_SECRET`、`OPS_AGENT_DEMO_ADMIN_PASSWORD` 和 `OPS_AGENT_SKILL_REGISTRY_SIGNING_SECRET` 三项受控注入。
+- 历史运行手册、设计和计划只保留变量名或注入说明，不保留口令、签名材料或值等价示例。
+
+### 9.3 最终验证
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/ci/test-scan-secrets.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/ci/scan-secrets.ps1
+rg -n "<历史字面量指纹集合>" backend frontend docs tools -g "!**/target/**" -g "!**/node_modules/**"
+
+./mvnw.cmd -f ./backend/pom.xml -pl contracts,execution-worker-sqlworkbench,control-plane/modules/identity,control-plane/modules/agentruntime,control-plane/modules/release,control-plane/bootstrap -am "-Dtest=WorkerRequestSignatureTest,ConfigurableJwtOperatorIdentityAuthenticatorTest,SqlConnectionProbeWorkerTest,RestrictedSqlQueryExecutionWorkerTest,R2dbcIdentityRepositoriesIntegrationTest,IdentityBuiltInLifecycleTest,IdentityProductionSkeletonTest,BuiltInBrowserAuthenticationIntegrationTest,ModelProviderTest,DynamicModelProviderAgentscopeAgentClientTest,DefaultModelProviderManagementServiceTest,AesGcmModelProviderSecretCodecTest,OpenAiCompatibleModelProviderProbeTest,R2dbcModelProviderStoreTest,ReleaseCredentialServiceTest,AesGcmReleaseCredentialSecretCodecTest" "-Dsurefire.failIfNoSpecifiedTests=false" test
+cd backend; ./mvnw.cmd test
+
+npm --prefix frontend/operator-console run check
+npm --prefix frontend/operator-console test -- --run
+git diff --check
+```
+
+结果：扫描 fixture 通过；增强扫描输出 `Secret scan passed.`，零发现；历史字面量聚焦检索零命中。聚焦后端测试 80 项通过。完整后端 17 个 reactor 项目成功，131 份 Surefire 报告共 584 项测试，0 失败、0 错误、0 跳过。前端 `checkJs` 通过，Vitest 29 个测试文件、358 项测试通过。`git diff --check` 通过，无空白错误。

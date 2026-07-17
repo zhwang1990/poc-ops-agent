@@ -5,8 +5,7 @@ ops-agent:
     provider: agentscope
     model-name: ${OPS_AGENT_AGENT_RUNTIME_MODEL_NAME:gpt-4.1-mini}
     base-url: ${OPS_AGENT_AGENT_RUNTIME_BASE_URL:https://api.openai.com/v1}
-    api-key: ${OPS_AGENT_AGENT_RUNTIME_API_KEY:${OPENAI_API_KEY:OPS_AGENT_FAKE_API_KEY_REPLACE_ME}}
-    api-key-env: OPENAI_API_KEY
+    api-key-env: OPS_AGENT_AGENT_RUNTIME_API_KEY
     timeout: 30s
     max-tool-calls: 5
     max-tool-call-duration: 30s

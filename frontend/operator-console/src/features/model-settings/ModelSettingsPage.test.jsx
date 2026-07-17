@@ -15,6 +15,10 @@ const modelSettingsCss = readFileSync(
   "utf8",
 );
 
+function runtimeTestInput() {
+  return String(Date.now()) + String(Math.random());
+}
+
 /** @typedef {import("../../schemas/model-provider-schemas.js").ModelProviderSummary} ModelProviderSummary */
 /** @typedef {import("../../schemas/model-provider-schemas.js").ModelProviderCreateRequest} ModelProviderCreateRequest */
 /** @typedef {import("../../schemas/model-provider-schemas.js").ModelProviderUpdateRequest} ModelProviderUpdateRequest */
@@ -86,12 +90,13 @@ beforeEach(() => {
 });
 
 test("renders configured model providers without secret material", async () => {
+  const secretMaterial = runtimeTestInput();
   renderPage();
 
   expect(await screen.findByRole("heading", { name: "模型设置" })).toBeInTheDocument();
   expect(await screen.findByRole("button", { name: /OpenAI/u })).toBeInTheDocument();
   expect(screen.getByText("fp_openai")).toBeInTheDocument();
-  expect(screen.queryByText("TEST_API_KEY_PLACEHOLDER")).not.toBeInTheDocument();
+  expect(screen.queryByText(secretMaterial)).not.toBeInTheDocument();
 });
 
 test("uses Agent workspace visual language for provider settings", () => {
@@ -148,6 +153,7 @@ test("keeps provider status inline with the provider title", () => {
 
 test("creates a model provider with directly entered API Key", async () => {
   const user = userEvent.setup();
+  const apiKey = runtimeTestInput();
   renderPage();
 
   await screen.findByRole("button", { name: /OpenAI/u });
@@ -156,7 +162,7 @@ test("creates a model provider with directly entered API Key", async () => {
   await user.clear(screen.getByLabelText("Base URL"));
   await user.type(screen.getByLabelText("Base URL"), "https://api.deepseek.com/v1");
   await user.type(screen.getByLabelText("模型名称"), "deepseek-chat");
-  await user.type(screen.getByLabelText("API Key"), "TEST_API_KEY_PLACEHOLDER");
+  await user.type(screen.getByLabelText("API Key"), apiKey);
   await user.click(screen.getByRole("button", { name: /保存/u }));
 
   expect(await screen.findByText("模型供应方已新增")).toBeInTheDocument();
@@ -164,7 +170,7 @@ test("creates a model provider with directly entered API Key", async () => {
     displayName: "DeepSeek",
     baseUrl: "https://api.deepseek.com/v1",
     modelName: "deepseek-chat",
-    apiKey: "TEST_API_KEY_PLACEHOLDER",
+    apiKey,
   });
 });
 

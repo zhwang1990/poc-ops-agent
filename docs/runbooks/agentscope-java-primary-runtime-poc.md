@@ -25,11 +25,10 @@ ops-agent:
     provider: agentscope
     model-name: ${OPS_AGENT_AGENT_RUNTIME_MODEL_NAME:gpt-4.1-mini}
     base-url: ${OPS_AGENT_AGENT_RUNTIME_BASE_URL:https://api.openai.com/v1}
-    api-key: ${OPS_AGENT_AGENT_RUNTIME_API_KEY:${OPENAI_API_KEY:OPS_AGENT_FAKE_API_KEY_REPLACE_ME}}
-    api-key-env: OPENAI_API_KEY
+    api-key-env: OPS_AGENT_AGENT_RUNTIME_API_KEY
 ```
 
-`OPS_AGENT_FAKE_API_KEY_REPLACE_ME` 是本地占位值，不是密钥。控制面会识别该占位值并返回 `AGENT_RUNTIME_FAKE_API_KEY`，用于证明 `agent-runtime` profile、模型参数和失败关闭路径已经接通，但不会向模型供应方发起真实请求。提供真实 API Key 后，占位值会被 `OPS_AGENT_AGENT_RUNTIME_API_KEY` 或 `OPENAI_API_KEY` 覆盖，随后进入 OpenAI-compatible AgentScope 客户端。
+本地演示供应方只用于验证配置和失败关闭路径，不会向模型供应方发起真实请求。需要真实调用时，必须通过 `OPS_AGENT_AGENT_RUNTIME_API_KEY` 由部署密钥系统注入运行时材料。
 
 2026-06-28 起，推荐通过操作台“模型设置”维护运行时模型供应方，而不是长期依赖静态 `model-name`、`base-url` 和 `api-key` 配置。入口为：
 
@@ -51,19 +50,19 @@ POST /internal/model-providers/{providerId}/disable
 
 这些入口只允许管理员角色访问。API Key 只在新增或轮换请求中直接输入一次；控制面返回的模型供应方摘要只包含 `apiKeyFingerprint`、`configVersion` 和时间戳，不返回明文或密文。切换默认供应方后，Agent Runtime 下一次调用会读取当前默认供应方并使用其配置构造 OpenAI-compatible AgentScope 客户端；未配置默认供应方时，才回退到上述环境变量配置。
 
-本地 H2 初始化脚本会种子化一个 `deepseek` / `deepseek-v4-pro` 的 OpenAI-compatible 供应方，用于新建本地库时保留模型供应方结构和默认选择。该种子只包含本地占位 API Key 的加密值；占位 Key 不会触发真实出网调用。已经通过操作台配置了同名、同 Base URL、同模型名的供应方时，启动脚本不会重复插入。需要真实调用 DeepSeek 时，仍必须通过“模型设置”页面或受保护管理 API 轮换真实 API Key，并在生产或长期环境中提供 `OPS_AGENT_MODEL_SECRET_MASTER_KEY`。
+本地 H2 初始化脚本会种子化一个 `deepseek` / `deepseek-v4-pro` 的 OpenAI-compatible 演示供应方，用于新建本地库时保留模型供应方结构和默认选择。演示供应方不会触发真实出网调用。已经通过操作台配置了同名、同 Base URL、同模型名的供应方时，启动脚本不会重复插入。需要真实调用 DeepSeek 时，仍必须通过“模型设置”页面或受保护管理 API 轮换运行时材料，并在生产或长期环境中提供 `OPS_AGENT_MODEL_SECRET_MASTER_KEY`。
 
 `POST /internal/model-providers/{providerId}/test` 会将供应方 `baseUrl` 拼接 `/chat/completions`，发送最小 OpenAI-compatible 非流式请求做受控连通性探测。控制面只返回 `SUCCEEDED`、`FAILED`、`SKIPPED_FAKE_API_KEY` 等稳定状态和脱敏说明；本地占位 Key 不会出网，401/403、网络异常和供应方错误响应体不会回显给操作台、日志或审计原因。
 
 动态模型配置需要提供模型密钥加密主密钥：
 
 ```bash
-export OPS_AGENT_MODEL_SECRET_MASTER_KEY="<由密钥系统注入的高熵值>"
+# 由部署密钥系统注入 OPS_AGENT_MODEL_SECRET_MASTER_KEY；不要在终端或文档中写入值。
 ```
 
-该值必须来自部署密钥系统、Kubernetes Secret、CI/CD Secret 或外部 Spring 配置源，不得写入源码、运行手册示例之外的配置样例、日志、Prompt、制品或测试数据。未提供时，本地开发会使用占位值保证链路可启动；生产环境必须覆盖。
+该值必须来自部署密钥系统、Kubernetes Secret、CI/CD Secret 或外部 Spring 配置源，不得写入源码、配置样例、日志、Prompt、制品或测试数据。未提供时，控制面必须在可处理模型供应方密钥前失败关闭。
 
-真实 API Key 必须通过运行环境、部署密钥系统或受保护的外部 Spring 配置源注入，不得写入源码、配置样例、日志、Prompt、制品或测试数据。使用 OpenAI 时，运行环境中提供名为 `OPENAI_API_KEY` 的密钥；如需避免与本机其他 OpenAI 工具共用变量，也可以提供 `OPS_AGENT_AGENT_RUNTIME_API_KEY`。使用百炼千问时，在目标环境专用配置中覆盖 `model-name`、`base-url` 和密钥变量，仍不得提交真实密钥。
+真实 API Key 必须通过运行环境、部署密钥系统或受保护的外部 Spring 配置源注入，不得写入源码、配置样例、日志、Prompt、制品或测试数据。运行环境统一使用 `OPS_AGENT_AGENT_RUNTIME_API_KEY`；使用百炼千问时，在目标环境专用配置中覆盖 `model-name`、`base-url` 和密钥变量，仍不得提交真实密钥。
 
 真实 Tool Call 还需要 M02 策略动作 `internal.agent.tool.execute`。基础 `application.yaml` 已为 `ROLE_ops-reader` 和 `ROLE_ops-admin` 配置该动作，避免模型发起工具调用后被平台策略默认拒绝。
 
@@ -71,7 +70,7 @@ export OPS_AGENT_MODEL_SECRET_MASTER_KEY="<由密钥系统注入的高熵值>"
 
 ```bash
 export SPRING_PROFILES_ACTIVE=agent-runtime
-export OPENAI_API_KEY="<由密钥系统注入的真实值>"
+# 由部署密钥系统注入 OPS_AGENT_AGENT_RUNTIME_API_KEY；不要在终端或文档中写入值。
 ./mvnw -pl control-plane/bootstrap spring-boot:run
 ```
 
@@ -130,7 +129,7 @@ Linux、macOS 或容器环境：
 |---|---|
 | 返回 `AGENT_RUNTIME_DISABLED` | 检查 `ops-agent.agent-runtime.enabled` 是否被显式设置为 `false` |
 | 返回 `AGENT_RUNTIME_NOT_CONFIGURED` | 检查 `agent-runtime` profile、`model-name`、`base-url` 和 `api-key-env` 指向的运行环境变量 |
-| 返回 `AGENT_RUNTIME_FAKE_API_KEY` | 当前仍使用本地占位 Key；通过 `OPS_AGENT_AGENT_RUNTIME_API_KEY` 或 `OPENAI_API_KEY` 注入真实密钥后重启 |
+| 返回 `AGENT_RUNTIME_NOT_CONFIGURED` | 未注入 `OPS_AGENT_AGENT_RUNTIME_API_KEY`；由部署密钥系统注入后重启 |
 | 模型设置页保存失败 | 检查调用身份是否具备 `internal.model-providers.write`，并确认 `baseUrl` 使用 HTTPS，或仅在本地开发使用 `http://localhost` / `http://127.0.0.1` |
 | 模型设置页测试配置失败 | 检查调用身份是否具备 `internal.model-providers.test`、供应方 `baseUrl` 是否可达、模型名是否存在、API Key 是否有效；控制面不会返回供应方响应体或 Key，需要到供应方侧按指纹和时间窗口排查 |
 | 设为默认失败 | 检查供应方是否已启用；禁用供应方不能成为默认模型 |

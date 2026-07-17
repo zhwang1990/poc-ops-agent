@@ -95,11 +95,11 @@ demo profile 行为：
 - 保持 Worker 传输认证关闭，仅限回环开发演示。
 - 自动预置 demo 管理员账号：
   - 用户名：`admin`
-  - 密码：`Admin#2026Demo`
+  - 密码：由 `OPS_AGENT_DEMO_ADMIN_PASSWORD` 在启动时注入
   - 角色：`ROLE_ops-admin`、`ROLE_ops-reader`
   - 不强制首次改密。
 
-`Admin#2026Demo` 是公开 demo 凭据，只能在 demo profile 下生效。该密码不得出现在生产配置、运行手册的生产章节或长期环境配置中。
+`OPS_AGENT_DEMO_ADMIN_PASSWORD` 是 demo profile 的一次性受控注入变量；其值不得出现在配置、运行手册、日志、测试数据或长期环境配置中。
 
 ## 7. Demo 账号种子化
 
@@ -202,7 +202,7 @@ npm run build
 
 1. 双击 `tools\demo\start-demo.cmd`。
 2. 等待浏览器打开操作台。
-3. 使用 `admin / Admin#2026Demo` 登录。
+3. 使用 `admin` 和由 `OPS_AGENT_DEMO_ADMIN_PASSWORD` 注入的值登录。
 4. 进入 SQL 工作台，确认存在 `h2-local-test`。
 5. 执行建议的 `SELECT` 查询，确认能返回 H2 假数据。
 6. 尝试 `update PUBLIC.ORDERS set STATUS = 'DONE' where ORDER_ID = 1`，确认不会真实执行。

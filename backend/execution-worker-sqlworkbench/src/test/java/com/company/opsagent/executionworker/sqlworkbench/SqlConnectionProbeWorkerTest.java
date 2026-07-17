@@ -20,7 +20,7 @@ class SqlConnectionProbeWorkerTest {
 
   @Test
   void reportsReadyWhenConnectionMetadataEgressAndCredentialAliasAreValid() {
-    var worker = new SqlConnectionProbeWorker(policy(true), alias -> "database-password".toCharArray(), CLOCK);
+    var worker = new SqlConnectionProbeWorker(policy(true), alias -> SqlTestSecretMaterial.password(), CLOCK);
 
     SqlConnectionProbeResult result = worker.probe(connection());
 
@@ -52,7 +52,7 @@ class SqlConnectionProbeWorkerTest {
 
   @Test
   void reportsEgressNotAllowedWhenWorkerPolicyRejectsTarget() {
-    var worker = new SqlConnectionProbeWorker(policy(false), alias -> "database-password".toCharArray(), CLOCK);
+    var worker = new SqlConnectionProbeWorker(policy(false), alias -> SqlTestSecretMaterial.password(), CLOCK);
 
     SqlConnectionProbeResult result = worker.probe(connection());
 

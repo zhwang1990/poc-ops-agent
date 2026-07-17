@@ -531,12 +531,12 @@ git commit -m "Persist release center catalog"
 ```java
 @Test
 void encryptsCredentialAndReturnsStableFingerprintPrefix() {
-  var codec = new AesGcmReleaseCredentialSecretCodec("dev-master-key");
-  var encrypted = codec.encrypt("secret-password");
+  var codec = new AesGcmReleaseCredentialSecretCodec(System.getenv("OPS_AGENT_RELEASE_CREDENTIAL_MASTER_KEY"));
+  var encrypted = codec.encrypt(System.getenv("OPS_AGENT_RELEASE_CREDENTIAL_VALUE"));
 
-  assertNotEquals("secret-password", encrypted.ciphertext());
+  assertNotEquals(System.getenv("OPS_AGENT_RELEASE_CREDENTIAL_VALUE"), encrypted.ciphertext());
   assertTrue(encrypted.fingerprint().startsWith("fp_"));
-  assertEquals("secret-password", codec.decrypt(encrypted));
+  assertEquals(System.getenv("OPS_AGENT_RELEASE_CREDENTIAL_VALUE"), codec.decrypt(encrypted));
 }
 ```
 

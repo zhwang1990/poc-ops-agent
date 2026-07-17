@@ -209,7 +209,7 @@ class RestrictedSqlQueryExecutionWorkerTest {
     WorkerSqlConnectionDescriptor descriptor = descriptor(true, "as400-sit-writer");
     SqlDmlWriteCapabilityValidator writeCapabilityValidator = new ConfiguredSqlDataSourceRegistry(
         new WorkerSqlEgressPolicy(List.of(descriptor), List.of()),
-        alias -> "database-password".toCharArray(),
+        alias -> SqlTestSecretMaterial.password(),
         new Jt400DataSourceFactory(),
         new H2SqlDataSourceFactory());
     var worker = new RestrictedSqlQueryExecutionWorker(
@@ -351,7 +351,7 @@ class RestrictedSqlQueryExecutionWorkerTest {
             List.of(new WorkerSqlEgressTarget(descriptor.host(), descriptor.port()))),
         alias -> {
           resolvedAlias.set(alias);
-          return "database-password".toCharArray();
+          return SqlTestSecretMaterial.password();
         },
         dataSourceFactory,
         new H2SqlDataSourceFactory());

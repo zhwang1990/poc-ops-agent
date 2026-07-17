@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import com.company.opsagent.controlplane.modules.agentruntime.AgentRuntimeRequest;
 import com.company.opsagent.controlplane.modules.agentruntime.AgentRuntimeProgressSink;
 import com.company.opsagent.controlplane.modules.agentruntime.AesGcmModelProviderSecretCodec;
+import com.company.opsagent.controlplane.bootstrap.BootstrapTestSecretMaterial;
 import com.company.opsagent.controlplane.modules.agentruntime.AgentscopeAgentClient;
 import com.company.opsagent.controlplane.modules.agentruntime.AgentscopeAgentInvocation;
 import com.company.opsagent.controlplane.modules.agentruntime.AgentscopeAgentResponse;
@@ -31,27 +32,25 @@ class AgentRuntimeConfigurationTest {
     AgentscopeAgentClient client = new AgentRuntimeConfiguration().agentscopeAgentClient(
         properties,
         new InMemoryModelProviderStore(),
-        new AesGcmModelProviderSecretCodec("0123456789abcdef0123456789abcdef"),
+        new AesGcmModelProviderSecretCodec(BootstrapTestSecretMaterial.value()),
         AgentRuntimeProgressSink.noop());
 
     assertInstanceOf(LocalWeatherSmokeAgentClient.class, client);
   }
 
   @Test
-  void failsClosedWhenOnlyLocalFakeApiKeyIsConfigured() {
+  void failsClosedWhenNoApiKeyIsConfigured() {
     AgentRuntimeProperties properties = new AgentRuntimeProperties();
     properties.setModelName("gpt-4.1-mini");
     properties.setBaseUrl("https://api.openai.com/v1");
-    properties.setApiKey("OPS_AGENT_FAKE_API_KEY_REPLACE_ME");
-
     AgentscopeAgentClient client = new AgentRuntimeConfiguration().agentscopeAgentClient(
         properties,
         new InMemoryModelProviderStore(),
-        new AesGcmModelProviderSecretCodec("0123456789abcdef0123456789abcdef"),
+        new AesGcmModelProviderSecretCodec(BootstrapTestSecretMaterial.value()),
         AgentRuntimeProgressSink.noop());
 
     AgentscopeAgentResponse response = client.run(invocation()).block();
-    assertEquals("AGENT_RUNTIME_FAKE_API_KEY", response.status());
+    assertEquals("AGENT_RUNTIME_NOT_CONFIGURED", response.status());
   }
 
   @Test
@@ -59,12 +58,12 @@ class AgentRuntimeConfigurationTest {
     AgentRuntimeProperties properties = new AgentRuntimeProperties();
     properties.setModelName("gpt-4.1-mini");
     properties.setBaseUrl("https://api.openai.com/v1");
-    properties.setApiKey("real-runtime-key-from-secret-store");
+    properties.setApiKey(BootstrapTestSecretMaterial.value());
 
     AgentscopeAgentClient client = new AgentRuntimeConfiguration().agentscopeAgentClient(
         properties,
         new InMemoryModelProviderStore(),
-        new AesGcmModelProviderSecretCodec("0123456789abcdef0123456789abcdef"),
+        new AesGcmModelProviderSecretCodec(BootstrapTestSecretMaterial.value()),
         AgentRuntimeProgressSink.noop());
 
     assertInstanceOf(DynamicModelProviderAgentscopeAgentClient.class, client);
