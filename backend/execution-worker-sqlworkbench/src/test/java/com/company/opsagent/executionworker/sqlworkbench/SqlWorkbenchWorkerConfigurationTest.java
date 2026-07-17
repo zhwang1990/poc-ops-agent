@@ -50,15 +50,16 @@ class SqlWorkbenchWorkerConfigurationTest {
 
   @Test
   void registersKeyStorePasswordProviderWhenCredentialStoreIsConfigured() throws Exception {
-    char[] storePassword = "store-password".toCharArray();
-    Path keyStorePath = keyStore("as400-dev-readonly", "database-password", storePassword);
+    char[] storePassword = SqlTestSecretMaterial.password();
+    String databasePassword = SqlTestSecretMaterial.value();
+    Path keyStorePath = keyStore("as400-dev-readonly", databasePassword, storePassword);
 
     contextRunner
         .withPropertyValues(
             "ops-agent.worker.sql-credentials.key-store-path=" + keyStorePath,
-            "ops-agent.worker.sql-credentials.store-password=store-password")
+            "ops-agent.worker.sql-credentials.store-password=" + new String(storePassword))
         .run(context -> assertArrayEquals(
-            "database-password".toCharArray(),
+            databasePassword.toCharArray(),
             context.getBean(SqlPasswordProvider.class).password("as400-dev-readonly")));
   }
 

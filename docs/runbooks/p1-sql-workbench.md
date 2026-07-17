@@ -77,7 +77,7 @@ ops-agent:
 Windows 本地联调示例。该入口不依赖 PowerShell 或 Maven Wrapper，只要求可用的 JDK `java.exe`：
 
 ```cmd
-set OPS_AGENT_SQL_KEYSTORE_PASSWORD=<由部署系统或受控密钥系统注入的 KeyStore 解锁口令>
+rem 通过部署密钥管理器注入 OPS_AGENT_SQL_KEYSTORE_PASSWORD
 set KEYSTORE_PATH=C:\secure\ops-agent\sql-credentials.jceks
 set CREDENTIAL_ALIAS=as400-dev-readonly
 

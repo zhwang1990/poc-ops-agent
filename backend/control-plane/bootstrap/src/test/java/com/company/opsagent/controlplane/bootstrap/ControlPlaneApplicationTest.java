@@ -48,7 +48,6 @@ import org.springframework.test.web.reactive.server.WebTestClient;
 @AutoConfigureWebTestClient
 @TestPropertySource(properties = {
     "ops-agent.security.auth-mode=dev-hs256",
-    "ops-agent.security.shared-secret=ops-agent-dev-secret-2026-06-06-0001",
     "ops-agent.security.issuer=ops-agent-dev",
     "ops-agent.security.audience=ops-agent-internal",
     "ops-agent.security.username-claim=preferred_username",
@@ -99,7 +98,7 @@ import org.springframework.test.web.reactive.server.WebTestClient;
 })
 class ControlPlaneApplicationTest extends BootstrapSkillRegistryTestSupport {
 
-  private static final String SECRET = "ops-agent-dev-secret-2026-06-06-0001";
+  private static final String SECRET = securitySharedSecret();
   private static final Path AUDIT_PATH = Path.of("target/test-audit/control-plane-audit.jsonl");
 
   @Autowired

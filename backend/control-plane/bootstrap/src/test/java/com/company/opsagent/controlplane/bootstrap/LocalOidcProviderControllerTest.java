@@ -18,8 +18,7 @@ import org.springframework.web.util.UriComponentsBuilder;
     "ops-agent.workflow.startup-recovery-enabled=false",
     "ops-agent.local-oidc-provider.enabled=true",
     "ops-agent.local-oidc-provider.issuer=http://127.0.0.1:18081/mock-oidc",
-    "ops-agent.local-oidc-provider.client-id=ops-agent-local-client",
-    "ops-agent.local-oidc-provider.client-secret=ops-agent-local-secret"
+    "ops-agent.local-oidc-provider.client-id=ops-agent-local-client"
 })
 class LocalOidcProviderControllerTest extends BootstrapSkillRegistryTestSupport {
 
@@ -75,7 +74,7 @@ class LocalOidcProviderControllerTest extends BootstrapSkillRegistryTestSupport 
                 + "&code=" + code
                 + "&redirect_uri=" + redirectUri
                 + "&client_id=ops-agent-local-client"
-                + "&client_secret=ops-agent-local-secret")
+                + "&client_secret=" + localOidcClientSecret())
         .exchange()
         .expectStatus().isOk()
         .expectBody()

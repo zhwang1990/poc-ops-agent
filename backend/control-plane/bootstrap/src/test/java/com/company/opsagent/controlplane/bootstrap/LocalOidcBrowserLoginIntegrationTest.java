@@ -1,13 +1,21 @@
 package com.company.opsagent.controlplane.bootstrap;
 
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import com.company.opsagent.controlplane.bootstrap.config.LocalOidcProviderProperties;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.security.oauth2.client.OAuth2ClientProperties;
 import org.springframework.boot.test.autoconfigure.web.reactive.AutoConfigureWebTestClient;
 import org.springframework.http.HttpCookie;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import org.springframework.test.web.reactive.server.EntityExchangeResult;
@@ -25,14 +33,12 @@ import org.springframework.test.web.reactive.server.EntityExchangeResult;
     "ops-agent.local-oidc-provider.enabled=true",
     "ops-agent.local-oidc-provider.issuer=http://127.0.0.1:18080/mock-oidc",
     "ops-agent.local-oidc-provider.client-id=ops-agent-local-client",
-    "ops-agent.local-oidc-provider.client-secret=ops-agent-local-secret",
     "spring.security.oauth2.client.provider.ops-agent.authorization-uri=http://127.0.0.1:18080/mock-oidc/oauth2/authorize",
     "spring.security.oauth2.client.provider.ops-agent.token-uri=http://127.0.0.1:18080/mock-oidc/oauth2/token",
     "spring.security.oauth2.client.provider.ops-agent.jwk-set-uri=http://127.0.0.1:18080/mock-oidc/oauth2/jwks",
     "spring.security.oauth2.client.provider.ops-agent.user-name-attribute=sub",
     "spring.security.oauth2.client.registration.ops-agent.provider=ops-agent",
     "spring.security.oauth2.client.registration.ops-agent.client-id=ops-agent-local-client",
-    "spring.security.oauth2.client.registration.ops-agent.client-secret=ops-agent-local-secret",
     "spring.security.oauth2.client.registration.ops-agent.authorization-grant-type=authorization_code",
     "spring.security.oauth2.client.registration.ops-agent.client-authentication-method=client_secret_basic",
     "spring.security.oauth2.client.registration.ops-agent.redirect-uri={baseUrl}/login/oauth2/code/{registrationId}",
@@ -44,8 +50,25 @@ class LocalOidcBrowserLoginIntegrationTest extends BootstrapSkillRegistryTestSup
   @Autowired
   private WebTestClient webTestClient;
 
+  @Autowired
+  private LocalOidcProviderProperties localOidcProviderProperties;
+
+  @Autowired
+  private OAuth2ClientProperties oauth2ClientProperties;
+
+  @DynamicPropertySource
+  static void localOidcClientProperties(DynamicPropertyRegistry registry) {
+    registry.add("spring.security.oauth2.client.registration.ops-agent.client-secret",
+        LocalOidcBrowserLoginIntegrationTest::localOidcClientSecret);
+  }
+
   @Test
   void establishesBrowserSessionViaLocalOidcProvider() {
+    assertTrue(sameSecret(localOidcProviderProperties.clientSecret(), localOidcClientSecret()));
+    assertTrue(sameSecret(
+        oauth2ClientProperties.getRegistration().get("ops-agent").getClientSecret(),
+        localOidcClientSecret()));
+
     EntityExchangeResult<byte[]> loginResult = webTestClient.get()
         .uri("/auth/login")
         .exchange()
@@ -138,5 +161,9 @@ class LocalOidcBrowserLoginIntegrationTest extends BootstrapSkillRegistryTestSup
       HttpCookie fallback) {
     HttpCookie cookie = response.getResponseCookies().getFirst(name);
     return cookie != null ? cookie : fallback;
+  }
+
+  private boolean sameSecret(String left, String right) {
+    return MessageDigest.isEqual(left.getBytes(StandardCharsets.UTF_8), right.getBytes(StandardCharsets.UTF_8));
   }
 }

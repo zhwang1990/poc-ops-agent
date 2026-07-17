@@ -16,7 +16,7 @@ ops-agent:
     auth-mode: built-in
     issuer: ops-agent-dev
     audience: ops-agent-internal
-    shared-secret: ops-agent-dev-secret-2026-06-06-0001
+    shared-secret: ${OPS_AGENT_SECURITY_SHARED_SECRET}
     issuer-uri:
     jwk-set-uri:
     username-claim: preferred_username
@@ -41,7 +41,7 @@ ops-agent:
     issuer: http://127.0.0.1:8080/mock-oidc
     audience: ops-agent-internal
     client-id: ops-agent-local-client
-    client-secret: ops-agent-local-secret
+    client-secret: ${OPS_AGENT_LOCAL_OIDC_CLIENT_SECRET}
     default-subject: local-reader-id
     default-username: local.reader
     default-roles:

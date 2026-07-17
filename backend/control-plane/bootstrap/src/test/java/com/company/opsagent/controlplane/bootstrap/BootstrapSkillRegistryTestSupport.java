@@ -20,7 +20,9 @@ import org.springframework.test.context.DynamicPropertySource;
 /** 为 Bootstrap 集成测试提供进程内生成且与临时 Skill 制品匹配的签名材料。 */
 public abstract class BootstrapSkillRegistryTestSupport {
 
-  private static final String SIGNING_SECRET = runtimeSigningSecret();
+  private static final String SIGNING_SECRET = runtimeSecret();
+  private static final String SECURITY_SHARED_SECRET = runtimeSecret();
+  private static final String LOCAL_OIDC_CLIENT_SECRET = runtimeSecret();
   private static final Path SKILL_ROOT = signedTestSkillRoot();
 
   @DynamicPropertySource
@@ -28,6 +30,9 @@ public abstract class BootstrapSkillRegistryTestSupport {
     registry.add("ops-agent.skill-registry.root-path", () -> SKILL_ROOT.toString());
     registry.add("ops-agent.skill-registry.signature-required", () -> true);
     registry.add("ops-agent.skill-registry.signing-secret", () -> SIGNING_SECRET);
+    registry.add("ops-agent.security.shared-secret", () -> SECURITY_SHARED_SECRET);
+    registry.add("ops-agent.local-oidc-provider.client-secret", () -> LOCAL_OIDC_CLIENT_SECRET);
+    registry.add("OPS_AGENT_LOCAL_OIDC_CLIENT_SECRET", () -> LOCAL_OIDC_CLIENT_SECRET);
   }
 
   private static Path signedTestSkillRoot() {
@@ -78,10 +83,18 @@ public abstract class BootstrapSkillRegistryTestSupport {
     }
   }
 
-  private static String runtimeSigningSecret() {
+  protected static String securitySharedSecret() {
+    return SECURITY_SHARED_SECRET;
+  }
+
+  protected static String localOidcClientSecret() {
+    return LOCAL_OIDC_CLIENT_SECRET;
+  }
+
+  private static String runtimeSecret() {
     byte[] bytes = new byte[32];
     new SecureRandom().nextBytes(bytes);
-    return Base64.getEncoder().encodeToString(bytes);
+    return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
   }
 
   private static String sha256Hex(byte[] bytes) {

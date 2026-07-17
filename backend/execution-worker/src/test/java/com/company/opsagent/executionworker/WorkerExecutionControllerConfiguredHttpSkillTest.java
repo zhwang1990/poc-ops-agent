@@ -33,13 +33,12 @@ import org.springframework.test.web.reactive.server.WebTestClient;
     properties = {
         "ops-agent.worker.transport-auth.enabled=true",
         "ops-agent.worker.transport-auth.key-id=worker-test-key",
-        "ops-agent.worker.transport-auth.shared-secret=worker-transport-test-key-material",
         "ops-agent.worker.transport-auth.max-clock-skew=30s"
     })
 class WorkerExecutionControllerConfiguredHttpSkillTest {
 
   private static final String KEY_ID = "worker-test-key";
-  private static final String SHARED_SECRET = "worker-transport-test-key-material";
+  private static final String SHARED_SECRET = java.util.UUID.randomUUID().toString();
   private static final AtomicReference<String> RAW_QUERY = new AtomicReference<>();
   private static final HttpServer WEATHER_SERVER = startWeatherServer();
 
@@ -51,6 +50,7 @@ class WorkerExecutionControllerConfiguredHttpSkillTest {
 
   @DynamicPropertySource
   static void workerHttpSkillProperties(DynamicPropertyRegistry registry) {
+    registry.add("ops-agent.worker.transport-auth.shared-secret", () -> SHARED_SECRET);
     int weatherPort = WEATHER_SERVER.getAddress().getPort();
     registry.add("ops-agent.worker.http-egress.allowed-targets[0].scheme", () -> "http");
     registry.add("ops-agent.worker.http-egress.allowed-targets[0].host", () -> "127.0.0.1");

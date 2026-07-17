@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -9,6 +10,8 @@ const toolScript = path.join(repoRoot, "tools", "sql-credentials", "put-sql-cred
 const tempDir = mkdtempSync(path.join(tmpdir(), "ops-agent-sql-credential-tool-"));
 
 try {
+  const storePassword = randomBytes(32).toString("base64");
+  const databasePassword = randomBytes(32).toString("base64");
   const keyStorePath = path.join(tempDir, "sql-credentials.jceks");
   const commandLine = [
     toolScript,
@@ -28,9 +31,9 @@ try {
       cwd: repoRoot,
       env: {
         ...process.env,
-        OPS_AGENT_SQL_KEYSTORE_PASSWORD: "store-password",
+        OPS_AGENT_SQL_KEYSTORE_PASSWORD: storePassword,
       },
-      input: "database-password\n",
+      input: `${databasePassword}\n`,
       encoding: "utf8",
     },
   );
@@ -38,8 +41,8 @@ try {
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /SQL credential alias written: as400-dev-readonly/);
   assert.match(result.stdout, /KeyStore:/);
-  assert.doesNotMatch(result.stdout, /database-password/);
-  assert.doesNotMatch(result.stderr, /database-password/);
+  assert.equal(result.stdout.includes(databasePassword), false);
+  assert.equal(result.stderr.includes(databasePassword), false);
 
   const verifierSource = path.join(tempDir, "ReadJceksSecret.java");
   writeFileSync(
@@ -68,11 +71,11 @@ public final class ReadJceksSecret {
   execFileSync("javac", [verifierSource], { cwd: tempDir, stdio: "pipe" });
   const secret = execFileSync(
     "java",
-    ["-cp", tempDir, "ReadJceksSecret", keyStorePath, "store-password", "as400-dev-readonly"],
+    ["-cp", tempDir, "ReadJceksSecret", keyStorePath, storePassword, "as400-dev-readonly"],
     { encoding: "utf8" },
   );
 
-  assert.equal(secret, "database-password");
+  assert.equal(secret, databasePassword);
   console.log("SQL credential cmd tool tests passed.");
 } finally {
   rmSync(tempDir, { recursive: true, force: true });

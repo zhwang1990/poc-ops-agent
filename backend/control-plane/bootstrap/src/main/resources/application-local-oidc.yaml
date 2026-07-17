@@ -17,7 +17,7 @@ ops-agent:
     issuer: http://127.0.0.1:8080/mock-oidc
     audience: ops-agent-internal
     client-id: ops-agent-local-client
-    client-secret: ops-agent-local-secret
+    client-secret: ${OPS_AGENT_LOCAL_OIDC_CLIENT_SECRET}
     default-subject: local-reader-id
     default-username: local.reader
     default-roles:
@@ -39,7 +39,7 @@ spring:
           ops-agent:
             provider: ops-agent
             client-id: ops-agent-local-client
-            client-secret: ops-agent-local-secret
+            client-secret: ${OPS_AGENT_LOCAL_OIDC_CLIENT_SECRET}
             authorization-grant-type: authorization_code
             client-authentication-method: client_secret_basic
             redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"

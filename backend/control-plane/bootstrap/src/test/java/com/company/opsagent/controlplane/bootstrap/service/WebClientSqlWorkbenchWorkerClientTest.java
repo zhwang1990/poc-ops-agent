@@ -45,7 +45,7 @@ import reactor.core.publisher.Mono;
 class WebClientSqlWorkbenchWorkerClientTest {
 
   private static final String KEY_ID = "worker-key-a";
-  private static final String SHARED_SECRET = "worker-transport-test-key-material";
+  private static final String SHARED_SECRET = java.util.UUID.randomUUID().toString();
   private static final Instant SIGNED_AT = Instant.parse("2026-06-27T10:15:30Z");
 
   @Test

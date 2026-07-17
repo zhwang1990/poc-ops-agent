@@ -17,6 +17,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.http.HttpHeaders;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.reactive.server.WebTestClient;
 
 /**
@@ -27,19 +29,23 @@ import org.springframework.test.web.reactive.server.WebTestClient;
     properties = {
         "ops-agent.worker.transport-auth.enabled=true",
         "ops-agent.worker.transport-auth.key-id=worker-test-key",
-        "ops-agent.worker.transport-auth.shared-secret=worker-transport-test-key-material",
         "ops-agent.worker.transport-auth.max-clock-skew=30s"
     })
 class WorkerExecutionControllerTest {
 
   private static final String KEY_ID = "worker-test-key";
-  private static final String SHARED_SECRET = "worker-transport-test-key-material";
+  private static final String SHARED_SECRET = java.util.UUID.randomUUID().toString();
 
   @LocalServerPort
   private int port;
 
   @Autowired
   private ObjectMapper objectMapper;
+
+  @DynamicPropertySource
+  static void transportAuthProperties(DynamicPropertyRegistry registry) {
+    registry.add("ops-agent.worker.transport-auth.shared-secret", () -> SHARED_SECRET);
+  }
 
   /**
    * 验证合法签名的只读请求可以通过 Worker HTTP 边界并执行成功。

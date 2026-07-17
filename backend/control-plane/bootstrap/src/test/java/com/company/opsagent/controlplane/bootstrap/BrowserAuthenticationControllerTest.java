@@ -20,7 +20,6 @@ import org.springframework.test.web.reactive.server.WebTestClient;
 @AutoConfigureWebTestClient
 @TestPropertySource(properties = {
     "ops-agent.security.auth-mode=oidc",
-    "ops-agent.security.shared-secret=ops-agent-dev-secret-2026-06-06-0001",
     "ops-agent.security.issuer=ops-agent-dev",
     "ops-agent.security.audience=ops-agent-internal",
     "ops-agent.security.username-claim=preferred_username",
@@ -47,7 +46,6 @@ import org.springframework.test.web.reactive.server.WebTestClient;
     "spring.security.oauth2.client.provider.ops-agent.user-name-attribute=sub",
     "spring.security.oauth2.client.registration.ops-agent.provider=ops-agent",
     "spring.security.oauth2.client.registration.ops-agent.client-id=control-plane-client",
-    "spring.security.oauth2.client.registration.ops-agent.client-secret=control-plane-secret",
     "spring.security.oauth2.client.registration.ops-agent.authorization-grant-type=authorization_code",
     "spring.security.oauth2.client.registration.ops-agent.redirect-uri={baseUrl}/login/oauth2/code/{registrationId}",
     "spring.security.oauth2.client.registration.ops-agent.scope[0]=openid",

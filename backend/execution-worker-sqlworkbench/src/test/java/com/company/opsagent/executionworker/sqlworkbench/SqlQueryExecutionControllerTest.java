@@ -44,7 +44,7 @@ import org.springframework.web.server.ResponseStatusException;
 class SqlQueryExecutionControllerTest {
 
   private static final String KEY_ID = "worker-key-a";
-  private static final String SHARED_SECRET = "worker-transport-test-key-material";
+  private static final String SHARED_SECRET = java.util.UUID.randomUUID().toString();
   private static final Clock CLOCK = Clock.fixed(Instant.parse("2026-06-27T10:15:30Z"), ZoneOffset.UTC);
 
   @Test
@@ -374,7 +374,7 @@ class SqlQueryExecutionControllerTest {
                 "as400-dev-readonly",
                 true)),
             List.of(new WorkerSqlEgressTarget("as400-dev.internal", 446))),
-        alias -> "database-password".toCharArray(),
+        alias -> SqlTestSecretMaterial.password(),
         CLOCK);
   }
 

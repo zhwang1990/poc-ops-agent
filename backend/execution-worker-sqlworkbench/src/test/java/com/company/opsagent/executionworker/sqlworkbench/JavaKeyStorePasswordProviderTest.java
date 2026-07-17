@@ -12,14 +12,15 @@ class JavaKeyStorePasswordProviderTest {
 
   @Test
   void readsPasswordByCredentialAlias() throws Exception {
-    char[] storePassword = "store-password".toCharArray();
+    char[] storePassword = SqlTestSecretMaterial.password();
+    String databasePassword = SqlTestSecretMaterial.value();
     var path = Files.createTempFile("ops-agent-sql", ".jceks");
     KeyStore keyStore = KeyStore.getInstance("JCEKS");
     keyStore.load(null, storePassword);
     keyStore.setEntry(
         "as400-development",
         new KeyStore.SecretKeyEntry(new SecretKeySpec(
-            "database-password".getBytes(StandardCharsets.UTF_8),
+            databasePassword.getBytes(StandardCharsets.UTF_8),
             "AES")),
         new KeyStore.PasswordProtection(storePassword));
     try (var output = Files.newOutputStream(path)) {
@@ -28,6 +29,6 @@ class JavaKeyStorePasswordProviderTest {
 
     var provider = new JavaKeyStorePasswordProvider(path, storePassword);
 
-    assertArrayEquals("database-password".toCharArray(), provider.password("as400-development"));
+    assertArrayEquals(databasePassword.toCharArray(), provider.password("as400-development"));
   }
 }

@@ -169,3 +169,63 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\skills\test-skill-pack
 - 前端：`npm --prefix frontend/operator-console run check` 成功；`npm --prefix frontend/operator-console test -- --run` 成功，29 个测试文件、358 项测试全部通过。
 - 变更文件聚焦密钥扫描全部通过：旧 Skill 签名材料、固定 demo 密码形态、DML 回执空默认值和非占位符 Skill YAML 签名值均无命中。
 - `git diff --check` 通过；仅有 Git 对既有 PowerShell/CMD 行尾归一化的提示，无空白错误。
+
+
+## 8. 最终安全清理复审
+
+### 8.1 RED
+
+1. OIDC 必须注入测试先行：
+
+```powershell
+./mvnw.cmd -pl control-plane/bootstrap -am "-Dtest=DefaultApplicationConfigurationTest,LocalOidcProviderPropertiesTest" "-Dsurefire.failIfNoSpecifiedTests=false" test
+```
+
+结果：4 项测试均按预期失败。基础 YAML 仍含固定共享认证材料和本地 OIDC 客户端材料；本地 OIDC 属性在空值或空白值时仍回退到固定值。
+
+2. 秘密扫描器测试先行：新增 `tools/ci/test-scan-secrets.ps1` 后，旧扫描器无法使用隔离根目录，也不会识别 YAML、Java 测试、Node 环境映射、脚本和 Markdown 中的文字凭据赋值。测试按预期失败。
+
+3. 运行时材料协议回归：首次将随机标准 Base64 用于本地 OIDC 客户端材料后，`LocalOidcBrowserLoginIntegrationTest` 在回调时返回 `/login?error`。已确认 Provider 与 OAuth 注册均取得同一运行时值；根因是 `client_secret_basic` 的表单编码与本地 mock 的直接比较不兼容特殊字符。
+
+### 8.2 GREEN
+
+- `application.yaml`、`application-local-oidc.yaml` 和 OIDC 示例配置只保留必需的环境变量占位符；`LocalOidcProviderProperties` 对缺失或空白客户端材料稳定失败关闭。
+- 所有 Bootstrap Spring 测试从进程内 `SecureRandom` 生成 URL-safe、无填充的运行时材料。该格式同时满足本地 OIDC 的 `client_secret_basic` 交互，不写入源码、日志、文档或测试制品。
+- SQL KeyStore、SQL 凭据 CLI、SQL Worker、Worker 传输认证和控制面 Worker 客户端测试均改为运行时生成材料；不再保留固定口令、共享材料或数据库凭据 fixture。
+- 历史运行手册、OIDC 计划和 demo launcher 设计仅保留环境变量名、占位符或注入说明，不保留值。
+- `tools/ci/scan-secrets.ps1` 现检测配置、文档、Java/JS 测试、Node 环境映射和脚本中的文字凭据赋值；仅允许明确 `${ENV_VAR}` 注入，并跳过运行时生成器或变量引用等真实非文字值。扫描输出只含文件、行号和规则，不回显值。
+
+### 8.3 聚焦验证
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/ci/test-scan-secrets.ps1
+./mvnw.cmd -pl control-plane/bootstrap -am "-Dtest=DefaultApplicationConfigurationTest,LocalOidcProviderPropertiesTest,LocalOidcProviderControllerTest,LocalOidcBrowserLoginIntegrationTest,BrowserAuthenticationControllerTest,ControlPlaneApplicationTest,WebClientSqlWorkbenchWorkerClientTest,WebClientWorkerGatewayTest" "-Dsurefire.failIfNoSpecifiedTests=false" test
+./mvnw.cmd -pl execution-worker-sqlworkbench -am "-Dtest=JavaKeyStorePasswordProviderTest,Jt400SqlDataSourceRegistryTest,SqlCredentialKeyStoreToolTest,SqlCredentialKeyStoreWriterTest,SqlQueryExecutionControllerTest,SqlWorkbenchWorkerConfigurationTest" "-Dsurefire.failIfNoSpecifiedTests=false" test
+./mvnw.cmd -pl execution-worker -am "-Dtest=WorkerExecutionControllerTest,WorkerExecutionControllerConfiguredHttpSkillTest,ReleaseWorkerControllerTest" "-Dsurefire.failIfNoSpecifiedTests=false" test
+node tools/sql-credentials/test-sql-credential-tool.mjs
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/skills/test-skill-package-tool.ps1
+```
+
+结果：扫描器 fixture 测试通过；Bootstrap 聚焦测试 62 项通过；SQL Worker 聚焦测试 24 项通过；Worker HTTP 聚焦测试 9 项通过；SQL 凭据命令和 Skill 打包工具测试通过。
+
+### 8.4 最终验证
+
+```powershell
+cd backend
+./mvnw.cmd test
+
+npm --prefix frontend/operator-console run check
+npm --prefix frontend/operator-console test -- --run
+
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/ci/scan-secrets.ps1
+git diff --check
+```
+
+结果：
+
+- 后端 17 个 reactor 项目全部成功；131 份 Surefire 报告共 584 项测试，0 失败、0 错误、0 跳过。
+- 前端 `checkJs` 检查通过；Vitest 29 个测试文件、358 项测试通过。
+- 最终秘密扫描输出 `Secret scan passed.`，零发现。
+- `git diff --check` 通过，无空白错误。
+
+已知非阻塞提示：Maven 输出仍包含既有 Mockito 动态 agent、SLF4J provider 和 Commons Logging classpath 提示；前端输出仍包含既有 `--localstorage-file` 路径提示。所有命令退出码均为 0。
