@@ -8,6 +8,57 @@ ops-agent:
     base-url: http://127.0.0.1:8091
     transport-auth:
       enabled: false
+  controlled-sql-dml:
+    enabled-environments:
+      - sit
+    preflight-receipt:
+      key-id: task7-sql-dml-receipt-v1
+      hmac-secret: ${OPS_AGENT_SQL_DML_RECEIPT_HMAC_SECRET:}
+      ttl: 5m
+    rules:
+      - connection-id: h2-local-test
+        schema: PUBLIC
+        table: ORDERS
+        statement-type: INSERT
+        changed-columns:
+          - ORDER_ID
+          - STATUS
+          - AMOUNT
+          - CUSTOMER_ID
+          - CREATED_AT
+        predicate-columns: []
+        operators: []
+        preview-sample-columns: []
+        masked-preview-columns: []
+      - connection-id: h2-local-test
+        schema: PUBLIC
+        table: ORDERS
+        statement-type: UPDATE
+        changed-columns:
+          - STATUS
+        predicate-columns:
+          - ORDER_ID
+        operators:
+          - EQUALS
+        preview-sample-columns:
+          - ORDER_ID
+          - STATUS
+        masked-preview-columns: []
+      - connection-id: h2-local-test
+        schema: PUBLIC
+        table: ORDERS
+        statement-type: DELETE
+        changed-columns: []
+        predicate-columns:
+          - ORDER_ID
+        operators:
+          - EQUALS
+        preview-sample-columns:
+          - ORDER_ID
+          - STATUS
+        masked-preview-columns: []
+  audit:
+    storage-mode: database
   demo:
     identity-seed:
       enabled: true
