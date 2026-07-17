@@ -62,7 +62,7 @@ try {
     Assert-ScannerFails "src/test/java/UppercaseFixtureTest.java" (
         "private static final String API_TOKEN = `"" + $runtimeLiteral + "`";")
     Assert-ScannerFails "application-with-default.yaml" (
-        "client-secret: `${OPS_AGENT_LOCAL_OIDC_CLIENT_SECRET:insecure-default}")
+        "client-secret: `${OPS_AGENT_LOCAL_OIDC_CLIENT_SECRET:" + $runtimeLiteral + "}")
     Assert-ScannerFails "src/test/js/LoginFixture.test.jsx" (
         "const request = { password: `"" + $runtimeLiteral + "`" };")
 

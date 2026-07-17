@@ -293,3 +293,8 @@ git diff --check
 ```
 
 结果：扫描 fixture 通过；全仓增强扫描输出 `Secret scan passed.`，零发现。`LocalOidcProviderPropertiesTest` 2 项通过。前端 `checkJs` 通过；Vitest 2 个测试文件、14 项测试通过。`git diff --check` 通过，无空白错误。
+
+## 11. 扫描 fixture 默认值清理
+
+- `application-with-default.yaml` fixture 的占位符默认值改为复用进程内生成的运行时材料；断言仍证明任何带默认值的环境占位符都会被扫描器拒绝，仓库不再保存该默认文本。
+- 验证：`tools/ci/test-scan-secrets.ps1` 通过；`tools/ci/scan-secrets.ps1` 输出 `Secret scan passed.`，零发现；`git diff --check` 通过。
