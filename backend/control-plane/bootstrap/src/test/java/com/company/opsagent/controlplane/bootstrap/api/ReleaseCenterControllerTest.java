@@ -4,6 +4,7 @@ import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.http.MediaType.APPLICATION_OCTET_STREAM;
 import static org.springframework.http.MediaType.MULTIPART_FORM_DATA;
 
+import com.company.opsagent.controlplane.bootstrap.BootstrapSkillRegistryTestSupport;
 import com.company.opsagent.controlplane.modules.release.ManagementMode;
 import com.company.opsagent.controlplane.modules.release.ArtifactType;
 import com.company.opsagent.controlplane.modules.release.ReleaseArtifact;
@@ -51,15 +52,13 @@ import org.springframework.http.client.MultipartBodyBuilder;
     "ops-agent.security.role-claim=roles",
     "ops-agent.policy.version=rbac-v1",
     "ops-agent.worker.base-url=http://127.0.0.1:1",
-    "ops-agent.skill-registry.root-path=target/test-classes/skills",
-    "ops-agent.skill-registry.signature-required=true",
     "ops-agent.audit.storage-path=target/test-audit/release-center-api-audit.jsonl",
     "spring.r2dbc.url=r2dbc:h2:mem:///release-center-api-test;MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
     "ops-agent.workflow.startup-recovery-enabled=false",
     "ops-agent.agent-runtime.enabled=false",
     "ops-agent.release-center.enabled=false"
 })
-class ReleaseCenterControllerTest {
+class ReleaseCenterControllerTest extends BootstrapSkillRegistryTestSupport {
 
   @Autowired
   private WebTestClient webTestClient;

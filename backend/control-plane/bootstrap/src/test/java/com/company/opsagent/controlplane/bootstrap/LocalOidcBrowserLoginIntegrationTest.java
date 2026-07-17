@@ -22,9 +22,6 @@ import org.springframework.test.web.reactive.server.EntityExchangeResult;
     "ops-agent.security.jwk-set-uri=http://127.0.0.1:18080/mock-oidc/oauth2/jwks",
     "spring.r2dbc.url=r2dbc:h2:mem:///local-oidc-browser-login-test;MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
     "ops-agent.workflow.startup-recovery-enabled=false",
-    "ops-agent.skill-registry.root-path=target/test-classes/skills",
-    "ops-agent.skill-registry.signature-required=true",
-    "ops-agent.skill-registry.signing-secret=ops-agent-skill-signing-key-2026-06-06-0001",
     "ops-agent.local-oidc-provider.enabled=true",
     "ops-agent.local-oidc-provider.issuer=http://127.0.0.1:18080/mock-oidc",
     "ops-agent.local-oidc-provider.client-id=ops-agent-local-client",
@@ -42,7 +39,7 @@ import org.springframework.test.web.reactive.server.EntityExchangeResult;
     "spring.security.oauth2.client.registration.ops-agent.scope[0]=openid",
     "spring.security.oauth2.client.registration.ops-agent.scope[1]=profile"
 })
-class LocalOidcBrowserLoginIntegrationTest {
+class LocalOidcBrowserLoginIntegrationTest extends BootstrapSkillRegistryTestSupport {
 
   @Autowired
   private WebTestClient webTestClient;

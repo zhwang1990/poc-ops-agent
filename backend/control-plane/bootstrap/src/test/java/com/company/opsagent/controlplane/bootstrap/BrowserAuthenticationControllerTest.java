@@ -39,9 +39,6 @@ import org.springframework.test.web.reactive.server.WebTestClient;
     "ops-agent.policy.required-roles-by-action.internal.failures.read[0]=ROLE_ops-admin",
     "ops-agent.policy.required-roles-by-action.internal.audit.read[0]=ROLE_ops-admin",
     "ops-agent.policy.required-roles-by-action.internal.audit.read[1]=ROLE_ops-auditor",
-    "ops-agent.skill-registry.root-path=target/test-classes/skills",
-    "ops-agent.skill-registry.signature-required=true",
-    "ops-agent.skill-registry.signing-secret=ops-agent-skill-signing-key-2026-06-06-0001",
     "spring.r2dbc.url=r2dbc:h2:mem:///browser-authentication-test;MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
     "ops-agent.workflow.startup-recovery-enabled=false",
     "spring.security.oauth2.client.provider.ops-agent.authorization-uri=https://idp.example.com/oauth2/authorize",
@@ -56,7 +53,7 @@ import org.springframework.test.web.reactive.server.WebTestClient;
     "spring.security.oauth2.client.registration.ops-agent.scope[0]=openid",
     "spring.security.oauth2.client.registration.ops-agent.scope[1]=profile"
 })
-class BrowserAuthenticationControllerTest {
+class BrowserAuthenticationControllerTest extends BootstrapSkillRegistryTestSupport {
 
   @Autowired
   private WebTestClient webTestClient;

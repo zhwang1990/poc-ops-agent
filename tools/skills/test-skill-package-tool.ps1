@@ -30,11 +30,35 @@ function Get-Sha256Hex {
     }
 }
 
+function New-RuntimeSigningSecret {
+    $bytes = New-Object byte[] 32
+    $generator = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try {
+        $generator.GetBytes($bytes)
+    } finally {
+        $generator.Dispose()
+    }
+    return [Convert]::ToBase64String($bytes)
+}
+
 try {
     New-Item -ItemType Directory -Force -Path $tempRoot | Out-Null
     $generatedRoot = Join-Path $tempRoot "contracts"
 
     & $tool validate $validPackage
+
+    $previousSigningSecret = $env:OPS_AGENT_SKILL_REGISTRY_SIGNING_SECRET
+    Remove-Item Env:OPS_AGENT_SKILL_REGISTRY_SIGNING_SECRET -ErrorAction SilentlyContinue
+    $missingSecretOutput = ""
+    try {
+        & $tool generate $validPackage --output-root $generatedRoot 2>&1
+        throw "generate should require injected Skill registry signing material"
+    } catch {
+        $missingSecretOutput = $_ | Out-String
+    }
+    Assert-True ($missingSecretOutput -match "OPS_AGENT_SKILL_REGISTRY_SIGNING_SECRET") "Expected missing signing secret rejection"
+
+    $env:OPS_AGENT_SKILL_REGISTRY_SIGNING_SECRET = New-RuntimeSigningSecret
 
     & $tool generate $validPackage --output-root $generatedRoot
 
@@ -71,6 +95,11 @@ try {
 
     Write-Host "Skill package tool tests passed."
 } finally {
+    if ([string]::IsNullOrWhiteSpace($previousSigningSecret)) {
+        Remove-Item Env:OPS_AGENT_SKILL_REGISTRY_SIGNING_SECRET -ErrorAction SilentlyContinue
+    } else {
+        $env:OPS_AGENT_SKILL_REGISTRY_SIGNING_SECRET = $previousSigningSecret
+    }
     if (Test-Path -LiteralPath $tempRoot) {
         Remove-Item -Recurse -Force -LiteralPath $tempRoot
     }

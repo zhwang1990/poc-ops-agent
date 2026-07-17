@@ -148,6 +148,10 @@ java -jar "%WORKER_JAR%" --spring.profiles.active=demo
 set "REPO=C:\path\to\poc-ops-agent"
 cd /d "%REPO%\backend"
 for /f "delims=" %J in ('dir /b control-plane\bootstrap\target\control-plane-bootstrap-*.jar') do set CONTROL_PLANE_JAR=control-plane\bootstrap\target\%J
+rem 以下变量仅由批准的部署密钥源注入，示例不提供任何值。
+set "OPS_AGENT_DEMO_ADMIN_PASSWORD=<由安全密钥源注入>"
+set "OPS_AGENT_SQL_DML_RECEIPT_HMAC_SECRET=<由安全密钥源注入>"
+set "OPS_AGENT_SKILL_REGISTRY_SIGNING_SECRET=<由安全密钥源注入>"
 java -jar "%CONTROL_PLANE_JAR%" --spring.profiles.active=demo
 ```
 

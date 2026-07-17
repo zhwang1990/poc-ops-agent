@@ -132,3 +132,40 @@ cmd /c tools\demo\test-demo-scripts.cmd
 - 前端：`npm --prefix frontend/operator-console run check` 通过；`npm --prefix frontend/operator-console test -- --run` 为 29 个测试文件、358 项测试通过，0 失败，耗时 21.42 秒。
 - `git diff --check` 通过。
 - `tools/ci/scan-secrets.ps1` 通过；对 Task 7 修改的配置、测试、运行手册和 demo 启动器检索固定 demo 口令无命中。新增敏感词引用仅为环境变量名、凭据别名或运行时生成变量，没有提交 HMAC 密钥、数据库凭据或口令值。
+
+## 7. 签名密钥与 Demo 密钥复审修复记录
+
+### 7.1 RED
+
+在移除默认值前，从 `backend` 执行以下聚焦命令：
+
+```powershell
+.\mvnw.cmd -pl control-plane/bootstrap -am "-Dtest=ControlledSqlDmlEndToEndTest,SkillRegistryBootstrapConfigurationTest" "-Dsurefire.failIfNoSpecifiedTests=false" test
+```
+
+结果：8 项测试中 3 项按预期失败。失败覆盖两个活动控制面配置仍接受固定 Skill 注册表签名材料、`SkillRegistryProperties` 仍提供签名密钥默认值，以及 `demo` 配置仍允许 DML 回执密钥缺失时解析为空值。随后为 demo 启动器新增 Skill 注册表密钥断言，`cmd /c tools\demo\test-demo-scripts.cmd` 按预期失败，指出启动器尚未要求该注入变量。
+
+### 7.2 GREEN
+
+- 控制面基础和 OIDC 示例配置均改为必需的 `OPS_AGENT_SKILL_REGISTRY_SIGNING_SECRET` 占位符，Java 属性不再提供默认签名密钥。
+- `application-demo.yaml` 的 `OPS_AGENT_SQL_DML_RECEIPT_HMAC_SECRET` 移除了空默认值；新增配置测试证明缺失时无法解析。
+- 所有控制面 `@SpringBootTest` 上下文从进程内生成随机签名材料，并对临时复制的 Skill fixture 重新签名；测试不再包含固定值。
+- Skill 打包、合同检查和两个 demo 启动器都要求安全注入的签名密钥；打包工具测试先验证缺失注入被拒绝，再使用运行时生成材料生成制品。
+- 历史 M03 计划删除固定签名材料；运行手册、打包和 demo 文档明确三个 demo 注入变量均无默认值。
+
+聚焦 GREEN 命令与结果：
+
+```powershell
+.\mvnw.cmd -pl control-plane/bootstrap -am "-Dtest=ControlledSqlDmlEndToEndTest,SkillRegistryBootstrapConfigurationTest" "-Dsurefire.failIfNoSpecifiedTests=false" test
+cmd /c tools\demo\test-demo-scripts.cmd
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\skills\test-skill-package-tool.ps1
+```
+
+结果：Maven 8 项测试全部通过；demo 启动器自检通过；Skill 打包工具测试通过。
+
+### 7.3 最终验证
+
+- `backend`：`.\mvnw.cmd test` 成功，17 个 reactor 项目全部成功，130 份 Surefire 报告共 581 项测试全部通过，耗时 1 分 52 秒。
+- 前端：`npm --prefix frontend/operator-console run check` 成功；`npm --prefix frontend/operator-console test -- --run` 成功，29 个测试文件、358 项测试全部通过。
+- 变更文件聚焦密钥扫描全部通过：旧 Skill 签名材料、固定 demo 密码形态、DML 回执空默认值和非占位符 Skill YAML 签名值均无命中。
+- `git diff --check` 通过；仅有 Git 对既有 PowerShell/CMD 行尾归一化的提示，无空白错误。

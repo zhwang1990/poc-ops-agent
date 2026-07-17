@@ -93,14 +93,11 @@ import org.springframework.test.web.reactive.server.WebTestClient;
     "ops-agent.policy.required-roles-by-action.internal.model-providers.api-key.rotate[0]=ROLE_ops-admin",
     "ops-agent.policy.required-roles-by-action.internal.model-providers.test[0]=ROLE_ops-admin",
     "ops-agent.policy.required-roles-by-action.internal.model-providers.switch[0]=ROLE_ops-admin",
-    "ops-agent.skill-registry.root-path=target/test-classes/skills",
-    "ops-agent.skill-registry.signature-required=true",
-    "ops-agent.skill-registry.signing-secret=ops-agent-skill-signing-key-2026-06-06-0001",
     "ops-agent.audit.storage-path=target/test-audit/control-plane-audit.jsonl",
     "spring.r2dbc.url=r2dbc:h2:mem:///control-plane-test;MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
     "ops-agent.workflow.startup-recovery-enabled=false"
 })
-class ControlPlaneApplicationTest {
+class ControlPlaneApplicationTest extends BootstrapSkillRegistryTestSupport {
 
   private static final String SECRET = "ops-agent-dev-secret-2026-06-06-0001";
   private static final Path AUDIT_PATH = Path.of("target/test-audit/control-plane-audit.jsonl");

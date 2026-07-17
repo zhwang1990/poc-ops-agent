@@ -51,6 +51,11 @@ findstr /I /C:"OPS_AGENT_SQL_DML_RECEIPT_HMAC_SECRET" "%START_SCRIPT%" >nul || (
   exit /b 1
 )
 
+findstr /I /C:"OPS_AGENT_SKILL_REGISTRY_SIGNING_SECRET" "%START_SCRIPT%" >nul || (
+  echo start-demo.cmd must require the Skill registry signing secret
+  exit /b 1
+)
+
 findstr /I /C:"Starting Worker on 127.0.0.1:8091 with demo profile" "%START_SCRIPT%" >nul || (
   echo start-demo.cmd must enable the demo profile for the Worker
   exit /b 1
@@ -163,6 +168,11 @@ findstr /I /C:"OPS_AGENT_DEMO_ADMIN_PASSWORD" "%START_BACKEND_JARS_SCRIPT%" >nul
 
 findstr /I /C:"OPS_AGENT_SQL_DML_RECEIPT_HMAC_SECRET" "%START_BACKEND_JARS_SCRIPT%" >nul || (
   echo start-backend-jars.cmd must require the DML receipt signing secret
+  exit /b 1
+)
+
+findstr /I /C:"OPS_AGENT_SKILL_REGISTRY_SIGNING_SECRET" "%START_BACKEND_JARS_SCRIPT%" >nul || (
+  echo start-backend-jars.cmd must require the Skill registry signing secret
   exit /b 1
 )
 

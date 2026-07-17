@@ -56,6 +56,12 @@ if not defined OPS_AGENT_SQL_DML_RECEIPT_HMAC_SECRET (
   goto :fail
 )
 
+if not defined OPS_AGENT_SKILL_REGISTRY_SIGNING_SECRET (
+  echo Missing required OPS_AGENT_SKILL_REGISTRY_SIGNING_SECRET secure environment injection.
+  echo Provide the Skill registry signing secret through the current process environment, then rerun this launcher.
+  goto :fail
+)
+
 if not exist "%BACKEND_DIR%\mvnw.cmd" (
   echo Missing Maven Wrapper: %BACKEND_DIR%\mvnw.cmd
   goto :fail

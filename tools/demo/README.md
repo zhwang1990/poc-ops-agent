@@ -33,6 +33,10 @@ Worker 和控制面使用固定端口约束：Worker 只能使用 `8091`，控�
 tools\demo\start-demo.cmd
 ```
 
+启动前必须通过批准的部署密钥源向当前进程注入 `OPS_AGENT_DEMO_ADMIN_PASSWORD`、
+`OPS_AGENT_SQL_DML_RECEIPT_HMAC_SECRET` 和 `OPS_AGENT_SKILL_REGISTRY_SIGNING_SECRET`。三者均没有默认值，
+启动器不会生成、回显或保存任何值。
+
 如果演示机同时安装了多个 Java 版本，可以显式指定 JDK 21 的 `bin` 目录：
 
 ```text

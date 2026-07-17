@@ -29,9 +29,6 @@ import org.springframework.test.web.reactive.server.WebTestClient;
     "ops-agent.policy.required-roles-by-action.internal.health.read[0]=ROLE_ops-reader",
     "ops-agent.policy.required-roles-by-action.internal.health.read[1]=ROLE_ops-admin",
     "ops-agent.policy.required-roles-by-action.internal.identity.password-reset[0]=ROLE_ops-admin",
-    "ops-agent.skill-registry.root-path=target/test-classes/skills",
-    "ops-agent.skill-registry.signature-required=true",
-    "ops-agent.skill-registry.signing-secret=ops-agent-skill-signing-key-2026-06-06-0001",
     "spring.r2dbc.url=r2dbc:h2:mem:///built-in-browser-test;MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
     "ops-agent.workflow.startup-recovery-enabled=false",
     "ops-agent.built-in-identity.lockout-threshold=5",
@@ -39,7 +36,7 @@ import org.springframework.test.web.reactive.server.WebTestClient;
     "ops-agent.built-in-identity.session-idle-timeout=15m",
     "ops-agent.built-in-identity.session-absolute-timeout=8h"
 })
-class BuiltInBrowserAuthenticationIntegrationTest {
+class BuiltInBrowserAuthenticationIntegrationTest extends BootstrapSkillRegistryTestSupport {
 
   private static final OffsetDateTime FIXED_TIME = OffsetDateTime.parse("2026-06-07T12:00:00Z");
 

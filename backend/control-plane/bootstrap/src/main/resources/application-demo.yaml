@@ -13,7 +13,7 @@ ops-agent:
       - sit
     preflight-receipt:
       key-id: task7-sql-dml-receipt-v1
-      hmac-secret: ${OPS_AGENT_SQL_DML_RECEIPT_HMAC_SECRET:}
+      hmac-secret: ${OPS_AGENT_SQL_DML_RECEIPT_HMAC_SECRET}
       ttl: 5m
     rules:
       - connection-id: h2-local-test

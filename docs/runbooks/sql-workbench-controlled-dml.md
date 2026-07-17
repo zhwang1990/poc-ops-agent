@@ -35,6 +35,9 @@
 .\mvnw.cmd -am -pl control-plane/bootstrap "-Dtest=ControlledSqlDmlEndToEndTest" "-Dsurefire.failIfNoSpecifiedTests=false" test
 ```
 
+`demo` profile 启动必须同时注入 `OPS_AGENT_SQL_DML_RECEIPT_HMAC_SECRET` 与
+`OPS_AGENT_SKILL_REGISTRY_SIGNING_SECRET`；两者均没有空默认值。缺少任一变量时，启动必须在写入能力可用前失败关闭。
+
 随后完成以下人工核对：
 
 1. 对允许的 `INSERT`、`UPDATE`、`DELETE` 分别请求预检，确认响应包含服务端签发的 v1.1 回执、key ID、过期时间和参数绑定摘要。

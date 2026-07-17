@@ -37,14 +37,12 @@ import reactor.core.publisher.Mono;
     "ops-agent.policy.version=rbac-v1",
     "ops-agent.policy.required-roles-by-action.internal.agent.diagnostics.read[0]=ROLE_ops-reader",
     "ops-agent.policy.required-roles-by-action.internal.agent.diagnostics.read[1]=ROLE_ops-admin",
-    "ops-agent.skill-registry.root-path=target/test-classes/skills",
-    "ops-agent.skill-registry.signature-required=true",
     "ops-agent.audit.storage-path=target/test-audit/agent-diagnostic-audit.jsonl",
     "spring.r2dbc.url=r2dbc:h2:mem:///agent-diagnostic-endpoint-test;MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
     "ops-agent.workflow.startup-recovery-enabled=false",
     "ops-agent.agent-runtime.enabled=true"
 })
-class AgentDiagnosticEndpointIntegrationTest {
+class AgentDiagnosticEndpointIntegrationTest extends BootstrapSkillRegistryTestSupport {
 
   @Autowired
   private WebTestClient webTestClient;

@@ -1,6 +1,5 @@
 $ErrorActionPreference = "Stop"
 
-$signingSecret = "ops-agent-skill-signing-key-2026-06-06-0001"
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot "../..")).Path
 $defaultSkillRoot = Join-Path $repositoryRoot "backend/skills"
 $defaultContractRoot = Join-Path $repositoryRoot "backend/contracts/skills/packages"
@@ -37,6 +36,14 @@ $forbiddenPackageFields = @(
 function Fail {
     param([string] $Message)
     throw $Message
+}
+
+function Get-RequiredSigningSecret {
+    $secret = $env:OPS_AGENT_SKILL_REGISTRY_SIGNING_SECRET
+    if ([string]::IsNullOrWhiteSpace($secret)) {
+        Fail "OPS_AGENT_SKILL_REGISTRY_SIGNING_SECRET must be injected for Skill contract signing."
+    }
+    return $secret
 }
 
 function Write-Utf8NoBom {
@@ -551,7 +558,7 @@ function Generate-Package {
         publishedAt = if ($package.Contains("publishedAt")) { $package.publishedAt } else { "2026-06-27T00:00:00+08:00" }
         checksumSha256 = $checksum
         signatureAlgorithm = "HmacSHA256"
-        signature = Get-HmacSha256Hex -Secret $signingSecret -Payload $checksum
+        signature = Get-HmacSha256Hex -Secret (Get-RequiredSigningSecret) -Payload $checksum
     }
     Convert-ToJsonFile -Path (Join-Path $targetRoot "manifest.signature.json") -Value $publication
 }

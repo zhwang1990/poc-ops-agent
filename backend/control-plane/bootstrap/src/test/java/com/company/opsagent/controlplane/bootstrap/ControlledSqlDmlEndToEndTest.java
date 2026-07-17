@@ -263,6 +263,15 @@ class ControlledSqlDmlEndToEndTest {
     assertEquals("task7-sql-dml-receipt-v1", configured.receipt().getKeyId());
   }
 
+  @Test
+  void demoProfileRejectsMissingDmlReceiptSecretInjection() throws Exception {
+    StandardEnvironment environment = environmentFor(
+        List.of(new ClassPathResource("application-demo.yaml")), Map.of());
+
+    assertThrows(IllegalArgumentException.class, () -> environment.getProperty(
+        "ops-agent.controlled-sql-dml.preflight-receipt.hmac-secret"));
+  }
+
   private static void assertExactlyOnce(Harness harness, String idempotencyKey, String sql) {
     SqlDmlCommitRequest commit = harness.prepareCommit(sql, idempotencyKey);
 
@@ -314,6 +323,14 @@ class ControlledSqlDmlEndToEndTest {
       Map<String, Object> runtimeValues,
       String prefix,
       Class<T> type) throws IOException {
+    StandardEnvironment environment = environmentFor(resources, runtimeValues);
+    return Binder.get(environment).bind(prefix, Bindable.of(type))
+        .orElseThrow(() -> new IllegalStateException(prefix + " is not configured"));
+  }
+
+  private static StandardEnvironment environmentFor(
+      List<Resource> resources,
+      Map<String, Object> runtimeValues) throws IOException {
     StandardEnvironment environment = new StandardEnvironment();
     MutablePropertySources sources = environment.getPropertySources();
     sources.addFirst(new MapPropertySource("task-7-runtime", runtimeValues));
@@ -326,8 +343,7 @@ class ControlledSqlDmlEndToEndTest {
         sources.addAfter("task-7-runtime", loaded.get(sourceIndex));
       }
     }
-    return Binder.get(environment).bind(prefix, Bindable.of(type))
-        .orElseThrow(() -> new IllegalStateException(prefix + " is not configured"));
+    return environment;
   }
 
   private static FileSystemResource workerConfiguration(String fileName) {
