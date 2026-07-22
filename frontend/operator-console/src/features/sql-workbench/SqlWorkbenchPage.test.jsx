@@ -366,6 +366,82 @@ describe("SqlWorkbenchPage", () => {
     expect(within(riskDialog).queryByText("sha256:update-without-where")).not.toBeInTheDocument();
   });
 
+  test("locks every write runner while awaiting execution confirmation", async () => {
+    const user = userEvent.setup();
+    /** @type {unknown[]} */
+    const preflightRequests = [];
+    server.use(
+      http.get("/internal/sql-workbench/connections", () =>
+        HttpResponse.json(sqlConnections),
+      ),
+      http.post("/internal/sql-workbench/queries/preflight", async ({ request }) => {
+        preflightRequests.push(await request.json());
+        return HttpResponse.json(preflightWithRisk());
+      }),
+    );
+
+    renderAt("/sql");
+
+    await screen.findByText("已连接 · development");
+    await replaceSqlText(
+      user,
+      "update ORDERS.ORDERS set status = 'READY';\ndelete from ORDERS.ORDERS",
+    );
+    await clickRunSqlButton(user, 0);
+
+    await screen.findByRole("dialog", { name: "确认执行" });
+    const runButtons = await screen.findAllByRole("button", { name: "运行此 SQL" });
+    expect(runButtons).toHaveLength(2);
+    for (const runButton of runButtons) {
+      expect(runButton).toBeDisabled();
+    }
+    expect(preflightRequests).toHaveLength(1);
+  });
+
+  test("locks every write runner while preflight is in progress", async () => {
+    const user = userEvent.setup();
+    /** @type {() => void} */
+    let releasePreflight = () => {};
+    /** @type {() => void} */
+    let notifyPreflightStarted = () => {};
+    const preflightStarted = new Promise((resolve) => {
+      notifyPreflightStarted = () => resolve(undefined);
+    });
+    const preflightGate = new Promise((resolve) => {
+      releasePreflight = () => resolve(undefined);
+    });
+    server.use(
+      http.get("/internal/sql-workbench/connections", () =>
+        HttpResponse.json(sqlConnections),
+      ),
+      http.post("/internal/sql-workbench/queries/preflight", async () => {
+        notifyPreflightStarted();
+        await preflightGate;
+        return HttpResponse.json(preflightWithRisk());
+      }),
+    );
+
+    renderAt("/sql");
+
+    await screen.findByText("已连接 · development");
+    await replaceSqlText(
+      user,
+      "update ORDERS.ORDERS set status = 'READY';\ndelete from ORDERS.ORDERS",
+    );
+    await clickRunSqlButton(user, 0);
+
+    await preflightStarted;
+    const runButtons = await screen.findAllByRole("button", { name: "运行此 SQL" });
+    expect(runButtons).toHaveLength(2);
+    for (const runButton of runButtons) {
+      expect(runButton).toBeDisabled();
+    }
+
+    releasePreflight();
+    const riskDialog = await screen.findByRole("dialog", { name: "确认执行" });
+    await user.click(within(riskDialog).getByRole("button", { name: "取消" }));
+  });
+
   test("disables write execution when the server omits COMMIT_DML capability", async () => {
     const user = userEvent.setup();
     server.use(
@@ -555,7 +631,7 @@ describe("SqlWorkbenchPage", () => {
     expect(screen.getByText("workflow-dml-retry-handoff")).toBeInTheDocument();
   });
 
-  test("retains the DML commit envelope until the execution result is terminal", async () => {
+  test("keeps write execution locked until the execution result is terminal", async () => {
     const user = userEvent.setup();
     /** @type {string[]} */
     const preflightPayloads = [];
@@ -600,11 +676,14 @@ describe("SqlWorkbenchPage", () => {
     await clickRunSqlButton(user);
     await waitFor(() => expect(commitPayloads).toHaveLength(1));
 
-    await clickRunSqlButton(user);
-    await waitFor(() => expect(commitPayloads).toHaveLength(2));
-
+    expect(screen.getByRole("button", { name: "运行此 SQL" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "运行此 SQL" })).toHaveAttribute(
+      "title",
+      "正在处理上一条写操作",
+    );
+    expect(screen.getByText("正在处理上一条写操作")).toBeInTheDocument();
     expect(preflightPayloads).toHaveLength(1);
-    expect(commitPayloads[1]).toBe(commitPayloads[0]);
+    expect(commitPayloads).toHaveLength(1);
   });
 
   test("rotates the DML idempotency key when submission SQL changes", async () => {
@@ -1813,6 +1892,7 @@ describe("SqlWorkbenchPage", () => {
       "title",
       "生产环境不允许执行写操作",
     );
+    expect(screen.getByText("生产环境不允许执行写操作")).toBeInTheDocument();
   });
 
   test("uses the AI SQL assistant as advisory input that is revalidated on execution", async () => {

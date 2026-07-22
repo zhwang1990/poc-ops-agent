@@ -199,6 +199,8 @@ export function SqlWorkbenchPage() {
     /** @type {PendingDmlRiskConfirmation | null} */ (null),
   );
   const [isDmlRiskCommitPending, setIsDmlRiskCommitPending] = useState(false);
+  const [isWriteExecutionLocked, setIsWriteExecutionLocked] = useState(false);
+  const writeExecutionLockRef = useRef(false);
   const dmlSubmissionIdentities = useRef(
     /** @type {Map<string, DmlSubmissionIdentity>} */ (new Map()),
   );
@@ -246,10 +248,13 @@ export function SqlWorkbenchPage() {
     activeConnection?.targetEnvironment !== "production" &&
     activeConnection?.capabilities.includes("PREFLIGHT_DML") === true &&
     activeConnection?.capabilities.includes("COMMIT_DML") === true &&
+    !isWriteExecutionLocked &&
     currentExecution?.status !== "UNKNOWN_REQUIRES_HANDOFF";
   const dmlRunDisabledReason =
     activeConnection?.targetEnvironment === "production"
       ? "生产环境不允许执行写操作"
+      : isWriteExecutionLocked
+        ? "正在处理上一条写操作"
       : "当前连接不允许执行写操作";
   const canUseAssistant =
     canValidate &&
@@ -936,7 +941,11 @@ export function SqlWorkbenchPage() {
    * @param {string} sqlText
    */
   async function runControlledDml(sqlText) {
-    if (!activeConnection || !canRunControlledDmlStatement) {
+    if (
+      !activeConnection ||
+      !canRunControlledDmlStatement ||
+      !acquireWriteExecutionLock()
+    ) {
       return;
     }
     const sql = sqlText.trim();
@@ -1015,6 +1024,7 @@ export function SqlWorkbenchPage() {
         resultPageTokens: [null],
       });
     } catch (error) {
+      releaseWriteExecutionLock();
       const errorMessage = error instanceof Error ? error.message : "写操作执行失败";
       updateResultTab(sessionId, resultTab.id, {
         errorMessage,
@@ -1060,6 +1070,7 @@ export function SqlWorkbenchPage() {
       });
       setPendingDmlRiskConfirmation(null);
     } catch (error) {
+      releaseWriteExecutionLock();
       const errorMessage = error instanceof Error ? error.message : "写操作执行失败";
       updateResultTab(sessionId, resultTabId, {
         errorMessage,
@@ -1099,6 +1110,24 @@ export function SqlWorkbenchPage() {
       pendingDmlRiskConfirmation.request.idempotencyKey,
     );
     setPendingDmlRiskConfirmation(null);
+    releaseWriteExecutionLock();
+  }
+
+  function acquireWriteExecutionLock() {
+    if (writeExecutionLockRef.current) {
+      return false;
+    }
+    writeExecutionLockRef.current = true;
+    setIsWriteExecutionLocked(true);
+    return true;
+  }
+
+  function releaseWriteExecutionLock() {
+    if (!writeExecutionLockRef.current) {
+      return;
+    }
+    writeExecutionLockRef.current = false;
+    setIsWriteExecutionLocked(false);
   }
 
   /**
@@ -1142,6 +1171,7 @@ export function SqlWorkbenchPage() {
   function completeDmlSubmissionIdentity(sessionId, idempotencyKey, execution) {
     if (isConfirmedDmlTerminalStatus(execution.status)) {
       clearDmlSubmissionIdentity(sessionId, idempotencyKey);
+      releaseWriteExecutionLock();
     }
   }
 

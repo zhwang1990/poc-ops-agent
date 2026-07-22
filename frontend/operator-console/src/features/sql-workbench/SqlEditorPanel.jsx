@@ -3,6 +3,7 @@ import { Download, Upload } from "lucide-react";
 import { SqlComparePanel } from "./SqlComparePanel.jsx";
 import { SqlCodeEditor } from "./SqlCodeEditor.jsx";
 import { SqlNaturalLanguagePanel } from "./SqlNaturalLanguagePanel.jsx";
+import { isLikelyControlledDmlSql } from "./sql-workbench-utils.js";
 import styles from "./SqlWorkbenchPage.module.css";
 
 const SESSION_MODE_OPTIONS = [
@@ -57,6 +58,12 @@ export function SqlEditorPanel({
   session,
 }) {
   const currentMode = session.mode ?? "sql";
+  const writeRunDisabledReason =
+    currentMode === "sql" &&
+    isLikelyControlledDmlSql(session.sql.trim()) &&
+    !canRunDmlStatements
+      ? dmlRunDisabledReason
+      : null;
   /**
    * @param {import("react").ChangeEvent<HTMLInputElement>} event
    */
@@ -122,8 +129,19 @@ export function SqlEditorPanel({
       </div>
 
       {currentMode === "sql" ? (
-        <section className={styles.sqlEditor} aria-label={`${session.label}.sql`}>
+        <section
+          aria-describedby={writeRunDisabledReason ? "sql-write-run-status" : undefined}
+          aria-label={`${session.label}.sql`}
+          className={`${styles.sqlEditor} ${
+            writeRunDisabledReason ? styles.sqlEditorWithRunStatus : ""
+          }`}
+        >
           <span>{session.label}.sql</span>
+          {writeRunDisabledReason ? (
+            <p className={styles.sqlWriteRunStatus} id="sql-write-run-status" role="status">
+              {writeRunDisabledReason}
+            </p>
+          ) : null}
           <SqlCodeEditor
             canRunDmlStatements={canRunDmlStatements}
             canRunReadOnlyStatements={canRunReadOnlyStatements}
