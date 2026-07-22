@@ -243,6 +243,7 @@ export function SqlWorkbenchPage() {
     activeConnection?.capabilities.includes("RUN_READ_ONLY") === true;
   const canRunControlledDmlStatement =
     isReadyConnection &&
+    activeConnection?.targetEnvironment !== "production" &&
     activeConnection?.capabilities.includes("PREFLIGHT_DML") === true &&
     activeConnection?.capabilities.includes("COMMIT_DML") === true &&
     currentExecution?.status !== "UNKNOWN_REQUIRES_HANDOFF";

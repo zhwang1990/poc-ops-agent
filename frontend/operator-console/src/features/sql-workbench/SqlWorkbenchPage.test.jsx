@@ -1788,7 +1788,7 @@ describe("SqlWorkbenchPage", () => {
     await waitFor(() => expect(separator).toHaveAttribute("aria-valuenow", "84"));
   });
 
-  test("does not enable DML for a production connection when the server omits DML capabilities", async () => {
+  test("blocks writes for a production connection that still advertises write capabilities", async () => {
     const user = userEvent.setup();
     server.use(
       http.get("/internal/sql-workbench/connections", () =>
@@ -1798,7 +1798,7 @@ describe("SqlWorkbenchPage", () => {
             connectionId: "as400-production",
             displayName: "AS/400 Production",
             targetEnvironment: "production",
-            capabilities: ["VALIDATE", "RUN_READ_ONLY"],
+            capabilities: ["VALIDATE", "RUN_READ_ONLY", "PREFLIGHT_DML", "COMMIT_DML"],
           },
         ]),
       ),
