@@ -3,7 +3,10 @@ import { Download, Upload } from "lucide-react";
 import { SqlComparePanel } from "./SqlComparePanel.jsx";
 import { SqlCodeEditor } from "./SqlCodeEditor.jsx";
 import { SqlNaturalLanguagePanel } from "./SqlNaturalLanguagePanel.jsx";
-import { isLikelyControlledDmlSql } from "./sql-workbench-utils.js";
+import {
+  findSqlEditorStatements,
+  isLikelyControlledDmlSql,
+} from "./sql-workbench-utils.js";
 import styles from "./SqlWorkbenchPage.module.css";
 
 const SESSION_MODE_OPTIONS = [
@@ -58,10 +61,13 @@ export function SqlEditorPanel({
   session,
 }) {
   const currentMode = session.mode ?? "sql";
-  const writeRunDisabledReason =
+  const hasControlledWriteStatement =
     currentMode === "sql" &&
-    isLikelyControlledDmlSql(session.sql.trim()) &&
-    !canRunDmlStatements
+    findSqlEditorStatements(session.sql).some((statement) =>
+      isLikelyControlledDmlSql(statement.sql),
+    );
+  const writeRunDisabledReason =
+    hasControlledWriteStatement && !canRunDmlStatements
       ? dmlRunDisabledReason
       : null;
   /**

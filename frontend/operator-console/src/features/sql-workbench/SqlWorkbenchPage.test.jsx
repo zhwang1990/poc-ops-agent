@@ -1895,6 +1895,36 @@ describe("SqlWorkbenchPage", () => {
     expect(screen.getByText("生产环境不允许执行写操作")).toBeInTheDocument();
   });
 
+  test("shows the production write restriction for a later write statement", async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.get("/internal/sql-workbench/connections", () =>
+        HttpResponse.json([
+          {
+            ...sqlConnections[0],
+            connectionId: "as400-production",
+            displayName: "AS/400 Production",
+            targetEnvironment: "production",
+            capabilities: ["VALIDATE", "RUN_READ_ONLY", "PREFLIGHT_DML", "COMMIT_DML"],
+          },
+        ]),
+      ),
+    );
+
+    renderAt("/sql");
+
+    await screen.findByText("已连接 · production");
+    await replaceSqlText(
+      user,
+      "select * from ORDERS.ORDERS;\nupdate ORDERS.ORDERS set status = 'READY'",
+    );
+
+    const runButtons = await screen.findAllByRole("button", { name: "运行此 SQL" });
+    expect(runButtons).toHaveLength(2);
+    expect(runButtons[1]).toBeDisabled();
+    expect(screen.getByRole("status")).toHaveTextContent("生产环境不允许执行写操作");
+  });
+
   test("uses the AI SQL assistant as advisory input that is revalidated on execution", async () => {
     const user = userEvent.setup();
     /** @type {unknown[]} */
