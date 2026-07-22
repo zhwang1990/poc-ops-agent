@@ -1,5 +1,7 @@
 package com.company.opsagent.executionworker.sqlworkbench;
 
+import com.company.opsagent.contracts.sqlworkbench.SqlControlledDmlExecutionRequest;
+import com.company.opsagent.contracts.sqlworkbench.SqlDmlPreflightExecutionRequest;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryExecutionRequest;
 import com.company.opsagent.contracts.sqlworkbench.SqlConnectionSummary;
 import com.company.opsagent.contracts.workflow.WorkerRequestSignature;
@@ -32,6 +34,26 @@ public class SqlWorkerTransportAuthenticator {
     String keyId = acceptedKeyId(headers);
     String timestamp = acceptedTimestamp(headers);
     String payload = WorkerRequestSignature.canonicalSqlPayload(keyId, timestamp, request);
+    assertSignature(headers, payload);
+  }
+
+  public void authenticateSqlDmlPreflight(
+      HttpHeaders headers,
+      SqlDmlPreflightExecutionRequest request) {
+    ensureDmlAuthenticationConfigured();
+    String keyId = acceptedKeyId(headers);
+    String timestamp = acceptedTimestamp(headers);
+    String payload = WorkerRequestSignature.canonicalSqlDmlPreflightPayload(keyId, timestamp, request);
+    assertSignature(headers, payload);
+  }
+
+  public void authenticateControlledSqlDml(
+      HttpHeaders headers,
+      SqlControlledDmlExecutionRequest request) {
+    ensureDmlAuthenticationConfigured();
+    String keyId = acceptedKeyId(headers);
+    String timestamp = acceptedTimestamp(headers);
+    String payload = WorkerRequestSignature.canonicalControlledSqlDmlPayload(keyId, timestamp, request);
     assertSignature(headers, payload);
   }
 
@@ -95,6 +117,14 @@ public class SqlWorkerTransportAuthenticator {
   private void ensureConfigured() {
     if (isBlank(properties.getKeyId()) || isBlank(properties.getSharedSecret())) {
       throw new IllegalStateException("worker transport auth is enabled but key id or shared secret is missing");
+    }
+  }
+
+  private void ensureDmlAuthenticationConfigured() {
+    if (!properties.isEnabled()
+        || isBlank(properties.getKeyId())
+        || isBlank(properties.getSharedSecret())) {
+      reject("worker transport authentication is required for SQL DML");
     }
   }
 

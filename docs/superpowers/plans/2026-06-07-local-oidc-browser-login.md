@@ -73,7 +73,7 @@
     "ops-agent.local-oidc-provider.enabled=true",
     "ops-agent.local-oidc-provider.issuer=http://127.0.0.1:18080/mock-oidc",
     "ops-agent.local-oidc-provider.client-id=ops-agent-local-client",
-    "ops-agent.local-oidc-provider.client-secret=ops-agent-local-secret"
+    "ops-agent.local-oidc-provider.client-secret=${OPS_AGENT_LOCAL_OIDC_CLIENT_SECRET}"
 })
 class LocalOidcProviderControllerTest {
 
@@ -219,7 +219,7 @@ void exchangesAuthorizationCodeForTokens() {
   webTestClient.post()
       .uri("/mock-oidc/oauth2/token")
       .contentType(MediaType.APPLICATION_FORM_URLENCODED)
-      .bodyValue("grant_type=authorization_code&code=" + code + "&redirect_uri=http://127.0.0.1/login/oauth2/code/ops-agent&client_id=ops-agent-local-client&client_secret=ops-agent-local-secret")
+      // client_secret 仅通过 OPS_AGENT_LOCAL_OIDC_CLIENT_SECRET 在运行时注入。
       .exchange()
       .expectStatus().isOk()
       .expectBody()
@@ -273,7 +273,7 @@ git commit -m "Add local mock OIDC provider"
     "ops-agent.local-oidc-provider.enabled=true",
     "ops-agent.local-oidc-provider.issuer=http://127.0.0.1:18080/mock-oidc",
     "ops-agent.local-oidc-provider.client-id=ops-agent-local-client",
-    "ops-agent.local-oidc-provider.client-secret=ops-agent-local-secret"
+    "ops-agent.local-oidc-provider.client-secret=${OPS_AGENT_LOCAL_OIDC_CLIENT_SECRET}"
 })
 class LocalOidcBrowserLoginIntegrationTest {
 
@@ -318,7 +318,7 @@ ops-agent:
     enabled: true
     issuer: http://127.0.0.1:8080/mock-oidc
     client-id: ops-agent-local-client
-    client-secret: ops-agent-local-secret
+    client-secret: ${OPS_AGENT_LOCAL_OIDC_CLIENT_SECRET}
     default-subject: local-reader-id
     default-username: local.reader
     default-roles:

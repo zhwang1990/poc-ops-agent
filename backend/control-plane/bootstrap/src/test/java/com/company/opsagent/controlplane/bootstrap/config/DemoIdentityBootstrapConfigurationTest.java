@@ -20,9 +20,11 @@ import io.r2dbc.spi.ConnectionFactories;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.Base64;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.ApplicationArguments;
@@ -45,16 +47,18 @@ class DemoIdentityBootstrapConfigurationTest {
     assertEquals("http://127.0.0.1:8091", demo.getProperty("ops-agent.worker.base-url"));
     assertEquals(true, demo.getProperty("ops-agent.demo.identity-seed.enabled"));
     assertEquals("admin", demo.getProperty("ops-agent.demo.identity-seed.username"));
-    assertEquals("Admin#2026Demo", demo.getProperty("ops-agent.demo.identity-seed.password"));
+    assertEquals("${OPS_AGENT_DEMO_ADMIN_PASSWORD}",
+        demo.getProperty("ops-agent.demo.identity-seed.password"));
   }
 
   @Test
   void seedsDemoAdminAccountWithReadablePasswordAndRoles() throws Exception {
     TestIdentityContext context = identityContext("demo-identity-seed");
+    String seedPassword = runtimePassword();
     var properties = new DemoIdentityBootstrapConfiguration.DemoIdentitySeedProperties(
         true,
         "admin",
-        "Admin#2026Demo",
+        seedPassword,
         List.of("ROLE_ops-admin", "ROLE_ops-reader"));
 
     new DemoIdentityBootstrapConfiguration()
@@ -78,12 +82,13 @@ class DemoIdentityBootstrapConfigurationTest {
         .findActiveByAccountId(account.accountId())
         .orElseThrow();
     assertFalse(credential.mustChangeOnNextLogin());
-    assertTrue(((PasswordVerifier) context.passwordHasher()).matches("Admin#2026Demo", credential));
+    assertTrue(((PasswordVerifier) context.passwordHasher()).matches(seedPassword, credential));
   }
 
   @Test
   void doesNotOverwriteExistingAdminAccount() throws Exception {
     TestIdentityContext context = identityContext("demo-identity-existing");
+    String existingPassword = runtimePassword();
     context.accountRepository().save(new Account(
         "existing-admin",
         "admin",
@@ -95,14 +100,15 @@ class DemoIdentityBootstrapConfigurationTest {
         null));
     context.passwordCredentialRepository().save(context.passwordHasher().hash(
         "existing-admin",
-        "Existing#2026Demo",
+        existingPassword,
         7L,
         false));
 
+    String seedPassword = runtimePassword();
     var properties = new DemoIdentityBootstrapConfiguration.DemoIdentitySeedProperties(
         true,
         "admin",
-        "Admin#2026Demo",
+        seedPassword,
         List.of("ROLE_ops-admin", "ROLE_ops-reader"));
 
     new DemoIdentityBootstrapConfiguration()
@@ -122,7 +128,13 @@ class DemoIdentityBootstrapConfigurationTest {
 
     assertEquals("existing-admin", account.accountId());
     assertEquals(7L, credential.passwordVersion());
-    assertTrue(((PasswordVerifier) context.passwordHasher()).matches("Existing#2026Demo", credential));
+    assertTrue(((PasswordVerifier) context.passwordHasher()).matches(existingPassword, credential));
+  }
+
+  private static String runtimePassword() {
+    byte[] bytes = new byte[32];
+    new SecureRandom().nextBytes(bytes);
+    return Base64.getEncoder().encodeToString(bytes);
   }
 
   private PropertySource<?> loadDemoYaml() throws IOException {

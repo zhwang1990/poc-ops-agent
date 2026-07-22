@@ -16,7 +16,12 @@ import {
 } from "./agent-api.js";
 import { ApiError, SESSION_EXPIRED_EVENT, requestJson } from "./client.js";
 import { getSkill, listSkills } from "./skill-api.js";
-import { commitControlledSqlDml, listSqlConnections, validateSqlQuery } from "./sql-api.js";
+import {
+  commitControlledSqlDml,
+  listSqlConnections,
+  preflightControlledSqlDml,
+  validateSqlQuery,
+} from "./sql-api.js";
 import {
   listReleaseScriptProfiles,
   listReleaseApplications,
@@ -25,6 +30,10 @@ import {
   streamReleasePlanEvents,
   uploadTomcatWar,
 } from "./release-center-api.js";
+
+function runtimeTestInput() {
+  return String(Date.now()) + String(Math.random());
+}
 import { server } from "../test/server.js";
 
 describe("requestJson", () => {
@@ -181,6 +190,7 @@ describe("requestJson", () => {
 
 describe("feature API modules", () => {
   test("maps authentication endpoints to the browser session and built-in login contract", async () => {
+    const loginPassword = runtimeTestInput();
     /** @type {unknown[]} */
     const loginRequests = [];
     server.use(
@@ -208,10 +218,10 @@ describe("feature API modules", () => {
 
     await expect(getBrowserSession()).resolves.toMatchObject({ username: "alice" });
     await expect(
-      loginWithPassword({ username: "alice", password: "Start#2026" }),
+      loginWithPassword({ username: "alice", password: loginPassword }),
     ).resolves.toMatchObject({ username: "alice" });
     await expect(logout()).resolves.toBeUndefined();
-    expect(loginRequests).toEqual([{ username: "alice", password: "Start#2026" }]);
+    expect(loginRequests).toEqual([{ username: "alice", password: loginPassword }]);
     expect(getLoginUrl()).toBe("/auth/login");
     expect(getLogoutUrl()).toBe("/auth/logout");
   });
@@ -284,6 +294,27 @@ describe("feature API modules", () => {
     ]);
   });
 
+  test("accepts only PREFLIGHT_DML input for controlled SQL preflight", async () => {
+    /** @type {unknown[]} */
+    const preflightRequests = [];
+    server.use(
+      http.post("/internal/sql-workbench/queries/preflight", async ({ request }) => {
+        preflightRequests.push(await request.json());
+        return HttpResponse.json(sqlDmlPreflightResult);
+      }),
+    );
+
+    expect(() =>
+      preflightControlledSqlDml({ ...sqlRequest, action: "COMMIT_DML" }),
+    ).toThrow();
+    expect(preflightRequests).toHaveLength(0);
+
+    await expect(
+      preflightControlledSqlDml({ ...sqlRequest, action: "PREFLIGHT_DML" }),
+    ).resolves.toEqual(sqlDmlPreflightResult);
+    expect(preflightRequests).toHaveLength(1);
+  });
+
   test("posts main AgentScope diagnostic tasks to the primary control-plane endpoint", async () => {
     /** @type {Array<[string, string, unknown]>} */
     const calls = [];
@@ -302,6 +333,7 @@ describe("feature API modules", () => {
   });
 
   test("maps release center configuration endpoints to control-plane paths", async () => {
+    const rotatedSecret = runtimeTestInput();
     /** @type {Array<[string, string, unknown?]>} */
     const calls = [];
     server.use(
@@ -329,7 +361,7 @@ describe("feature API modules", () => {
     await rotateReleaseCredential({
       credentialAlias: "tomcat-dev",
       serverType: "TOMCAT",
-      secret: "secret-value",
+      secret: rotatedSecret,
     });
 
     expect(calls).toEqual([
@@ -339,7 +371,7 @@ describe("feature API modules", () => {
       [
         "POST",
         "/internal/release-center/credentials",
-        { credentialAlias: "tomcat-dev", serverType: "TOMCAT", secret: "secret-value" },
+        { credentialAlias: "tomcat-dev", serverType: "TOMCAT", secret: rotatedSecret },
       ],
     ]);
   });
@@ -608,7 +640,7 @@ const sqlRequest = {
 };
 
 const sqlDmlCommitRequest = {
-  contractVersion: "1.0",
+  contractVersion: "1.1",
   query: {
     ...sqlRequest,
     targetEnvironment: "dev",
@@ -616,8 +648,58 @@ const sqlDmlCommitRequest = {
     sql: "update ORDERS.ORDERS set status = 'READY' where order_id = 1",
     idempotencyKey: "sql-commit-1",
   },
-  confirmation: null,
+  confirmation: {
+    contractVersion: "1.0",
+    sqlHash: "sha256:commit",
+    confirmedRisks: [],
+    confirmationCode: "CONFIRM_SQL_DML_RISK",
+  },
+  receipt: createSqlDmlPreflightReceipt(),
 };
+
+const sqlDmlPreflightResult = {
+  contractVersion: "1.1",
+  validation: {
+    contractVersion: "1.0",
+    statementType: "UPDATE",
+    validationLevel: "VALIDATED",
+    sqlHash: "sha256:commit",
+    referencedObjects: ["ORDERS.ORDERS"],
+    risks: [],
+    rejectionReasons: [],
+    unverifiedItems: [],
+  },
+  impactPreview: {
+    contractVersion: "1.0",
+    affectedRows: 1,
+    sampleColumns: [],
+    sampleRows: [],
+    unverifiedItems: [],
+  },
+  receipt: createSqlDmlPreflightReceipt(),
+};
+
+function createSqlDmlPreflightReceipt() {
+  return {
+    contractVersion: "1.0",
+    receiptId: "receipt-dml-1",
+    keyId: "preflight-key-1",
+    issuedAt: "2026-07-17T08:00:00Z",
+    expiresAt: "2026-07-17T08:05:00Z",
+    operatorId: "operator-1",
+    requestHash: "a".repeat(64),
+    connectionId: "as400-development",
+    targetEnvironment: "development",
+    schema: "ORDERS",
+    sqlHash: "b".repeat(64),
+    parametersHash: "c".repeat(64),
+    policyVersion: "policy-v1",
+    policySelectionHash: "d".repeat(64),
+    impactPreviewHash: "e".repeat(64),
+    preflightHash: "f".repeat(64),
+    signature: "opaque-server-signature",
+  };
+}
 
 const validationReport = {
   contractVersion: "1.0",

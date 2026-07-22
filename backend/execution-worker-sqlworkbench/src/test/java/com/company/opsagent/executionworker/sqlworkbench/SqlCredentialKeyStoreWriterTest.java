@@ -9,8 +9,8 @@ class SqlCredentialKeyStoreWriterTest {
 
   @Test
   void writesCredentialAliasReadableByExistingPasswordProvider() throws Exception {
-    char[] storePassword = "store-password".toCharArray();
-    char[] databasePassword = "database-password".toCharArray();
+    char[] storePassword = SqlTestSecretMaterial.password();
+    char[] databasePassword = SqlTestSecretMaterial.password();
     var keyStorePath = Files.createTempFile("ops-agent-sql-credentials", ".jceks");
     Files.deleteIfExists(keyStorePath);
 
@@ -23,15 +23,17 @@ class SqlCredentialKeyStoreWriterTest {
 
   @Test
   void replacesExistingCredentialAlias() throws Exception {
-    char[] storePassword = "store-password".toCharArray();
+    char[] storePassword = SqlTestSecretMaterial.password();
+    char[] oldPassword = SqlTestSecretMaterial.password();
+    char[] newPassword = SqlTestSecretMaterial.password();
     var keyStorePath = Files.createTempFile("ops-agent-sql-credentials", ".jceks");
     Files.deleteIfExists(keyStorePath);
     var writer = new SqlCredentialKeyStoreWriter();
 
-    writer.put(keyStorePath, storePassword, "as400-dev-readonly", "old-password".toCharArray());
-    writer.put(keyStorePath, storePassword, "as400-dev-readonly", "new-password".toCharArray());
+    writer.put(keyStorePath, storePassword, "as400-dev-readonly", oldPassword);
+    writer.put(keyStorePath, storePassword, "as400-dev-readonly", newPassword);
 
     var provider = new JavaKeyStorePasswordProvider(keyStorePath, storePassword);
-    assertArrayEquals("new-password".toCharArray(), provider.password("as400-dev-readonly"));
+    assertArrayEquals(newPassword, provider.password("as400-dev-readonly"));
   }
 }

@@ -25,7 +25,18 @@ public final class WorkerSqlEgressPolicy {
   }
 
   public WorkerSqlConnectionDescriptor validate(SqlQueryExecutionRequest request) {
-    String connectionId = request.query().connectionId();
+    return validateConnection(request.query().connectionId(), request.query().targetEnvironment());
+  }
+
+  public WorkerSqlConnectionDescriptor validateDmlConnection(
+      String connectionId,
+      String targetEnvironment) {
+    return validateConnection(connectionId, targetEnvironment);
+  }
+
+  private WorkerSqlConnectionDescriptor validateConnection(
+      String connectionId,
+      String targetEnvironment) {
     WorkerSqlConnectionDescriptor descriptor = descriptorsByConnectionId.get(connectionId);
     if (descriptor == null) {
       throw rejected("SQL_CONNECTION_NOT_FOUND", "SQL connection is not configured for this worker");
@@ -33,7 +44,7 @@ public final class WorkerSqlEgressPolicy {
     if (!descriptor.enabled()) {
       throw rejected("SQL_CONNECTION_DISABLED", "SQL connection is disabled for this worker");
     }
-    if (!SqlTargetEnvironments.same(descriptor.targetEnvironment(), request.query().targetEnvironment())) {
+    if (!SqlTargetEnvironments.same(descriptor.targetEnvironment(), targetEnvironment)) {
       throw rejected("SQL_ENVIRONMENT_MISMATCH", "SQL connection does not match the requested environment");
     }
     if (!allowedTargets.contains(descriptor.target())) {

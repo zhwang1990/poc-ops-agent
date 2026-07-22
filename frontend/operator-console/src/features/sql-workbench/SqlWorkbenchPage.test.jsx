@@ -69,7 +69,7 @@ function readSqlText() {
  * @param {number} index
  */
 async function clickRunSqlButton(user, index = 0) {
-  const runButtons = await screen.findAllByRole("button", { name: "执行此 SQL" });
+  const runButtons = await screen.findAllByRole("button", { name: "运行此 SQL" });
   await user.click(runButtons[index]);
 }
 
@@ -337,29 +337,145 @@ describe("SqlWorkbenchPage", () => {
     expect(screen.queryByText("COL_045")).not.toBeInTheDocument();
   });
 
-  test("requires second confirmation before committing UPDATE without WHERE", async () => {
+  test("uses server preflight before showing execution confirmation", async () => {
     const user = userEvent.setup();
     const confirmSpy = vi.spyOn(window, "confirm").mockImplementation(() => {
-      throw new Error("Browser confirm should not be used for DML risk confirmation");
+      throw new Error("Browser confirm should not be used for execution confirmation");
     });
-    /** @type {unknown[]} */
-    const commitRequests = [];
     server.use(
       http.get("/internal/sql-workbench/connections", () =>
         HttpResponse.json(sqlConnections),
       ),
-      http.post("/internal/sql-workbench/queries/validate", () =>
-        HttpResponse.json({
-          contractVersion: "1.0",
-          statementType: "UPDATE",
-          validationLevel: "PARTIAL",
-          sqlHash: "sha256:update-without-where",
-          referencedObjects: ["ORDERS.ORDERS"],
-          risks: ["UPDATE_WITHOUT_WHERE"],
-          rejectionReasons: [],
-          unverifiedItems: ["impact count and masked sample require live read-only preflight"],
-        }),
+      http.post("/internal/sql-workbench/queries/preflight", () =>
+        HttpResponse.json(preflightWithRisk()),
       ),
+    );
+
+    renderAt("/sql");
+
+    await screen.findByText("已连接 · development");
+    await replaceSqlText(user, "update ORDERS.ORDERS set status = 'READY'");
+    expect(screen.queryByRole("group", { name: "SQL 事务控制" })).not.toBeInTheDocument();
+    await clickRunSqlButton(user);
+
+    const riskDialog = await screen.findByRole("dialog", { name: "确认执行" });
+    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(await screen.findByText("预计影响 4 行")).toBeInTheDocument();
+    expect(within(riskDialog).getByText("UPDATE 未限定 WHERE 条件")).toBeInTheDocument();
+    expect(within(riskDialog).queryByText("UPDATE_WITHOUT_WHERE")).not.toBeInTheDocument();
+    expect(within(riskDialog).queryByText("sha256:update-without-where")).not.toBeInTheDocument();
+  });
+
+  test("locks every write runner while awaiting execution confirmation", async () => {
+    const user = userEvent.setup();
+    /** @type {unknown[]} */
+    const preflightRequests = [];
+    server.use(
+      http.get("/internal/sql-workbench/connections", () =>
+        HttpResponse.json(sqlConnections),
+      ),
+      http.post("/internal/sql-workbench/queries/preflight", async ({ request }) => {
+        preflightRequests.push(await request.json());
+        return HttpResponse.json(preflightWithRisk());
+      }),
+    );
+
+    renderAt("/sql");
+
+    await screen.findByText("已连接 · development");
+    await replaceSqlText(
+      user,
+      "update ORDERS.ORDERS set status = 'READY';\ndelete from ORDERS.ORDERS",
+    );
+    await clickRunSqlButton(user, 0);
+
+    await screen.findByRole("dialog", { name: "确认执行" });
+    const runButtons = await screen.findAllByRole("button", { name: "运行此 SQL" });
+    expect(runButtons).toHaveLength(2);
+    for (const runButton of runButtons) {
+      expect(runButton).toBeDisabled();
+    }
+    expect(preflightRequests).toHaveLength(1);
+  });
+
+  test("locks every write runner while preflight is in progress", async () => {
+    const user = userEvent.setup();
+    /** @type {() => void} */
+    let releasePreflight = () => {};
+    /** @type {() => void} */
+    let notifyPreflightStarted = () => {};
+    const preflightStarted = new Promise((resolve) => {
+      notifyPreflightStarted = () => resolve(undefined);
+    });
+    const preflightGate = new Promise((resolve) => {
+      releasePreflight = () => resolve(undefined);
+    });
+    server.use(
+      http.get("/internal/sql-workbench/connections", () =>
+        HttpResponse.json(sqlConnections),
+      ),
+      http.post("/internal/sql-workbench/queries/preflight", async () => {
+        notifyPreflightStarted();
+        await preflightGate;
+        return HttpResponse.json(preflightWithRisk());
+      }),
+    );
+
+    renderAt("/sql");
+
+    await screen.findByText("已连接 · development");
+    await replaceSqlText(
+      user,
+      "update ORDERS.ORDERS set status = 'READY';\ndelete from ORDERS.ORDERS",
+    );
+    await clickRunSqlButton(user, 0);
+
+    await preflightStarted;
+    const runButtons = await screen.findAllByRole("button", { name: "运行此 SQL" });
+    expect(runButtons).toHaveLength(2);
+    for (const runButton of runButtons) {
+      expect(runButton).toBeDisabled();
+    }
+
+    releasePreflight();
+    const riskDialog = await screen.findByRole("dialog", { name: "确认执行" });
+    await user.click(within(riskDialog).getByRole("button", { name: "取消" }));
+  });
+
+  test("disables write execution when the server omits COMMIT_DML capability", async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.get("/internal/sql-workbench/connections", () =>
+        HttpResponse.json(connectionWithoutDmlCapability()),
+      ),
+    );
+
+    renderAt("/sql");
+
+    await screen.findByText("已连接 · development");
+    await replaceSqlText(user, "update ORDERS.ORDERS set status = 'READY' where order_id = 4");
+    expect(screen.getByRole("button", { name: "运行此 SQL" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "运行此 SQL" })).toHaveAttribute(
+      "title",
+      "当前连接不允许执行写操作",
+    );
+  });
+
+  test("forwards the server preflight receipt after execution confirmation", async () => {
+    const user = userEvent.setup();
+    /** @type {unknown[]} */
+    const preflightRequests = [];
+    /** @type {unknown[]} */
+    const commitRequests = [];
+    const preflight = preflightWithRisk();
+    server.use(
+      http.get("/internal/sql-workbench/connections", () =>
+        HttpResponse.json(sqlConnections),
+      ),
+      http.post("/internal/sql-workbench/queries/preflight", async ({ request }) => {
+        preflightRequests.push(await request.json());
+        return HttpResponse.json(preflight);
+      }),
       http.post("/internal/sql-workbench/queries/commit", async ({ request }) => {
         commitRequests.push(await request.json());
         return HttpResponse.json({
@@ -379,33 +495,16 @@ describe("SqlWorkbenchPage", () => {
 
     await screen.findByText("已连接 · development");
     await replaceSqlText(user, "update ORDERS.ORDERS set status = 'READY'");
-    const transactionControls = screen.getByRole("group", { name: "SQL 事务控制" });
-    const transactionModeButton = within(transactionControls).getByRole("button", {
-      name: "事务模式",
-    });
-    const manualCommitButton = within(transactionControls).getByRole("button", {
-      name: "手动提交",
-    });
+    await clickRunSqlButton(user);
 
-    expect(transactionModeButton).toHaveAttribute("aria-pressed", "false");
-    expect(manualCommitButton).toBeDisabled();
+    const riskDialog = await screen.findByRole("dialog", { name: "确认执行" });
 
-    await user.click(transactionModeButton);
-    expect(transactionModeButton).toHaveAttribute("aria-pressed", "true");
-    expect(manualCommitButton).toBeEnabled();
-    await user.click(manualCommitButton);
-
-    const riskDialog = await screen.findByRole("dialog", { name: "确认 DML 风险" });
-    expect(confirmSpy).not.toHaveBeenCalled();
-    expect(within(riskDialog).getByText("UPDATE_WITHOUT_WHERE")).toBeInTheDocument();
-    expect(within(riskDialog).getByText("sha256:update-without-where")).toBeInTheDocument();
-    expect(commitRequests).toHaveLength(0);
-
-    await user.click(within(riskDialog).getByRole("button", { name: "确认提交" }));
+    await user.click(within(riskDialog).getByRole("button", { name: "执行" }));
 
     await waitFor(() => expect(commitRequests).toHaveLength(1));
+    expect(preflightRequests).toHaveLength(1);
     expect(commitRequests[0]).toMatchObject({
-      contractVersion: "1.0",
+      contractVersion: "1.1",
       query: {
         action: "COMMIT_DML",
         sql: "update ORDERS.ORDERS set status = 'READY'",
@@ -415,8 +514,359 @@ describe("SqlWorkbenchPage", () => {
         confirmedRisks: ["UPDATE_WITHOUT_WHERE"],
         confirmationCode: "CONFIRM_SQL_DML_RISK",
       },
+      receipt: preflight.receipt,
     });
-    expect(await screen.findByText("DML 提交完成，影响 4 行。")).toBeInTheDocument();
+    expect(
+      /** @type {{query: {idempotencyKey: string}}} */ (commitRequests[0]).query.idempotencyKey,
+    ).toBe(
+      /** @type {{idempotencyKey: string}} */ (preflightRequests[0]).idempotencyKey,
+    );
+    expect(await screen.findByText("执行完成，影响 4 行。")).toBeInTheDocument();
+  });
+
+  test("submits a no-risk write from the shared run action", async () => {
+    const user = userEvent.setup();
+    /** @type {unknown[]} */
+    const preflightRequests = [];
+    /** @type {unknown[]} */
+    const commitRequests = [];
+    const preflight = preflightWithoutRisk();
+    server.use(
+      http.get("/internal/sql-workbench/connections", () =>
+        HttpResponse.json(sqlConnections),
+      ),
+      http.post("/internal/sql-workbench/queries/preflight", async ({ request }) => {
+        preflightRequests.push(await request.json());
+        return HttpResponse.json(preflight);
+      }),
+      http.post("/internal/sql-workbench/queries/commit", async ({ request }) => {
+        commitRequests.push(await request.json());
+        return HttpResponse.json({
+          contractVersion: "1.0",
+          executionRequestId: "execution-dml-no-risk",
+          workflowId: "workflow-dml-no-risk",
+          status: "SUCCEEDED",
+          resultId: null,
+          errorCode: null,
+          errorMessage: null,
+          affectedRows: 1,
+        });
+      }),
+    );
+
+    renderAt("/sql");
+
+    await screen.findByText("已连接 · development");
+    await replaceSqlText(user, "update ORDERS.ORDERS set status = 'READY' where order_id = 4");
+    await clickRunSqlButton(user);
+
+    await waitFor(() => expect(commitRequests).toHaveLength(1));
+    expect(preflightRequests).toHaveLength(1);
+    expect(screen.queryByRole("dialog", { name: "确认执行" })).not.toBeInTheDocument();
+    expect(commitRequests[0]).toMatchObject({
+      confirmation: {
+        contractVersion: "1.0",
+        sqlHash: "sha256:update-with-where",
+        confirmedRisks: ["CONTROLLED_DML_CONFIRMED"],
+        confirmationCode: "CONFIRM_SQL_DML_RISK",
+      },
+      receipt: preflight.receipt,
+    });
+    expect(await screen.findByText("执行完成，影响 1 行。")).toBeInTheDocument();
+  });
+
+  test("retries a lost DML commit with its original envelope without re-running preflight", async () => {
+    const user = userEvent.setup();
+    /** @type {string[]} */
+    const preflightPayloads = [];
+    /** @type {string[]} */
+    const commitPayloads = [];
+    server.use(
+      http.get("/internal/sql-workbench/connections", () =>
+        HttpResponse.json(sqlConnections),
+      ),
+      http.post("/internal/sql-workbench/queries/preflight", async ({ request }) => {
+        preflightPayloads.push(await request.text());
+        if (preflightPayloads.length > 1) {
+          return HttpResponse.error();
+        }
+        return HttpResponse.json(preflightWithRisk());
+      }),
+      http.post("/internal/sql-workbench/queries/commit", async ({ request }) => {
+        commitPayloads.push(await request.text());
+        if (commitPayloads.length === 1) {
+          return HttpResponse.error();
+        }
+        return HttpResponse.json({
+          contractVersion: "1.0",
+          executionRequestId: "execution-dml-retry-handoff",
+          workflowId: "workflow-dml-retry-handoff",
+          status: "UNKNOWN_REQUIRES_HANDOFF",
+          resultId: null,
+          errorCode: "SQL_DML_RESULT_UNKNOWN",
+          errorMessage: null,
+          affectedRows: null,
+        });
+      }),
+    );
+
+    renderAt("/sql");
+
+    await screen.findByText("已连接 · development");
+    await replaceSqlText(
+      user,
+      "update ORDERS.ORDERS set status = 'READY'",
+    );
+    await clickRunSqlButton(user);
+    const riskDialog = await screen.findByRole("dialog", { name: "确认执行" });
+    await user.click(within(riskDialog).getByRole("button", { name: "执行" }));
+    expect(await screen.findByText("Network request failed")).toBeInTheDocument();
+
+    await clickRunSqlButton(user);
+    await waitFor(() => expect(commitPayloads).toHaveLength(2));
+
+    expect(preflightPayloads).toHaveLength(1);
+    expect(commitPayloads[1]).toBe(commitPayloads[0]);
+    expect(await screen.findByLabelText("人工接管结果")).toBeInTheDocument();
+    expect(screen.getByText("workflow-dml-retry-handoff")).toBeInTheDocument();
+  });
+
+  test("keeps write execution locked until the execution result is terminal", async () => {
+    const user = userEvent.setup();
+    /** @type {string[]} */
+    const preflightPayloads = [];
+    /** @type {string[]} */
+    const commitPayloads = [];
+    server.use(
+      http.get("/internal/sql-workbench/connections", () =>
+        HttpResponse.json(sqlConnections),
+      ),
+      http.post("/internal/sql-workbench/queries/preflight", async ({ request }) => {
+        preflightPayloads.push(await request.text());
+        if (preflightPayloads.length > 1) {
+          return HttpResponse.error();
+        }
+        return HttpResponse.json(preflightWithoutRisk());
+      }),
+      http.post("/internal/sql-workbench/queries/commit", async ({ request }) => {
+        commitPayloads.push(await request.text());
+        if (commitPayloads.length === 1) {
+          return HttpResponse.json({
+            contractVersion: "1.0",
+            executionRequestId: "execution-dml-running",
+            workflowId: "workflow-dml-running",
+            status: "RUNNING",
+            resultId: null,
+            errorCode: null,
+            errorMessage: null,
+            affectedRows: null,
+          });
+        }
+        return HttpResponse.json(successfulDmlExecution("running-retry"));
+      }),
+    );
+
+    renderAt("/sql");
+
+    await screen.findByText("已连接 · development");
+    await replaceSqlText(
+      user,
+      "update ORDERS.ORDERS set status = 'READY' where order_id = 41",
+    );
+    await clickRunSqlButton(user);
+    await waitFor(() => expect(commitPayloads).toHaveLength(1));
+
+    expect(screen.getByRole("button", { name: "运行此 SQL" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "运行此 SQL" })).toHaveAttribute(
+      "title",
+      "正在处理上一条写操作",
+    );
+    expect(screen.getByText("正在处理上一条写操作")).toBeInTheDocument();
+    expect(preflightPayloads).toHaveLength(1);
+    expect(commitPayloads).toHaveLength(1);
+  });
+
+  test("rotates the DML idempotency key when submission SQL changes", async () => {
+    const user = userEvent.setup();
+    /** @type {Array<{query: {idempotencyKey: string}}>} */
+    const commitRequests = [];
+    server.use(
+      http.get("/internal/sql-workbench/connections", () =>
+        HttpResponse.json(sqlConnections),
+      ),
+      http.post("/internal/sql-workbench/queries/preflight", () =>
+        HttpResponse.json(preflightWithoutRisk()),
+      ),
+      http.post("/internal/sql-workbench/queries/commit", async ({ request }) => {
+        commitRequests.push(
+          /** @type {{query: {idempotencyKey: string}}} */ (await request.json()),
+        );
+        if (commitRequests.length === 1) {
+          return HttpResponse.error();
+        }
+        return HttpResponse.json(successfulDmlExecution("changed-sql"));
+      }),
+    );
+
+    renderAt("/sql");
+
+    await screen.findByText("已连接 · development");
+    await replaceSqlText(
+      user,
+      "update ORDERS.ORDERS set status = 'READY' where order_id = 42",
+    );
+    await clickRunSqlButton(user);
+    expect(await screen.findByText("Network request failed")).toBeInTheDocument();
+
+    await replaceSqlText(
+      user,
+      "update ORDERS.ORDERS set status = 'READY' where order_id = 43",
+    );
+    await clickRunSqlButton(user);
+    await waitFor(() => expect(commitRequests).toHaveLength(2));
+
+    expect(commitRequests[1].query.idempotencyKey).not.toBe(
+      commitRequests[0].query.idempotencyKey,
+    );
+  });
+
+  test("rotates the DML idempotency key after terminal completion", async () => {
+    const user = userEvent.setup();
+    /** @type {Array<{query: {idempotencyKey: string}}>} */
+    const commitRequests = [];
+    server.use(
+      http.get("/internal/sql-workbench/connections", () =>
+        HttpResponse.json(sqlConnections),
+      ),
+      http.post("/internal/sql-workbench/queries/preflight", () =>
+        HttpResponse.json(preflightWithoutRisk()),
+      ),
+      http.post("/internal/sql-workbench/queries/commit", async ({ request }) => {
+        commitRequests.push(
+          /** @type {{query: {idempotencyKey: string}}} */ (await request.json()),
+        );
+        return HttpResponse.json(successfulDmlExecution(String(commitRequests.length)));
+      }),
+    );
+
+    renderAt("/sql");
+
+    await screen.findByText("已连接 · development");
+    await replaceSqlText(
+      user,
+      "update ORDERS.ORDERS set status = 'READY' where order_id = 44",
+    );
+    await clickRunSqlButton(user);
+    await waitFor(() => expect(commitRequests).toHaveLength(1));
+    expect(await screen.findByText("执行完成，影响 1 行。")).toBeInTheDocument();
+
+    await clickRunSqlButton(user);
+    await waitFor(() => expect(commitRequests).toHaveLength(2));
+
+    expect(commitRequests[1].query.idempotencyKey).not.toBe(
+      commitRequests[0].query.idempotencyKey,
+    );
+  });
+
+  test("shows a manual handoff for an unknown DML result without result rows", async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.get("/internal/sql-workbench/connections", () =>
+        HttpResponse.json(sqlConnections),
+      ),
+      http.post("/internal/sql-workbench/queries/preflight", () =>
+        HttpResponse.json(preflightWithoutRisk()),
+      ),
+      http.post("/internal/sql-workbench/queries/commit", () =>
+        HttpResponse.json({
+          contractVersion: "1.0",
+          executionRequestId: "execution-dml-unknown",
+          workflowId: "workflow-dml-unknown",
+          status: "UNKNOWN_REQUIRES_HANDOFF",
+          resultId: null,
+          errorCode: "SQL_DML_RESULT_UNKNOWN",
+          errorMessage: null,
+          affectedRows: null,
+        }),
+      ),
+    );
+
+    renderAt("/sql");
+
+    await screen.findByText("已连接 · development");
+    await replaceSqlText(user, "update ORDERS.ORDERS set status = 'READY' where order_id = 4");
+    await clickRunSqlButton(user);
+
+    expect(await screen.findByLabelText("人工接管结果")).toBeInTheDocument();
+    expect(screen.getByText("需要人工接管以确认执行结果。")).toBeInTheDocument();
+    expect(screen.getAllByText("workflow-dml-unknown")).toHaveLength(1);
+    expect(screen.queryByText("执行事实")).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "查询结果" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tablist", { name: "SQL 执行结果" })).not.toBeInTheDocument();
+    expect(screen.queryByText("execution-dml-unknown")).not.toBeInTheDocument();
+    expect(screen.queryByText("resultId")).not.toBeInTheDocument();
+    expect(screen.queryByRole("table", { name: "SQL SELECT 查询结果" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "运行此 SQL" })).toBeDisabled();
+  });
+
+  test("prioritizes unknown DML handoff after the session mode changes during a pending commit", async () => {
+    const user = userEvent.setup();
+    /** @type {() => void} */
+    let releaseCommit = () => {};
+    /** @type {() => void} */
+    let markCommitStarted = () => {};
+    const commitGate = new Promise((resolve) => {
+      releaseCommit = () => resolve(undefined);
+    });
+    const commitStarted = new Promise((resolve) => {
+      markCommitStarted = () => resolve(undefined);
+    });
+
+    server.use(
+      http.get("/internal/sql-workbench/connections", () =>
+        HttpResponse.json(sqlConnections),
+      ),
+      http.post("/internal/sql-workbench/queries/preflight", () =>
+        HttpResponse.json(preflightWithoutRisk()),
+      ),
+      http.post("/internal/sql-workbench/queries/commit", async () => {
+        markCommitStarted();
+        await commitGate;
+        return HttpResponse.json({
+          contractVersion: "1.0",
+          executionRequestId: "execution-dml-unknown-after-mode-switch",
+          workflowId: "workflow-dml-unknown-after-mode-switch",
+          status: "UNKNOWN_REQUIRES_HANDOFF",
+          resultId: null,
+          errorCode: "SQL_DML_RESULT_UNKNOWN",
+          errorMessage: null,
+          affectedRows: null,
+        });
+      }),
+    );
+
+    renderAt("/sql");
+
+    await screen.findByText("已连接 · development");
+    await replaceSqlText(user, "update ORDERS.ORDERS set status = 'READY' where order_id = 4");
+    await clickRunSqlButton(user);
+    await commitStarted;
+
+    await user.click(screen.getByRole("tab", { name: "自然语言" }));
+    expect(screen.getByRole("heading", { name: "生成结果" })).toBeInTheDocument();
+
+    releaseCommit();
+
+    expect(await screen.findByLabelText("人工接管结果")).toBeInTheDocument();
+    expect(screen.getByText("需要人工接管以确认执行结果。")).toBeInTheDocument();
+    expect(screen.getAllByText("workflow-dml-unknown-after-mode-switch")).toHaveLength(1);
+    expect(screen.queryByText("执行事实")).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "生成结果" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "查询结果" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tablist", { name: "SQL 执行结果" })).not.toBeInTheDocument();
+    expect(screen.queryByText("execution-dml-unknown-after-mode-switch")).not.toBeInTheDocument();
+    expect(screen.queryByText("resultId")).not.toBeInTheDocument();
+    expect(screen.queryByRole("table", { name: "SQL SELECT 查询结果" })).not.toBeInTheDocument();
   });
 
   test("shows SQL session modes as functional tabs", async () => {
@@ -899,7 +1349,7 @@ describe("SqlWorkbenchPage", () => {
     expectExecutionFactsErrorFieldsHidden();
 
     await replaceSqlText(user, "SELECT * FROM ORDERS.ORDERS");
-    expect(screen.getByRole("button", { name: "执行此 SQL" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "运行此 SQL" })).toBeEnabled();
 
     await clickRunSqlButton(user);
     expect(await screen.findByText("OD-10500")).toBeInTheDocument();
@@ -917,7 +1367,7 @@ describe("SqlWorkbenchPage", () => {
     expect(runRequests[0]).not.toHaveProperty("validationHash");
 
     await replaceSqlText(user, "UPDATE ORDERS.ORDERS SET status = 'X'");
-    expect(screen.getByRole("button", { name: "执行此 SQL" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "运行此 SQL" })).toBeEnabled();
     expectDirectSqlToolbarActionsHidden();
     expect(runRequests).toHaveLength(1);
   });
@@ -1020,7 +1470,7 @@ describe("SqlWorkbenchPage", () => {
 
     await replaceSqlText(user, "SELECT * FROM ORDERS.ONE;\nSELECT * FROM ORDERS.TWO;");
     const runStatementButtons = await screen.findAllByRole("button", {
-      name: "执行此 SQL",
+      name: "运行此 SQL",
     });
     expect(runStatementButtons).toHaveLength(2);
 
@@ -1076,7 +1526,7 @@ describe("SqlWorkbenchPage", () => {
     expect(editor.querySelector(".cm-sql-comment")).toHaveTextContent(
       "-- run this read-only smoke check",
     );
-    expect(screen.getByRole("button", { name: "执行此 SQL" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "运行此 SQL" })).toBeEnabled();
 
     await clickRunSqlButton(user);
 
@@ -1116,7 +1566,7 @@ describe("SqlWorkbenchPage", () => {
     await replaceSqlText(user, multiStatementSql);
 
     const runStatementButtons = await screen.findAllByRole("button", {
-      name: "执行此 SQL",
+      name: "运行此 SQL",
     });
     expect(runStatementButtons).toHaveLength(2);
     expectDirectSqlToolbarActionsHidden();
@@ -1133,7 +1583,7 @@ describe("SqlWorkbenchPage", () => {
     );
   });
 
-  test("disables gutter run buttons for non-read-only SQL statements", async () => {
+  test("disables gutter run buttons for unsupported SQL statements", async () => {
     const user = userEvent.setup();
     server.use(
       http.get("/internal/sql-workbench/connections", () =>
@@ -1146,11 +1596,11 @@ describe("SqlWorkbenchPage", () => {
     await screen.findByText("已连接 · development");
     await replaceSqlText(
       user,
-      "UPDATE ORDERS.ORDERS SET STATUS = 'X';\nSELECT * FROM ORDERS.ORDERS",
+      "CREATE TABLE ORDERS.TEMP_ORDERS (ORDER_ID INTEGER);\nSELECT * FROM ORDERS.ORDERS",
     );
 
     const runStatementButtons = await screen.findAllByRole("button", {
-      name: "执行此 SQL",
+      name: "运行此 SQL",
     });
     expect(runStatementButtons).toHaveLength(2);
     expect(runStatementButtons[0]).toBeDisabled();
@@ -1417,7 +1867,8 @@ describe("SqlWorkbenchPage", () => {
     await waitFor(() => expect(separator).toHaveAttribute("aria-valuenow", "84"));
   });
 
-  test("blocks production connection data with DML capabilities at the contract boundary", async () => {
+  test("blocks writes for a production connection that still advertises write capabilities", async () => {
+    const user = userEvent.setup();
     server.use(
       http.get("/internal/sql-workbench/connections", () =>
         HttpResponse.json([
@@ -1426,6 +1877,7 @@ describe("SqlWorkbenchPage", () => {
             connectionId: "as400-production",
             displayName: "AS/400 Production",
             targetEnvironment: "production",
+            capabilities: ["VALIDATE", "RUN_READ_ONLY", "PREFLIGHT_DML", "COMMIT_DML"],
           },
         ]),
       ),
@@ -1433,10 +1885,44 @@ describe("SqlWorkbenchPage", () => {
 
     renderAt("/sql");
 
-    expect(await screen.findByText("SQL 连接契约不兼容")).toBeInTheDocument();
-    expect(screen.getByLabelText("当前工作台")).toBeInTheDocument();
-    expect(screen.queryByText("as400-production")).not.toBeInTheDocument();
-    expect(screen.queryByText("AS/400 Production")).not.toBeInTheDocument();
+    await screen.findByText("已连接 · production");
+    await replaceSqlText(user, "update ORDERS.ORDERS set status = 'READY'");
+    expect(screen.getByRole("button", { name: "运行此 SQL" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "运行此 SQL" })).toHaveAttribute(
+      "title",
+      "生产环境不允许执行写操作",
+    );
+    expect(screen.getByText("生产环境不允许执行写操作")).toBeInTheDocument();
+  });
+
+  test("shows the production write restriction for a later write statement", async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.get("/internal/sql-workbench/connections", () =>
+        HttpResponse.json([
+          {
+            ...sqlConnections[0],
+            connectionId: "as400-production",
+            displayName: "AS/400 Production",
+            targetEnvironment: "production",
+            capabilities: ["VALIDATE", "RUN_READ_ONLY", "PREFLIGHT_DML", "COMMIT_DML"],
+          },
+        ]),
+      ),
+    );
+
+    renderAt("/sql");
+
+    await screen.findByText("已连接 · production");
+    await replaceSqlText(
+      user,
+      "select * from ORDERS.ORDERS;\nupdate ORDERS.ORDERS set status = 'READY'",
+    );
+
+    const runButtons = await screen.findAllByRole("button", { name: "运行此 SQL" });
+    expect(runButtons).toHaveLength(2);
+    expect(runButtons[1]).toBeDisabled();
+    expect(screen.getByRole("status")).toHaveTextContent("生产环境不允许执行写操作");
   });
 
   test("uses the AI SQL assistant as advisory input that is revalidated on execution", async () => {
@@ -1478,7 +1964,7 @@ describe("SqlWorkbenchPage", () => {
     await user.click(screen.getByRole("button", { name: "应用建议到编辑器" }));
     expect(readSqlText()).toBe("select order_id, status from ORDERS.ORDERS");
     expect(screen.queryByText("VALIDATED")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "执行此 SQL" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "运行此 SQL" })).toBeEnabled();
   });
 
   test("shows an AI SQL assistant loading animation while advice is pending", async () => {
@@ -1520,6 +2006,93 @@ describe("SqlWorkbenchPage", () => {
     expect(await screen.findByText("Use explicit columns.")).toBeInTheDocument();
   });
 });
+
+function connectionWithoutDmlCapability() {
+  return sqlConnections.map((connection) => ({
+    ...connection,
+    capabilities: connection.capabilities.filter((capability) => capability !== "COMMIT_DML"),
+  }));
+}
+
+function preflightWithRisk() {
+  return {
+    contractVersion: "1.1",
+    validation: {
+      contractVersion: "1.0",
+      statementType: "UPDATE",
+      validationLevel: "PARTIAL",
+      sqlHash: "sha256:update-without-where",
+      referencedObjects: ["ORDERS.ORDERS"],
+      risks: ["UPDATE_WITHOUT_WHERE"],
+      rejectionReasons: [],
+      unverifiedItems: ["索引选择由服务端预检限定"],
+    },
+    impactPreview: {
+      contractVersion: "1.0",
+      affectedRows: 4,
+      sampleColumns: [
+        { name: "ORDER_ID", type: "INTEGER", masked: false },
+        { name: "CUSTOMER_PHONE", type: "VARCHAR", masked: true },
+      ],
+      sampleRows: [[4, "***-****-1234"]],
+      unverifiedItems: ["预览计数不构成执行授权"],
+    },
+    receipt: preflightReceipt(),
+  };
+}
+
+function preflightWithoutRisk() {
+  return {
+    ...preflightWithRisk(),
+    validation: {
+      ...preflightWithRisk().validation,
+      risks: [],
+      sqlHash: "sha256:update-with-where",
+    },
+    impactPreview: {
+      ...preflightWithRisk().impactPreview,
+      affectedRows: 1,
+    },
+  };
+}
+
+/**
+ * @param {string} suffix
+ */
+function successfulDmlExecution(suffix) {
+  return {
+    contractVersion: "1.0",
+    executionRequestId: `execution-dml-${suffix}`,
+    workflowId: `workflow-dml-${suffix}`,
+    status: "SUCCEEDED",
+    resultId: null,
+    errorCode: null,
+    errorMessage: null,
+    affectedRows: 1,
+  };
+}
+
+function preflightReceipt() {
+  return {
+    contractVersion: "1.0",
+    receiptId: "receipt-dml-1",
+    keyId: "preflight-key-1",
+    issuedAt: "2026-07-17T08:00:00Z",
+    expiresAt: "2026-07-17T08:05:00Z",
+    operatorId: "operator-1",
+    requestHash: "a".repeat(64),
+    connectionId: "as400-development",
+    targetEnvironment: "development",
+    schema: "ORDERS",
+    sqlHash: "b".repeat(64),
+    parametersHash: "c".repeat(64),
+    policyVersion: "policy-v1",
+    policySelectionHash: "d".repeat(64),
+    impactPreviewHash: "e".repeat(64),
+    preflightHash: "f".repeat(64),
+    signature: "opaque-server-signature",
+  };
+}
 
 const sqlConnections = [
   {

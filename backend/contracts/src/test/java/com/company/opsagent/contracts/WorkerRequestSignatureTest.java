@@ -15,6 +15,7 @@ import com.company.opsagent.contracts.workflow.WorkerRequestSignature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -24,7 +25,7 @@ class WorkerRequestSignatureTest {
 
   private static final String KEY_ID = "worker-key-a";
   private static final String TIMESTAMP = "2026-06-23T10:15:30Z";
-  private static final String SECRET = "worker-transport-test-secret";
+  private static final String SECRET = UUID.randomUUID().toString();
   private final ObjectMapper objectMapper = new ObjectMapper();
 
   /**

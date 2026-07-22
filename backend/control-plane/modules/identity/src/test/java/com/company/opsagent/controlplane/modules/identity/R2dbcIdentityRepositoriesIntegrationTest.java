@@ -77,9 +77,11 @@ class R2dbcIdentityRepositoriesIntegrationTest {
     assertEquals(5, lockedAccount.failedLoginCount());
     assertNotNull(lockedAccount.lockedUntil());
 
-    PasswordCredential firstCredential = passwordHasher.hash("account-1", "Start#2026", 1L, false);
+    PasswordCredential firstCredential = passwordHasher.hash(
+        "account-1", IdentityTestSecretMaterial.value(), 1L, false);
     credentialRepository.save(firstCredential);
-    PasswordCredential secondCredential = passwordHasher.hash("account-1", "Changed#2026", 2L, true);
+    PasswordCredential secondCredential = passwordHasher.hash(
+        "account-1", IdentityTestSecretMaterial.value(), 2L, true);
     credentialRepository.save(secondCredential);
 
     PasswordCredential activeCredential = credentialRepository.findActiveByAccountId("account-1").orElseThrow();

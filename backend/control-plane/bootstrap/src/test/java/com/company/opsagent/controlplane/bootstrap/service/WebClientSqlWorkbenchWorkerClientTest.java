@@ -9,6 +9,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryAction;
 import com.company.opsagent.contracts.sqlworkbench.SqlConnectionSummary;
 import com.company.opsagent.contracts.sqlworkbench.SqlDatabaseMetadata;
+import com.company.opsagent.contracts.sqlworkbench.SqlControlledDmlExecutionRequest;
+import com.company.opsagent.contracts.sqlworkbench.SqlDmlCommitRequest;
+import com.company.opsagent.contracts.sqlworkbench.SqlDmlConfirmation;
+import com.company.opsagent.contracts.sqlworkbench.SqlDmlExecutionBinding;
+import com.company.opsagent.contracts.sqlworkbench.SqlDmlPreflightExecutionRequest;
+import com.company.opsagent.contracts.sqlworkbench.SqlDmlPreviewSelection;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryExecutionRequest;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryLimits;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryRequest;
@@ -18,6 +24,7 @@ import com.company.opsagent.contracts.workflow.TraceContext;
 import com.company.opsagent.contracts.workflow.WorkerRequestSignature;
 import com.company.opsagent.contracts.workflow.WorkerTransportHeaders;
 import com.company.opsagent.controlplane.bootstrap.config.WorkerProperties;
+import com.company.opsagent.controlplane.modules.sqlworkbench.SqlWorkbenchException;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -38,7 +45,7 @@ import reactor.core.publisher.Mono;
 class WebClientSqlWorkbenchWorkerClientTest {
 
   private static final String KEY_ID = "worker-key-a";
-  private static final String SHARED_SECRET = "worker-transport-test-key-material";
+  private static final String SHARED_SECRET = java.util.UUID.randomUUID().toString();
   private static final Instant SIGNED_AT = Instant.parse("2026-06-27T10:15:30Z");
 
   @Test
@@ -64,6 +71,124 @@ class WebClientSqlWorkbenchWorkerClientTest {
         "2026-06-27T10:15:30Z",
         request);
     assertTrue(WorkerRequestSignature.matches(WorkerRequestSignature.sign(SHARED_SECRET, payload), signature));
+  }
+
+  @Test
+  void preflightsDmlThroughSeparatelySignedWorkerEndpoint() {
+    List<ClientRequest> captured = new ArrayList<>();
+    var client = new WebClientSqlWorkbenchWorkerClient(
+        webClient(captured),
+        workerProperties(true),
+        Clock.fixed(SIGNED_AT, ZoneOffset.UTC));
+    SqlDmlPreflightExecutionRequest request = preflightRequest();
+
+    var preview = client.preflightDml(request);
+
+    assertEquals(2L, preview.affectedRows());
+    ClientRequest sent = captured.getFirst();
+    assertEquals("/internal/executions/sql-query/dml-preflight", sent.url().getPath());
+    String signature = sent.headers().getFirst(WorkerTransportHeaders.SIGNATURE);
+    String payload = WorkerRequestSignature.canonicalSqlDmlPreflightPayload(
+        KEY_ID,
+        "2026-06-27T10:15:30Z",
+        request);
+    assertTrue(WorkerRequestSignature.matches(WorkerRequestSignature.sign(SHARED_SECRET, payload), signature));
+  }
+
+  @Test
+  void commitsDmlThroughSeparatelySignedWorkerEndpoint() {
+    List<ClientRequest> captured = new ArrayList<>();
+    var client = new WebClientSqlWorkbenchWorkerClient(
+        webClient(captured),
+        workerProperties(true),
+        Clock.fixed(SIGNED_AT, ZoneOffset.UTC));
+    SqlControlledDmlExecutionRequest request = controlledDmlRequest();
+
+    var result = client.executeControlledDml(request);
+
+    assertEquals("SUCCEEDED", result.status());
+    ClientRequest sent = captured.getFirst();
+    assertEquals("/internal/executions/sql-query/dml-commit", sent.url().getPath());
+    String signature = sent.headers().getFirst(WorkerTransportHeaders.SIGNATURE);
+    String payload = WorkerRequestSignature.canonicalControlledSqlDmlPayload(
+        KEY_ID,
+        "2026-06-27T10:15:30Z",
+        request);
+    assertTrue(WorkerRequestSignature.matches(WorkerRequestSignature.sign(SHARED_SECRET, payload), signature));
+  }
+
+  @Test
+  void exposesControlledDmlSupportOnlyWithSignedTransport() {
+    var signed = new WebClientSqlWorkbenchWorkerClient(
+        webClient(new ArrayList<>()), workerProperties(true), Clock.fixed(SIGNED_AT, ZoneOffset.UTC));
+    var unsigned = new WebClientSqlWorkbenchWorkerClient(
+        webClient(new ArrayList<>()), workerProperties(false), Clock.fixed(SIGNED_AT, ZoneOffset.UTC));
+
+    assertTrue(signed.supportsControlledDml("development"));
+    assertFalse(unsigned.supportsControlledDml("development"));
+    assertFalse(signed.supportsControlledDml("production"));
+  }
+
+  @Test
+  void mapsWorkerPreflightRejectionToStableSqlWorkbenchError() {
+    var client = new WebClientSqlWorkbenchWorkerClient(
+        rejectingDmlWebClient(), workerProperties(true), Clock.fixed(SIGNED_AT, ZoneOffset.UTC));
+
+    SqlWorkbenchException exception = assertThrows(
+        SqlWorkbenchException.class,
+        () -> client.preflightDml(preflightRequest()));
+
+    assertEquals("SQL_DML_EGRESS_DENIED", exception.code());
+  }
+
+  @Test
+  void mapsWorkerCommitRejectionToDefinitiveFailedResult() {
+    var client = new WebClientSqlWorkbenchWorkerClient(
+        rejectingDmlWebClient(), workerProperties(true), Clock.fixed(SIGNED_AT, ZoneOffset.UTC));
+    SqlControlledDmlExecutionRequest request = controlledDmlRequest();
+
+    var result = client.executeControlledDml(request);
+
+    assertEquals("FAILED", result.status());
+    assertEquals("SQL_DML_EGRESS_DENIED", result.errorCode());
+    assertEquals(request.executionRequestId(), result.executionRequestId());
+    assertEquals(request.workflowId(), result.workflowId());
+  }
+
+  @Test
+  void keepsWorkerCommitTimeoutAsUncertainTransportFailure() {
+    var client = new WebClientSqlWorkbenchWorkerClient(
+        dmlErrorWebClient(HttpStatus.REQUEST_TIMEOUT),
+        workerProperties(true),
+        Clock.fixed(SIGNED_AT, ZoneOffset.UTC));
+
+    assertThrows(
+        IllegalStateException.class,
+        () -> client.executeControlledDml(controlledDmlRequest()));
+  }
+
+  @Test
+  void keepsWorkerCommitServerFailureAsUncertainTransportFailure() {
+    var client = new WebClientSqlWorkbenchWorkerClient(
+        dmlErrorWebClient(HttpStatus.INTERNAL_SERVER_ERROR),
+        workerProperties(true),
+        Clock.fixed(SIGNED_AT, ZoneOffset.UTC));
+
+    assertThrows(
+        IllegalStateException.class,
+        () -> client.executeControlledDml(controlledDmlRequest()));
+  }
+
+  @Test
+  void keepsWorkerCommitDecodeFailureAsUncertainTransportFailure() {
+    var client = new WebClientSqlWorkbenchWorkerClient(
+        malformedDmlSuccessWebClient(),
+        workerProperties(true),
+        Clock.fixed(SIGNED_AT, ZoneOffset.UTC));
+
+    assertThrows(
+        RuntimeException.class,
+        () -> client.executeControlledDml(controlledDmlRequest()));
   }
 
   @Test
@@ -251,6 +376,20 @@ class WebClientSqlWorkbenchWorkerClientTest {
                     """)
                 .build());
           }
+          if (request.url().getPath().endsWith("/dml-preflight")) {
+            return Mono.just(ClientResponse.create(HttpStatus.OK)
+                .header("Content-Type", "application/json")
+                .body("""
+                    {
+                      "contractVersion": "1.0",
+                      "affectedRows": 2,
+                      "sampleColumns": [],
+                      "sampleRows": [],
+                      "unverifiedItems": []
+                    }
+                    """)
+                .build());
+          }
           if (request.url().getPath().endsWith("/result-1")) {
             return Mono.just(ClientResponse.create(HttpStatus.OK)
                 .header("Content-Type", "application/json")
@@ -288,6 +427,28 @@ class WebClientSqlWorkbenchWorkerClientTest {
                   """)
               .build());
         })
+        .build();
+  }
+
+  private WebClient rejectingDmlWebClient() {
+    return dmlErrorWebClient(HttpStatus.FORBIDDEN);
+  }
+
+  private WebClient dmlErrorWebClient(HttpStatus status) {
+    return WebClient.builder()
+        .exchangeFunction(request -> Mono.just(ClientResponse.create(status)
+            .header("Content-Type", "application/problem+json")
+            .body("{\"errorCode\":\"SQL_DML_EGRESS_DENIED\",\"detail\":\"denied\"}")
+            .build()))
+        .build();
+  }
+
+  private WebClient malformedDmlSuccessWebClient() {
+    return WebClient.builder()
+        .exchangeFunction(request -> Mono.just(ClientResponse.create(HttpStatus.OK)
+            .header("Content-Type", "application/json")
+            .body("{not-json")
+            .build()))
         .build();
   }
 
@@ -342,5 +503,57 @@ class WebClientSqlWorkbenchWorkerClientTest {
         new PolicyDecisionReference("decision-1", "policy-v1", "ALLOW"),
         new TraceContext("trace-1", "request-1"),
         OffsetDateTime.parse("2026-06-27T10:16:00Z"));
+  }
+
+  private SqlDmlPreflightExecutionRequest preflightRequest() {
+    return new SqlDmlPreflightExecutionRequest(
+        "1.0",
+        "preflight-execution-1",
+        "preflight-workflow-1",
+        dmlQuery(SqlQueryAction.PREFLIGHT_DML),
+        "validation-hash-1",
+        new SqlDmlPreviewSelection("1.0", List.of("ORDER_ID"), List.of()),
+        new OperatorContext("operator-1", List.of("ROLE_ops-admin")),
+        new PolicyDecisionReference("decision-1", "policy-v1", "ALLOW"),
+        new TraceContext("trace-1", "request-1"),
+        OffsetDateTime.parse("2026-06-27T10:16:00Z"));
+  }
+
+  private SqlControlledDmlExecutionRequest controlledDmlRequest() {
+    SqlQueryRequest query = dmlQuery(SqlQueryAction.COMMIT_DML);
+    return new SqlControlledDmlExecutionRequest(
+        "1.0",
+        "dml-execution-1",
+        "dml-workflow-1",
+        new SqlDmlCommitRequest(
+            "1.0",
+            query,
+            new SqlDmlConfirmation(
+                "1.0",
+                "sha256:" + "a".repeat(64),
+                List.of("CONTROLLED_DML_CONFIRMED"),
+                SqlDmlConfirmation.RISK_CONFIRMATION_CODE)),
+        new SqlDmlExecutionBinding(
+            "b".repeat(64),
+            "c".repeat(64),
+            "d".repeat(64),
+            "e".repeat(64)),
+        new OperatorContext("operator-1", List.of("ROLE_ops-admin")),
+        new PolicyDecisionReference("decision-1", "policy-v1", "ALLOW"),
+        new TraceContext("trace-1", "request-1"),
+        OffsetDateTime.parse("2026-06-27T10:16:00Z"));
+  }
+
+  private SqlQueryRequest dmlQuery(SqlQueryAction action) {
+    return new SqlQueryRequest(
+        "1.0",
+        "as400-development",
+        "development",
+        "ORDERS",
+        action,
+        "update ORDERS.ORDERS set status = 'READY' where order_id = 42",
+        List.of(),
+        new SqlQueryLimits(500, 10_000_000, 30),
+        "dml-idempotency-1");
   }
 }

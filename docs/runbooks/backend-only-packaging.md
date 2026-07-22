@@ -129,14 +129,16 @@ BOOT-INF/classes/static/index.html
 
 另开一个 `cmd.exe` 窗口：
 
+启动前必须通过批准的部署密钥源向两个启动进程注入一次性 `OPS_AGENT_DEMO_ADMIN_PASSWORD` 和 `OPS_AGENT_SQL_DML_RECEIPT_HMAC_SECRET`。这两个变量没有默认值，不得写入命令历史、脚本或本手册。
+
 ```cmd
 set "REPO=C:\path\to\poc-ops-agent"
 cd /d "%REPO%\backend"
 for /f "delims=" %J in ('dir /b execution-worker\target\execution-worker-*.jar') do set WORKER_JAR=execution-worker\target\%J
-java -jar "%WORKER_JAR%"
+java -jar "%WORKER_JAR%" --spring.profiles.active=demo
 ```
 
-默认本地 Worker 监听 `127.0.0.1:8091`。
+默认本地 Worker 监听 `127.0.0.1:8091`。只有 `demo` profile 的 `sit` H2 连接允许受控 DML；基础 Worker 配置保持关闭。
 
 ## 启动控制面并启用 demo 账号
 
@@ -146,6 +148,10 @@ java -jar "%WORKER_JAR%"
 set "REPO=C:\path\to\poc-ops-agent"
 cd /d "%REPO%\backend"
 for /f "delims=" %J in ('dir /b control-plane\bootstrap\target\control-plane-bootstrap-*.jar') do set CONTROL_PLANE_JAR=control-plane\bootstrap\target\%J
+rem 以下变量仅由批准的部署密钥源注入，示例不提供任何值。
+rem 通过部署密钥管理器注入 OPS_AGENT_DEMO_ADMIN_PASSWORD
+rem 通过部署密钥管理器注入 OPS_AGENT_SQL_DML_RECEIPT_HMAC_SECRET
+rem 通过部署密钥管理器注入 OPS_AGENT_SKILL_REGISTRY_SIGNING_SECRET
 java -jar "%CONTROL_PLANE_JAR%" --spring.profiles.active=demo
 ```
 
@@ -153,7 +159,7 @@ java -jar "%CONTROL_PLANE_JAR%" --spring.profiles.active=demo
 
 ```text
 用户名：admin
-密码：Admin#2026Demo
+密码：由启动进程注入的 OPS_AGENT_DEMO_ADMIN_PASSWORD
 ```
 
 启动后访问控制面地址。前端页面会由控制面 JAR 内的静态资源提供。
@@ -194,7 +200,7 @@ for /f "delims=" %%J in ('dir /b control-plane\bootstrap\target\control-plane-bo
 
 ## 安全提醒
 
-- `admin / Admin#2026Demo` 只允许用于本地演示 profile。
-- 不得把 demo profile、demo 密码或本地 H2 数据源当成生产配置。
+- `admin` 账号只允许用于本地 `demo` profile，口令必须由 `OPS_AGENT_DEMO_ADMIN_PASSWORD` 一次性注入。
+- 不得把 demo profile、演示口令或本地 H2 数据源当成生产配置。
 - 本流程不开放生产发布、生产写执行、任意脚本执行或目标系统长期凭据。
 - 如需生成包含清单、校验和、前端快照和启动脚本的统一发布 ZIP，应改用 `tools\release\package-release.mjs`；该脚本同样默认使用系统 `mvn`，不依赖 PowerShell 或 Maven Wrapper，必要时可通过 `--maven-command <command>` 指定 Maven 可执行文件。

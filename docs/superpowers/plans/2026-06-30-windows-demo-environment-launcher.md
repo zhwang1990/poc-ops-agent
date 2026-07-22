@@ -70,7 +70,7 @@ ops-agent:
     identity-seed:
       enabled: true
       username: admin
-      password: Admin#2026Demo
+      password: ${OPS_AGENT_DEMO_ADMIN_PASSWORD}
       roles:
         - ROLE_ops-admin
         - ROLE_ops-reader
@@ -91,7 +91,7 @@ assertTrue(account.roleCodes().contains("ROLE_ops-admin"));
 assertTrue(account.roleCodes().contains("ROLE_ops-reader"));
 PasswordCredential credential = passwordCredentialRepository.findActiveByAccountId(account.accountId()).orElseThrow();
 assertFalse(credential.mustChangeOnNextLogin());
-assertTrue(((PasswordVerifier) passwordHasher).matches("Admin#2026Demo", credential));
+assertTrue(((PasswordVerifier) passwordHasher).matches(System.getenv("OPS_AGENT_DEMO_ADMIN_PASSWORD"), credential));
 ```
 
 - [ ] **Step 6: Run seed test and verify RED**
@@ -201,7 +201,7 @@ If there is no existing script test harness, create a lightweight test under `to
 findstr /I /C:"powershell" tools\demo\start-demo.cmd && exit /b 1
 findstr /I /C:"powershell" tools\demo\stop-demo.cmd && exit /b 1
 findstr /I /C:"spring-boot.run.profiles=demo" tools\demo\start-demo.cmd >nul || exit /b 1
-findstr /I /C:"Admin#2026Demo" tools\demo\start-demo.cmd >nul || exit /b 1
+findstr /I /C:"OPS_AGENT_DEMO_ADMIN_PASSWORD" tools\demo\start-demo.cmd >nul || exit /b 1
 ```
 
 - [ ] **Step 2: Run script test and verify RED**
@@ -230,7 +230,7 @@ Implement pure Batch:
 - Redirect logs to `.demo\logs\*.log`
 - Write launched PIDs by querying `wmic process where "CommandLine like ..."` if available, with a fallback to window-title stop guidance.
 - Open browser with `start "" http://127.0.0.1:5173`
-- Print `admin / Admin#2026Demo` and sample SQL.
+- Print the `OPS_AGENT_DEMO_ADMIN_PASSWORD` injection requirement and sample SQL.
 
 - [ ] **Step 4: Create `stop-demo.cmd`**
 
@@ -268,7 +268,7 @@ Document in Chinese:
 - Prerequisites: Java 21, Node.js 20+, npm, no PowerShell required.
 - Start: double-click `start-demo.cmd`.
 - Stop: double-click `stop-demo.cmd`.
-- Login: `admin / Admin#2026Demo`.
+- Login: `admin` with the value injected through `OPS_AGENT_DEMO_ADMIN_PASSWORD`.
 - SQL connection: `h2-local-test`.
 - Three sample SELECT queries from the spec.
 - DML remains disabled.
@@ -312,7 +312,7 @@ Expected: PASS.
 
 - [ ] **Step 3: Manual smoke if time allows**
 
-Run `tools\demo\start-demo.cmd`, log in with `admin / Admin#2026Demo`, execute the three H2 sample SELECT queries, then run `tools\demo\stop-demo.cmd`.
+Run `tools\demo\start-demo.cmd`, log in with `admin` and the value injected through `OPS_AGENT_DEMO_ADMIN_PASSWORD`, execute the three H2 sample SELECT queries, then run `tools\demo\stop-demo.cmd`.
 
 - [ ] **Step 4: Final diff review**
 

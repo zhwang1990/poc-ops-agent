@@ -87,15 +87,19 @@ function createJsonRepairIdempotencyKey() {
   return `json-repair-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
+const defaultHeaderName = "Accept";
+const includeDetailsParameterName = "include_details";
+const expandParameterName = "expand";
+
 /** @type {KeyValueRow[]} */
 const initialHeaderRows = [
-  { enabled: true, id: "header-1", key: "Accept", value: "application/json" },
+  { enabled: true, id: "header-1", key: defaultHeaderName, value: "application/json" },
   createEmptyKeyValueRow("header", 2),
 ];
 /** @type {KeyValueRow[]} */
 const initialParamRows = [
-  { enabled: false, id: "param-1", key: "include_details", value: "true" },
-  { enabled: false, id: "param-2", key: "expand", value: "customer,payment" },
+  { enabled: false, id: "param-1", key: includeDetailsParameterName, value: "true" },
+  { enabled: false, id: "param-2", key: expandParameterName, value: "customer,payment" },
   createEmptyKeyValueRow("param", 3),
 ];
 /** @type {KeyValueRow[]} */

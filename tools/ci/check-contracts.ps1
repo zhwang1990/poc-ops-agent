@@ -133,6 +133,9 @@ Assert-SameStringSet `
     -Expected $expectedAgentTaskStatuses
 
 & "$repositoryRoot/tools/skills/skill-package-tool.ps1" validate-all
+if ([string]::IsNullOrWhiteSpace($env:OPS_AGENT_SKILL_REGISTRY_SIGNING_SECRET)) {
+    throw "OPS_AGENT_SKILL_REGISTRY_SIGNING_SECRET must be securely injected before verifying signed Skill contracts."
+}
 & "$repositoryRoot/tools/skills/skill-package-tool.ps1" generate-all --check
 
 Write-Host "Contract baseline check passed."

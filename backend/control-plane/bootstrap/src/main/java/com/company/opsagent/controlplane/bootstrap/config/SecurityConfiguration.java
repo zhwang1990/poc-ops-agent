@@ -20,6 +20,7 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.DependsOn;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.http.HttpMethod;
 import org.springframework.r2dbc.connection.init.ConnectionFactoryInitializer;
@@ -77,6 +78,7 @@ public class SecurityConfiguration {
    * <p>如果未显式配置路径，则落到默认 JSONL 文件位置。
    */
   @Bean
+  @DependsOn("auditSchemaInitializer")
   AuditTrail auditTrail(
       AuditProperties properties,
       ObjectMapper objectMapper,

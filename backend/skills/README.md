@@ -63,6 +63,9 @@ tools/skills/skill-package-tool.ps1 validate-all
 tools/skills/skill-package-tool.ps1 generate-all --check
 ```
 
+生成签名制品前，必须由安全密钥源向当前进程注入
+`OPS_AGENT_SKILL_REGISTRY_SIGNING_SECRET`。该变量没有默认值，不得写入仓库或环境示例；纯校验命令不读取该变量。
+
 ## P1 阶段约束
 
 - Skill 正文只能描述只读诊断能力。

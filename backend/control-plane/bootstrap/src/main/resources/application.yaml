@@ -16,7 +16,7 @@ ops-agent:
     auth-mode: built-in
     issuer: ops-agent-dev
     audience: ops-agent-internal
-    shared-secret: ops-agent-dev-secret-2026-06-06-0001
+    shared-secret: ${OPS_AGENT_SECURITY_SHARED_SECRET}
     issuer-uri:
     jwk-set-uri:
     username-claim: preferred_username
@@ -41,7 +41,7 @@ ops-agent:
     issuer: http://127.0.0.1:8080/mock-oidc
     audience: ops-agent-internal
     client-id: ops-agent-local-client
-    client-secret: ops-agent-local-secret
+    client-secret: ${OPS_AGENT_LOCAL_OIDC_CLIENT_SECRET}
     default-subject: local-reader-id
     default-username: local.reader
     default-roles:
@@ -154,6 +154,9 @@ ops-agent:
     base-url: http://127.0.0.1:8091
     transport-auth:
       enabled: false
+  controlled-sql-dml:
+    enabled-environments: []
+    rules: []
   workflow:
     startup-recovery-enabled: true
   agent-runtime:
@@ -166,7 +169,7 @@ ops-agent:
     max-tool-calls: 5
     max-tool-call-duration: 30s
     max-iterations: 5
-    model-provider-secret-master-key: ${OPS_AGENT_MODEL_SECRET_MASTER_KEY:OPS_AGENT_MODEL_SECRET_MASTER_KEY_REPLACE_ME}
+    model-provider-secret-master-key: ${OPS_AGENT_MODEL_SECRET_MASTER_KEY}
     p1-read-only-only: true
     workspace-id: workspace-default
     workspace-code: default
@@ -174,7 +177,7 @@ ops-agent:
   skill-registry:
     root-path: backend/contracts/skills/packages
     signature-required: true
-    signing-secret: ops-agent-skill-signing-key-2026-06-06-0001
+    signing-secret: ${OPS_AGENT_SKILL_REGISTRY_SIGNING_SECRET}
   audit:
     storage-mode: file
     storage-path: var/audit/control-plane-audit.jsonl

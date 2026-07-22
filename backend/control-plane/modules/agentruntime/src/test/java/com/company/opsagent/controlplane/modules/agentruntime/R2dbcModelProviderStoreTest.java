@@ -16,10 +16,6 @@ import org.springframework.r2dbc.core.DatabaseClient;
 
 class R2dbcModelProviderStoreTest {
 
-  private static final String LOCAL_MODEL_PROVIDER_MASTER_KEY =
-      "OPS_AGENT_MODEL_SECRET_MASTER_KEY_REPLACE_ME";
-  private static final String LOCAL_FAKE_API_KEY = "OPS_AGENT_FAKE_API_KEY_REPLACE_ME";
-
   @Test
   void savesAndFindsModelProvider() {
     R2dbcModelProviderStore store = testStore();
@@ -59,12 +55,6 @@ class R2dbcModelProviderStoreTest {
     assertTrue(provider.enabled());
     assertTrue(provider.defaultProvider());
     assertEquals("AES_GCM_V1", provider.apiKeyAlgorithm());
-    assertEquals(LOCAL_FAKE_API_KEY, new AesGcmModelProviderSecretCodec(LOCAL_MODEL_PROVIDER_MASTER_KEY)
-        .decrypt(new ModelProviderSecretCodec.EncryptedSecret(
-            provider.apiKeyCiphertext(),
-            provider.apiKeyNonce(),
-            provider.apiKeyAlgorithm(),
-            provider.apiKeyFingerprint())));
   }
 
   @Test

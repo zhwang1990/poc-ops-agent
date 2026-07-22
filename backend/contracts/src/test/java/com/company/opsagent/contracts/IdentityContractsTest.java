@@ -44,7 +44,8 @@ class IdentityContractsTest {
 
   @Test
   void rejectsBlankResetPasswordTargetAccount() {
-    assertThrows(IllegalArgumentException.class, () -> new AdminResetPasswordRequest(" ", "routine reset", "Temp#2026", true));
+    assertThrows(IllegalArgumentException.class, () -> new AdminResetPasswordRequest(
+        " ", "routine reset", java.util.UUID.randomUUID().toString(), true));
   }
 
   @Test

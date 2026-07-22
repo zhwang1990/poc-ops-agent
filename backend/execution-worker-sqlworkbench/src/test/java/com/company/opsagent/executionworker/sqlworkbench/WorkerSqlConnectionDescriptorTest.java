@@ -59,4 +59,36 @@ class WorkerSqlConnectionDescriptorTest {
         "as400-dev-readonly",
         true));
   }
+
+  @Test
+  void rejectsDmlCredentialAliasMatchingReadCredentialAlias() {
+    assertThrows(IllegalArgumentException.class, () -> new WorkerSqlConnectionDescriptor(
+        "as400-dev",
+        "dev",
+        "DB2_FOR_I",
+        "as400-dev.internal",
+        446,
+        "as400-read",
+        "readonly_user",
+        true,
+        true,
+        " AS400-READ ",
+        "writer_user"));
+  }
+
+  @Test
+  void rejectsDmlUsernameMatchingReadUsername() {
+    assertThrows(IllegalArgumentException.class, () -> new WorkerSqlConnectionDescriptor(
+        "as400-dev",
+        "dev",
+        "DB2_FOR_I",
+        "as400-dev.internal",
+        446,
+        "as400-read",
+        "readonly_user",
+        true,
+        true,
+        "as400-write",
+        " READONLY_USER "));
+  }
 }

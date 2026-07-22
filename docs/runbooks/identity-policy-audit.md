@@ -45,7 +45,7 @@ ops-agent:
     auth-mode: dev-hs256
     issuer: ops-agent-dev
     audience: ops-agent-internal
-    shared-secret: your-dev-secret
+    shared-secret: ${OPS_AGENT_SECURITY_SHARED_SECRET}
 ```
 
 ## 真实 OIDC 配置
@@ -96,7 +96,7 @@ spring:
           ops-agent:
             provider: ops-agent
             client-id: your-client-id
-            client-secret: your-client-secret
+            client-secret: ${OPS_AGENT_OIDC_CLIENT_SECRET}
             authorization-grant-type: authorization_code
             redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
             scope:

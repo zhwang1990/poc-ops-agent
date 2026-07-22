@@ -77,6 +77,9 @@ class PolicyEnforcementWebFilterTest {
         "internal.sql-workbench.queries.run",
         resolvedAction(MockServerHttpRequest.post("/internal/sql-workbench/queries/run")));
     assertEquals(
+        "internal.sql-workbench.queries.validate",
+        resolvedAction(MockServerHttpRequest.post("/internal/sql-workbench/queries/preflight")));
+    assertEquals(
         "internal.sql-workbench.dml.commit",
         resolvedAction(MockServerHttpRequest.post("/internal/sql-workbench/queries/commit")));
     assertEquals(

@@ -1,0 +1,18 @@
+ops-agent:
+  worker:
+    sql-dml-replay:
+      directory: ${OPS_AGENT_SQL_DML_REPLAY_DIRECTORY:}
+    sql-egress:
+      # This profile is limited to the sit H2 demo and Task 7 E2E path.
+      # Default Worker configuration remains read-only.
+      connections:
+        - connection-id: h2-local-test
+          target-environment: sit
+          platform-type: H2
+          host: localhost
+          port: 9092
+          credential-alias: h2-local-readonly
+          enabled: true
+          dml-enabled: true
+          dml-credential-alias: h2-local-dml-writer
+          dml-username: H2_LOCAL_DML_WRITER

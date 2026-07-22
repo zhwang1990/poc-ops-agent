@@ -94,7 +94,7 @@ ops-agent:
   skill-registry:
     root-path: backend/contracts/skills/packages
     signature-required: true
-    signing-secret: ops-agent-skill-signing-key-2026-06-06-0001
+    signing-secret: ${OPS_AGENT_SKILL_REGISTRY_SIGNING_SECRET}
   audit:
     storage-mode: file
     storage-path: var/audit/control-plane-audit.jsonl
@@ -110,7 +110,7 @@ spring:
           ops-agent:
             provider: ops-agent
             client-id: your-client-id
-            client-secret: your-client-secret
+            client-secret: ${OPS_AGENT_OIDC_CLIENT_SECRET}
             authorization-grant-type: authorization_code
             client-authentication-method: client_secret_basic
             redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"

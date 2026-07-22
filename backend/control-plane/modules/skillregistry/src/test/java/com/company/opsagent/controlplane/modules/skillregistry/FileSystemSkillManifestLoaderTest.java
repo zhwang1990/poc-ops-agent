@@ -9,6 +9,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
+import java.security.SecureRandom;
+import java.util.Base64;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import org.junit.jupiter.api.Test;
@@ -22,7 +24,7 @@ import org.junit.jupiter.api.io.TempDir;
  */
 class FileSystemSkillManifestLoaderTest {
 
-  private static final String SIGNING_SECRET = "ops-agent-skill-signing-key-2026-06-06-0001";
+  private static final String SIGNING_SECRET = runtimeSigningSecret();
 
   private final ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
 
@@ -203,5 +205,11 @@ class FileSystemSkillManifestLoaderTest {
       builder.append(String.format("%02x", value));
     }
     return builder.toString();
+  }
+
+  private static String runtimeSigningSecret() {
+    byte[] bytes = new byte[32];
+    new SecureRandom().nextBytes(bytes);
+    return Base64.getEncoder().encodeToString(bytes);
   }
 }

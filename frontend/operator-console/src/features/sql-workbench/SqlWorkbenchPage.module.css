@@ -728,6 +728,10 @@
   grid-template-rows: 32px minmax(0, 1fr);
 }
 
+.sqlEditorWithRunStatus {
+  grid-template-rows: 32px auto minmax(0, 1fr);
+}
+
 .sqlEditor > span {
   display: flex;
   min-width: 0;
@@ -740,6 +744,18 @@
   font-weight: 850;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.sqlWriteRunStatus {
+  min-width: 0;
+  margin: 0;
+  padding: 6px 12px;
+  border-bottom: 1px solid rgba(185, 82, 45, 0.16);
+  background: rgba(185, 82, 45, 0.08);
+  color: oklch(0.45 0.1 45);
+  font-size: 12px;
+  font-weight: 760;
+  line-height: 18px;
 }
 
 .sqlCodeEditor {

@@ -133,7 +133,7 @@ Required behaviors:
 - Generate `manifest.json` from `skill.package.yaml`.
 - Copy `schemas/input.schema.json` and `schemas/output.schema.json` when present; otherwise generate minimal schemas.
 - Copy `examples/*.json` to `tests/*.json` when present; otherwise generate minimal test skeletons.
-- Generate `manifest.signature.json` with HMAC-SHA256 over the manifest checksum using the existing development signing secret `ops-agent-skill-signing-key-2026-06-06-0001`.
+- 通过安全注入的 `OPS_AGENT_SKILL_REGISTRY_SIGNING_SECRET` 对 manifest checksum 生成 HMAC-SHA256 的 `manifest.signature.json`；该变量没有默认值。
 - Implement `generate-all --check` by generating to a temp directory and comparing with `backend/contracts/skills/packages`.
 
 - [ ] **Step 2: Add `skill-package.schema.json`**
@@ -306,4 +306,3 @@ git status --short
 ```
 
 Expected: changes only in `tools/skills`, `tools/ci/check-contracts.ps1`, `backend/skills`, `backend/contracts/skills`, and the M03 design/plan docs, plus pre-existing unrelated frontend changes left unstaged.
-

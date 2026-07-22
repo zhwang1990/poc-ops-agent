@@ -2,6 +2,7 @@ package com.company.opsagent.controlplane.bootstrap.api;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 import com.company.opsagent.contracts.sqlworkbench.SqlConnectionCreateRequest;
 import com.company.opsagent.contracts.sqlworkbench.SqlConnectionProbeResult;
@@ -14,6 +15,8 @@ import com.company.opsagent.contracts.sqlworkbench.SqlAssistantStatus;
 import com.company.opsagent.contracts.sqlworkbench.SqlAssistantSuggestion;
 import com.company.opsagent.contracts.sqlworkbench.SqlDatabaseMetadata;
 import com.company.opsagent.contracts.sqlworkbench.SqlDmlCommitRequest;
+import com.company.opsagent.contracts.sqlworkbench.SqlDmlImpactPreview;
+import com.company.opsagent.contracts.sqlworkbench.SqlDmlPreflightResult;
 import com.company.opsagent.contracts.sqlworkbench.SqlMetadataColumn;
 import com.company.opsagent.contracts.sqlworkbench.SqlMetadataIndex;
 import com.company.opsagent.contracts.sqlworkbench.SqlMetadataObject;
@@ -37,8 +40,8 @@ import reactor.test.StepVerifier;
 class SqlWorkbenchControllerTest {
 
   private final RecordingSqlWorkbenchService service = new RecordingSqlWorkbenchService();
-  private final SqlWorkbenchController controller = new SqlWorkbenchController(service, new ObjectMapper());
-  private final ObjectMapper objectMapper = new ObjectMapper();
+  private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
+  private final SqlWorkbenchController controller = new SqlWorkbenchController(service, objectMapper);
 
   @Test
   void rejectsUnknownConnectionCreateFieldsBeforeServiceLayer() throws Exception {
@@ -224,6 +227,126 @@ class SqlWorkbenchControllerTest {
   }
 
   @Test
+  void returnsTypedUnknownHandoffWithoutInternalResultDetails() throws Exception {
+    service.commitResult = new SqlQueryExecutionResult(
+        "1.0",
+        "workflow-handoff-dml",
+        "workflow-handoff",
+        "UNKNOWN_REQUIRES_HANDOFF",
+        null,
+        "SQL_DML_RESULT_UNKNOWN",
+        null,
+        null);
+    var request = objectMapper.readTree("""
+        {
+          "contractVersion": "1.0",
+          "query": {
+            "contractVersion": "1.0",
+            "connectionId": "as400-dev",
+            "targetEnvironment": "dev",
+            "schema": "ORDERS",
+            "action": "COMMIT_DML",
+            "sql": "update ORDERS.ORDERS set status = 'READY' where order_id = 42",
+            "parameters": [],
+            "limits": {"maxRows": 500, "maxBytes": 5000000, "timeoutSeconds": 30},
+            "idempotencyKey": "commit-key-unknown"
+          },
+          "confirmation": {
+            "contractVersion": "1.0",
+            "sqlHash": "sha256:test",
+            "confirmedRisks": ["CONTROLLED_DML_CONFIRMED"],
+            "confirmationCode": "CONFIRM_SQL_DML_RISK"
+          }
+        }
+        """);
+
+    StepVerifier.create(controller.commit(request, exchange()))
+        .assertNext(response -> {
+          assertEquals("UNKNOWN_REQUIRES_HANDOFF", response.status());
+          assertEquals("workflow-handoff", response.workflowId());
+          assertEquals("SQL_DML_RESULT_UNKNOWN", response.errorCode());
+          assertNull(response.resultId());
+          assertNull(response.errorMessage());
+          assertNull(response.affectedRows());
+        })
+        .verifyComplete();
+  }
+
+  @Test
+  void parsesAndForwardsVersionedDmlPreflightReceipt() throws Exception {
+    var request = objectMapper.readTree("""
+        {
+          "contractVersion": "1.1",
+          "query": {
+            "contractVersion": "1.0",
+            "connectionId": "as400-dev",
+            "targetEnvironment": "dev",
+            "schema": "ORDERS",
+            "action": "COMMIT_DML",
+            "sql": "update ORDERS.ORDERS set status = 'READY'",
+            "parameters": [],
+            "limits": {"maxRows": 500, "maxBytes": 5000000, "timeoutSeconds": 30},
+            "idempotencyKey": "commit-key-1"
+          },
+          "confirmation": {
+            "contractVersion": "1.0",
+            "sqlHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "confirmedRisks": ["UPDATE_WITHOUT_WHERE"],
+            "confirmationCode": "CONFIRM_SQL_DML_RISK"
+          },
+          "receipt": {
+            "contractVersion": "1.0",
+            "receiptId": "receipt-1",
+            "keyId": "server-receipt-key",
+            "issuedAt": "2026-07-17T10:00:00Z",
+            "expiresAt": "2026-07-17T10:05:00Z",
+            "operatorId": "operator-1",
+            "requestHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "connectionId": "as400-dev",
+            "targetEnvironment": "dev",
+            "schema": "ORDERS",
+            "sqlHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "parametersHash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "policyVersion": "policy-v1",
+            "policySelectionHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+            "impactPreviewHash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            "preflightHash": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+            "signature": "opaque-signature"
+          }
+        }
+        """);
+
+    StepVerifier.create(controller.commit(request, exchange()))
+        .expectNextCount(1)
+        .verifyComplete();
+
+    assertEquals("receipt-1", service.lastCommitRequest.receipt().receiptId());
+    assertEquals("policy-v1", service.lastCommitRequest.receipt().policyVersion());
+  }
+
+  @Test
+  void passesDmlPreflightWithExecutionContextThroughServiceBoundary() {
+    SqlQueryRequest request = new SqlQueryRequest(
+        "1.0",
+        "as400-dev",
+        "dev",
+        "ORDERS",
+        com.company.opsagent.contracts.sqlworkbench.SqlQueryAction.PREFLIGHT_DML,
+        "update ORDERS.ORDERS set status = 'READY' where order_id = 1",
+        List.of(),
+        new com.company.opsagent.contracts.sqlworkbench.SqlQueryLimits(500, 5_000_000, 30),
+        "preflight-key-1");
+
+    StepVerifier.create(controller.preflight(request, exchange()))
+        .assertNext(response -> assertEquals(1L, response.impactPreview().affectedRows()))
+        .verifyComplete();
+
+    assertEquals(1, service.preflightCount.get());
+    assertEquals("operator-1", service.lastPreflightOperator.operatorId());
+    assertEquals("policy-v1", service.lastPreflightPolicy.policyVersion());
+  }
+
+  @Test
   void rejectsUnknownDmlCommitFieldsBeforeServiceLayer() throws Exception {
     var request = objectMapper.readTree("""
         {
@@ -284,12 +407,17 @@ class SqlWorkbenchControllerTest {
     private final AtomicInteger assistCount = new AtomicInteger();
     private final AtomicInteger metadataCount = new AtomicInteger();
     private final AtomicInteger commitCount = new AtomicInteger();
+    private final AtomicInteger preflightCount = new AtomicInteger();
     private String lastUpdateConnectionId;
     private SqlConnectionUpdateRequest lastUpdateRequest;
     private String lastDeleteConnectionId;
     private SqlAssistantRequest lastAssistantRequest;
     private String lastMetadataConnectionId;
     private String lastMetadataSchema;
+    private OperatorContext lastPreflightOperator;
+    private PolicyDecisionReference lastPreflightPolicy;
+    private SqlDmlCommitRequest lastCommitRequest;
+    private SqlQueryExecutionResult commitResult;
 
     @Override
     public List<SqlConnectionSummary> listConnections() {
@@ -368,12 +496,39 @@ class SqlWorkbenchControllerTest {
     }
 
     @Override
+    public SqlDmlPreflightResult preflightControlledDml(
+        SqlQueryRequest request,
+        OperatorContext operator,
+        PolicyDecisionReference policyDecision,
+        TraceContext trace) {
+      preflightCount.incrementAndGet();
+      lastPreflightOperator = operator;
+      lastPreflightPolicy = policyDecision;
+      return new SqlDmlPreflightResult(
+          "1.0",
+          new SqlValidationReport(
+              "1.0",
+              com.company.opsagent.contracts.sqlworkbench.SqlStatementType.UPDATE,
+              com.company.opsagent.contracts.sqlworkbench.SqlValidationLevel.VALIDATED,
+              "sha256:test",
+              List.of("ORDERS.ORDERS"),
+              List.of(),
+              List.of(),
+              List.of()),
+          new SqlDmlImpactPreview("1.0", 1L, List.of(), List.of(), List.of()));
+    }
+
+    @Override
     public SqlQueryExecutionResult commitControlledDml(
         SqlDmlCommitRequest request,
         OperatorContext operator,
         PolicyDecisionReference policyDecision,
         TraceContext trace) {
       commitCount.incrementAndGet();
+      lastCommitRequest = request;
+      if (commitResult != null) {
+        return commitResult;
+      }
       return new SqlQueryExecutionResult(
           "1.0",
           "execution-1",

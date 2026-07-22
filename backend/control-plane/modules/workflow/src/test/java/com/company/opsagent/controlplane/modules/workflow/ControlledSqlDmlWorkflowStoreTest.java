@@ -1,0 +1,130 @@
+package com.company.opsagent.controlplane.modules.workflow;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+
+import com.company.opsagent.contracts.sqlworkbench.SqlStatementType;
+import com.company.opsagent.controlplane.modules.audit.R2dbcAuditTrail;
+import io.r2dbc.spi.ConnectionFactories;
+import java.time.OffsetDateTime;
+import org.junit.jupiter.api.Test;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.r2dbc.connection.init.ConnectionFactoryInitializer;
+import org.springframework.r2dbc.connection.init.ResourceDatabasePopulator;
+import org.springframework.r2dbc.core.DatabaseClient;
+
+class ControlledSqlDmlWorkflowStoreTest {
+
+  private static final String BINDING_A = "a".repeat(64);
+  private static final String BINDING_B = "b".repeat(64);
+  private static final String SQL_HASH = "c".repeat(64);
+  private static final String PARAMETERS_HASH = "d".repeat(64);
+  private static final String PREFLIGHT_HASH = "e".repeat(64);
+  private static final String CONFIRMATION_HASH = "f".repeat(64);
+
+  @Test
+  void reusesIdenticalIdempotencyBinding() {
+    var store = testStore();
+    store.create(createdWorkflow("workflow-1", BINDING_A)).block();
+
+    assertEquals(
+        "workflow-1",
+        store.findByIdempotency("key-1", "operator-1", "sit").block().workflowId());
+    assertEquals(
+        "workflow-1",
+        store.create(createdWorkflow("workflow-2", BINDING_A)).block().workflowId());
+  }
+
+  @Test
+  void rejectsChangedBindingForSameKeyWithoutCreatingAnotherWorkflow() {
+    var store = testStore();
+    store.create(createdWorkflow("workflow-1", BINDING_A)).block();
+
+    var exception = assertThrows(
+        ControlledSqlDmlWorkflowStore.IdempotencyConflictException.class,
+        () -> store.create(createdWorkflow("workflow-2", BINDING_B)).block());
+
+    assertEquals("SQL_DML_IDEMPOTENCY_CONFLICT", exception.code());
+    assertEquals(
+        "workflow-1",
+        store.findByIdempotency("key-1", "operator-1", "sit").block().workflowId());
+  }
+
+  @Test
+  void rejectsChangedBindingWhenCompatibilityIsCheckedDirectly() {
+    var store = testStore();
+    store.create(createdWorkflow("workflow-1", BINDING_A)).block();
+
+    var exception = assertThrows(
+        ControlledSqlDmlWorkflowStore.IdempotencyConflictException.class,
+        () -> store.assertCompatible(
+            "key-1", "operator-1", "sit", BINDING_B).block());
+
+    assertEquals("SQL_DML_IDEMPOTENCY_CONFLICT", exception.code());
+  }
+
+  @Test
+  void rejectsPrepopulatedTerminalFactsAtCreation() {
+    var store = testStore();
+
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> store.create(createdWorkflow(
+            "workflow-1", BINDING_A, "sample-value select * from secret")).block());
+
+    assertNull(store.findByIdempotency("key-1", "operator-1", "sit").block());
+  }
+
+  private R2dbcControlledSqlDmlWorkflowStore testStore() {
+    var connectionFactory = ConnectionFactories.get(
+        "r2dbc:h2:mem:///controlled-sql-dml-store-" + System.nanoTime() + ";DB_CLOSE_DELAY=-1");
+    var initializer = new ConnectionFactoryInitializer();
+    initializer.setConnectionFactory(connectionFactory);
+    initializer.setDatabasePopulator(new ResourceDatabasePopulator(
+        new ClassPathResource("sql/migrations/V001__audit_event_schema.sql"),
+        new ClassPathResource("sql/migrations/V004__controlled_sql_dml_workflow.sql"),
+        new ClassPathResource("sql/migrations/V005__controlled_sql_dml_execution_expiry.sql")));
+    initializer.afterPropertiesSet();
+    DatabaseClient databaseClient = DatabaseClient.create(connectionFactory);
+    return new R2dbcControlledSqlDmlWorkflowStore(
+        databaseClient, new R2dbcAuditTrail(databaseClient));
+  }
+
+  private ControlledSqlDmlWorkflow createdWorkflow(String workflowId, String bindingHash) {
+    return createdWorkflow(workflowId, bindingHash, null);
+  }
+
+  private ControlledSqlDmlWorkflow createdWorkflow(
+      String workflowId,
+      String bindingHash,
+      String failureCode) {
+    OffsetDateTime createdAt = OffsetDateTime.parse("2026-07-17T10:00:00Z");
+    return new ControlledSqlDmlWorkflow(
+        workflowId,
+        "key-1",
+        "operator-1",
+        "sit",
+        bindingHash,
+        "as400-sit",
+        "OPS",
+        SqlStatementType.UPDATE,
+        SQL_HASH,
+        PARAMETERS_HASH,
+        PREFLIGHT_HASH,
+        CONFIRMATION_HASH,
+        "decision-1",
+        "policy-v1",
+        "trace-1",
+        "request-1",
+        ControlledSqlDmlWorkflow.Status.CREATED,
+        0,
+        null,
+        failureCode,
+        null,
+        createdAt,
+        createdAt,
+        null,
+        null);
+  }
+}

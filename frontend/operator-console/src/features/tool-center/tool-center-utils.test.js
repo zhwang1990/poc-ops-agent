@@ -46,6 +46,8 @@ describe("tool center utilities", () => {
   });
 
   test("builds JSON hero nodes with stable paths and type metadata", () => {
+    const serviceNameKey = "name";
+    const secondPortIndex = "1";
     const result = parseJsonForHeroView(
       '{"service":{"name":"queFork","enabled":true},"ports":[8080,null],"release-window":"night"}',
     );
@@ -63,13 +65,13 @@ describe("tool center utilities", () => {
       '$["release-window"]',
     ]);
     expect(result.root.children[0].children[0]).toMatchObject({
-      key: "name",
+      key: serviceNameKey,
       kind: "string",
       path: "$.service.name",
       preview: '"queFork"',
     });
     expect(result.root.children[1].children[1]).toMatchObject({
-      key: "1",
+      key: secondPortIndex,
       kind: "null",
       path: "$.ports[1]",
       preview: "null",

@@ -10,15 +10,18 @@ import org.junit.jupiter.api.Test;
 
 class AesGcmModelProviderSecretCodecTest {
 
+  private static final String MASTER_KEY = ModelProviderTestSecretMaterial.value();
+
   @Test
   void encryptsAndDecryptsApiKeyWithoutPlaintextInCiphertext() {
     AesGcmModelProviderSecretCodec codec = new AesGcmModelProviderSecretCodec(
-        "0123456789abcdef0123456789abcdef");
+        MASTER_KEY);
 
-    ModelProviderSecretCodec.EncryptedSecret encrypted = codec.encrypt("TEST_API_KEY_PLACEHOLDER");
+    String apiKey = ModelProviderTestSecretMaterial.value();
+    ModelProviderSecretCodec.EncryptedSecret encrypted = codec.encrypt(apiKey);
 
-    assertEquals("TEST_API_KEY_PLACEHOLDER", codec.decrypt(encrypted));
-    assertFalse(encrypted.ciphertext().contains("TEST_API_KEY_PLACEHOLDER"));
+    assertEquals(apiKey, codec.decrypt(encrypted));
+    assertFalse(encrypted.ciphertext().contains(apiKey));
     assertFalse(encrypted.nonce().isBlank());
     assertEquals("AES_GCM_V1", encrypted.algorithm());
     assertTrue(encrypted.fingerprint().startsWith("fp_"));
@@ -27,10 +30,11 @@ class AesGcmModelProviderSecretCodecTest {
   @Test
   void usesDifferentNonceForEachEncryption() {
     AesGcmModelProviderSecretCodec codec = new AesGcmModelProviderSecretCodec(
-        "0123456789abcdef0123456789abcdef");
+        MASTER_KEY);
 
-    ModelProviderSecretCodec.EncryptedSecret first = codec.encrypt("TEST_API_KEY_PLACEHOLDER");
-    ModelProviderSecretCodec.EncryptedSecret second = codec.encrypt("TEST_API_KEY_PLACEHOLDER");
+    String apiKey = ModelProviderTestSecretMaterial.value();
+    ModelProviderSecretCodec.EncryptedSecret first = codec.encrypt(apiKey);
+    ModelProviderSecretCodec.EncryptedSecret second = codec.encrypt(apiKey);
 
     assertNotEquals(first.nonce(), second.nonce());
     assertNotEquals(first.ciphertext(), second.ciphertext());
@@ -42,7 +46,7 @@ class AesGcmModelProviderSecretCodecTest {
     assertThrows(IllegalArgumentException.class, () -> new AesGcmModelProviderSecretCodec(" "));
 
     AesGcmModelProviderSecretCodec codec = new AesGcmModelProviderSecretCodec(
-        "0123456789abcdef0123456789abcdef");
+        MASTER_KEY);
 
     assertThrows(IllegalArgumentException.class, () -> codec.encrypt(" "));
   }

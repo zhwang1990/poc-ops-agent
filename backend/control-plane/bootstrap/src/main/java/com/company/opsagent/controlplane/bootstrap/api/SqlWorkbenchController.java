@@ -6,6 +6,7 @@ import com.company.opsagent.contracts.sqlworkbench.SqlConnectionSummary;
 import com.company.opsagent.contracts.sqlworkbench.SqlConnectionUpdateRequest;
 import com.company.opsagent.contracts.sqlworkbench.SqlDatabaseMetadata;
 import com.company.opsagent.contracts.sqlworkbench.SqlDmlCommitRequest;
+import com.company.opsagent.contracts.sqlworkbench.SqlDmlPreflightResult;
 import com.company.opsagent.contracts.sqlworkbench.SqlAssistantRequest;
 import com.company.opsagent.contracts.sqlworkbench.SqlAssistantResponse;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryExecutionResult;
@@ -73,7 +74,8 @@ public class SqlWorkbenchController {
   private static final Set<String> DML_COMMIT_FIELDS = Set.of(
       "contractVersion",
       "query",
-      "confirmation");
+      "confirmation",
+      "receipt");
 
   private final SqlWorkbenchService sqlWorkbenchService;
   private final ObjectMapper objectMapper;
@@ -137,6 +139,22 @@ public class SqlWorkbenchController {
         request,
         new OperatorContext(context.subject(), context.roles()),
         new PolicyDecisionReference(context.requestId() + ":" + context.action(), context.policyVersion(), "ALLOW"),
+        new TraceContext(context.traceId(), context.requestId())));
+  }
+
+  @PostMapping("/queries/preflight")
+  public Mono<SqlDmlPreflightResult> preflight(
+      @RequestBody SqlQueryRequest request,
+      ServerWebExchange exchange) {
+    ExecutionContext context = exchange.getRequiredAttribute(
+        PolicyEnforcementWebFilter.EXECUTION_CONTEXT_ATTRIBUTE);
+    return blocking(() -> sqlWorkbenchService.preflightControlledDml(
+        request,
+        new OperatorContext(context.subject(), context.roles()),
+        new PolicyDecisionReference(
+            context.requestId() + ":" + context.action(),
+            context.policyVersion(),
+            "ALLOW"),
         new TraceContext(context.traceId(), context.requestId())));
   }
 

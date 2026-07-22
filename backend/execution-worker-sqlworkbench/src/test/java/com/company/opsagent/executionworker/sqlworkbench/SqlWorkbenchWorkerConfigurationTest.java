@@ -2,7 +2,9 @@ package com.company.opsagent.executionworker.sqlworkbench;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryAction;
@@ -22,12 +24,16 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import javax.crypto.spec.SecretKeySpec;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
 /**
  * 验证 SQL 工作台 Worker 适配模块独立装配 SQL 出口边界，并保持空配置默认拒绝。
  */
 class SqlWorkbenchWorkerConfigurationTest {
+
+  @TempDir
+  Path temporaryDirectory;
 
   private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
       .withUserConfiguration(SqlWorkbenchWorkerConfiguration.class)
@@ -50,15 +56,16 @@ class SqlWorkbenchWorkerConfigurationTest {
 
   @Test
   void registersKeyStorePasswordProviderWhenCredentialStoreIsConfigured() throws Exception {
-    char[] storePassword = "store-password".toCharArray();
-    Path keyStorePath = keyStore("as400-dev-readonly", "database-password", storePassword);
+    char[] storePassword = SqlTestSecretMaterial.password();
+    String databasePassword = SqlTestSecretMaterial.value();
+    Path keyStorePath = keyStore("as400-dev-readonly", databasePassword, storePassword);
 
     contextRunner
         .withPropertyValues(
             "ops-agent.worker.sql-credentials.key-store-path=" + keyStorePath,
-            "ops-agent.worker.sql-credentials.store-password=store-password")
+            "ops-agent.worker.sql-credentials.store-password=" + new String(storePassword))
         .run(context -> assertArrayEquals(
-            "database-password".toCharArray(),
+            databasePassword.toCharArray(),
             context.getBean(SqlPasswordProvider.class).password("as400-dev-readonly")));
   }
 
@@ -120,6 +127,29 @@ class SqlWorkbenchWorkerConfigurationTest {
         });
   }
 
+  @Test
+  void failsStartupWhenDmlIsEnabledWithoutReplayDirectory() {
+    dmlEnabledContextRunner()
+        .run(context -> {
+          assertNotNull(context.getStartupFailure());
+          assertTrue(rootCause(context.getStartupFailure()).getMessage().contains(
+              "SQL DML replay directory is required"));
+        });
+  }
+
+  @Test
+  void registersPersistentReplayGuardWhenDmlIsEnabled() {
+    dmlEnabledContextRunner()
+        .withPropertyValues(
+            "ops-agent.worker.sql-dml-replay.directory=" + temporaryDirectory)
+        .run(context -> {
+          assertNull(context.getStartupFailure());
+          SqlDmlExecutionReplayGuard guard = context.getBean(SqlDmlExecutionReplayGuard.class);
+          assertTrue(guard.consume("execution-configured-1"));
+          assertFalse(guard.consume("execution-configured-1"));
+        });
+  }
+
   private ApplicationContextRunner h2ContextRunner() {
     return contextRunner.withPropertyValues(
         "ops-agent.worker.sql-egress.allowed-targets[0].host=localhost",
@@ -131,6 +161,21 @@ class SqlWorkbenchWorkerConfigurationTest {
         "ops-agent.worker.sql-egress.connections[0].port=9092",
         "ops-agent.worker.sql-egress.connections[0].credential-alias=h2-local-readonly",
         "ops-agent.worker.sql-egress.connections[0].enabled=true");
+  }
+
+  private ApplicationContextRunner dmlEnabledContextRunner() {
+    return h2ContextRunner().withPropertyValues(
+        "ops-agent.worker.sql-egress.connections[0].dml-enabled=true",
+        "ops-agent.worker.sql-egress.connections[0].dml-credential-alias=h2-local-writer",
+        "ops-agent.worker.sql-egress.connections[0].dml-username=H2_LOCAL_WRITER");
+  }
+
+  private Throwable rootCause(Throwable failure) {
+    Throwable current = failure;
+    while (current.getCause() != null) {
+      current = current.getCause();
+    }
+    return current;
   }
 
   private Path keyStore(String alias, String secret, char[] storePassword) throws Exception {

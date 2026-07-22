@@ -75,6 +75,51 @@ class CalciteSqlValidationServiceTest {
     assertEquals(SqlValidationLevel.REJECTED, report.validationLevel());
   }
 
+  @Test
+  void rejectsInsertSelectFromControlledSubset() {
+    var report = service.validate(request(SqlQueryAction.COMMIT_DML,
+        "insert into ORDERS (ORDER_ID, STATUS) select ORDER_ID, STATUS from ARCHIVE"));
+
+    assertEquals(SqlValidationLevel.REJECTED, report.validationLevel());
+    assertTrue(report.rejectionReasons().contains("controlled INSERT requires a VALUES source"));
+  }
+
+  @Test
+  void rejectsDmlTargetSubquery() {
+    var report = service.validate(request(SqlQueryAction.PREFLIGHT_DML,
+        "update (select * from ORDERS) set STATUS = 'READY' where ORDER_ID = 42"));
+
+    assertEquals(SqlValidationLevel.REJECTED, report.validationLevel());
+    assertTrue(report.rejectionReasons().contains("SQL syntax is not supported"));
+  }
+
+  @Test
+  void rejectsUnsupportedPredicateOperator() {
+    var report = service.validate(request(SqlQueryAction.COMMIT_DML,
+        "update ORDERS set STATUS = 'READY' where STATUS like 'READY'"));
+
+    assertEquals(SqlValidationLevel.REJECTED, report.validationLevel());
+    assertTrue(report.rejectionReasons().contains("controlled DML predicate contains an unsupported operator"));
+  }
+
+  @Test
+  void rejectsPredicateColumnExpression() {
+    var report = service.validate(request(SqlQueryAction.COMMIT_DML,
+        "update ORDERS set STATUS = 'READY' where LOWER(OWNER) = 'ops'"));
+
+    assertEquals(SqlValidationLevel.REJECTED, report.validationLevel());
+    assertTrue(report.rejectionReasons().contains("controlled DML predicate contains an unsupported column expression"));
+  }
+
+  @Test
+  void rejectsQuotedLowerCaseIdentifiersBeforePolicyAuthorization() {
+    var report = service.validate(request(SqlQueryAction.PREFLIGHT_DML,
+        "update \"orders\" set \"status\" = 'READY' where \"order_id\" = 42"));
+
+    assertEquals(SqlValidationLevel.REJECTED, report.validationLevel());
+    assertTrue(report.rejectionReasons().contains("controlled DML does not allow quoted identifiers"));
+  }
+
   private SqlQueryRequest request(SqlQueryAction action, String sql) {
     return new SqlQueryRequest(
         "1.0",

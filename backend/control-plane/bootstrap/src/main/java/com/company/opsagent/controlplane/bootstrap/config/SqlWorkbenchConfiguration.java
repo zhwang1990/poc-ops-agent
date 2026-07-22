@@ -4,19 +4,28 @@ import com.company.opsagent.controlplane.bootstrap.service.WebClientSqlWorkbench
 import com.company.opsagent.controlplane.bootstrap.service.ModelProviderSqlAssistantClient;
 import com.company.opsagent.controlplane.modules.agentruntime.ModelProviderSecretCodec;
 import com.company.opsagent.controlplane.modules.agentruntime.ModelProviderStore;
+import com.company.opsagent.controlplane.modules.audit.AuditTrail;
 import com.company.opsagent.controlplane.modules.sqlworkbench.CalciteSqlValidationService;
+import com.company.opsagent.controlplane.modules.sqlworkbench.CalciteSqlDmlAnalysis;
+import com.company.opsagent.controlplane.modules.sqlworkbench.ControlledSqlDmlPolicy;
+import com.company.opsagent.controlplane.modules.sqlworkbench.ControlledSqlDmlProperties;
 import com.company.opsagent.controlplane.modules.sqlworkbench.DefaultSqlWorkbenchService;
 import com.company.opsagent.controlplane.modules.sqlworkbench.R2dbcSqlConnectionCatalog;
 import com.company.opsagent.controlplane.modules.sqlworkbench.SqlAssistantClient;
 import com.company.opsagent.controlplane.modules.sqlworkbench.SqlConnectionCatalog;
+import com.company.opsagent.controlplane.modules.sqlworkbench.SqlDmlPreflightReceiptProperties;
+import com.company.opsagent.controlplane.modules.sqlworkbench.SqlDmlPreflightReceiptService;
 import com.company.opsagent.controlplane.modules.sqlworkbench.SqlValidationService;
 import com.company.opsagent.controlplane.modules.sqlworkbench.SqlWorkbenchWorkerClient;
 import com.company.opsagent.controlplane.modules.sqlworkbench.SqlWorkbenchService;
+import com.company.opsagent.contracts.sqlworkbench.SqlTargetEnvironments;
+import com.company.opsagent.controlplane.modules.workflow.ControlledSqlDmlWorkflowService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.r2dbc.spi.ConnectionFactory;
 import java.net.http.HttpClient;
 import java.time.Clock;
 import java.time.Duration;
+import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.ClassPathResource;
@@ -53,16 +62,63 @@ public class SqlWorkbenchConfiguration {
   }
 
   @Bean
+  CalciteSqlDmlAnalysis calciteSqlDmlAnalysis() {
+    return new CalciteSqlDmlAnalysis();
+  }
+
+  @Bean
+  @ConfigurationProperties(prefix = "ops-agent.controlled-sql-dml")
+  ControlledSqlDmlProperties controlledSqlDmlProperties() {
+    return new ControlledSqlDmlProperties();
+  }
+
+  @Bean
+  @ConfigurationProperties(prefix = "ops-agent.controlled-sql-dml.preflight-receipt")
+  SqlDmlPreflightReceiptProperties sqlDmlPreflightReceiptProperties() {
+    return new SqlDmlPreflightReceiptProperties();
+  }
+
+  @Bean
+  SqlDmlPreflightReceiptService sqlDmlPreflightReceiptService(
+      SqlDmlPreflightReceiptProperties sqlDmlPreflightReceiptProperties) {
+    return new SqlDmlPreflightReceiptService(sqlDmlPreflightReceiptProperties, Clock.systemUTC());
+  }
+
+  @Bean
+  ControlledSqlDmlPolicy controlledSqlDmlPolicy(
+      ControlledSqlDmlProperties controlledSqlDmlProperties,
+      CalciteSqlDmlAnalysis calciteSqlDmlAnalysis) {
+    return new ControlledSqlDmlPolicy(controlledSqlDmlProperties, calciteSqlDmlAnalysis);
+  }
+
+  @Bean
   SqlWorkbenchService sqlWorkbenchService(
       SqlConnectionCatalog sqlConnectionCatalog,
       SqlValidationService sqlValidationService,
       SqlWorkbenchWorkerClient sqlWorkbenchWorkerClient,
-      SqlAssistantClient sqlAssistantClient) {
+      SqlAssistantClient sqlAssistantClient,
+      ControlledSqlDmlPolicy controlledSqlDmlPolicy,
+      ControlledSqlDmlProperties controlledSqlDmlProperties,
+      SqlDmlPreflightReceiptService sqlDmlPreflightReceiptService,
+      ControlledSqlDmlWorkflowService controlledSqlDmlWorkflowService,
+      AuditTrail auditTrail,
+      ConnectionFactory connectionFactory) {
+    boolean transactionalAuditAvailable =
+        auditTrail.supportsTransactionalParticipation(connectionFactory);
     return new DefaultSqlWorkbenchService(
         sqlConnectionCatalog,
         sqlValidationService,
         sqlWorkbenchWorkerClient,
         sqlAssistantClient,
+        controlledSqlDmlPolicy,
+        sqlDmlPreflightReceiptService,
+        controlledSqlDmlWorkflowService::execute,
+        environment -> controlledSqlDmlProperties.getEnabledEnvironments().stream()
+            .map(SqlTargetEnvironments::normalize)
+            .anyMatch(SqlTargetEnvironments.normalize(environment)::equals)
+            && sqlWorkbenchWorkerClient.supportsControlledDml(environment)
+            && sqlDmlPreflightReceiptService.isAvailable(),
+        transactionalAuditAvailable,
         Clock.systemUTC());
   }
 

@@ -13,7 +13,7 @@ public class SkillRegistryProperties {
 
   private String rootPath = "backend/contracts/skills/packages";
   private boolean signatureRequired = true;
-  private String signingSecret = "ops-agent-skill-signing-key-2026-06-06-0001";
+  private String signingSecret;
 
   /**
    * 返回 Skill Manifest 根目录。

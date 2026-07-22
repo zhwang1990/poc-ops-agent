@@ -22,7 +22,7 @@ public final class DynamicModelProviderAgentscopeAgentClient implements Agentsco
         AgentRuntimeProgressSink progressSink);
   }
 
-  private static final String LOCAL_FAKE_API_KEY = "OPS_AGENT_FAKE_API_KEY_REPLACE_ME";
+  private static final String LOCAL_DEMO_PROVIDER_ID = "local-deepseek-default";
 
   private final ModelProviderStore store;
   private final ModelProviderSecretCodec secretCodec;
@@ -57,17 +57,17 @@ public final class DynamicModelProviderAgentscopeAgentClient implements Agentsco
   }
 
   private AgentscopeAgentClient clientForProvider(ModelProvider provider) {
+    if (LOCAL_DEMO_PROVIDER_ID.equals(provider.providerId())) {
+      return invocation -> Mono.just(new AgentscopeAgentResponse(
+          "AGENT_RUNTIME_FAKE_API_KEY",
+          "AgentScope model provider is using a local demo provider.",
+          0));
+    }
     String apiKey = secretCodec.decrypt(new ModelProviderSecretCodec.EncryptedSecret(
         provider.apiKeyCiphertext(),
         provider.apiKeyNonce(),
         provider.apiKeyAlgorithm(),
         provider.apiKeyFingerprint()));
-    if (LOCAL_FAKE_API_KEY.equals(apiKey)) {
-      return invocation -> Mono.just(new AgentscopeAgentResponse(
-          "AGENT_RUNTIME_FAKE_API_KEY",
-          "AgentScope model provider is using a local fake API key placeholder.",
-          0));
-    }
     return clientFactory.openAiCompatible(
         apiKey,
         provider.modelName(),

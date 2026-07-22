@@ -1,7 +1,14 @@
 package com.company.opsagent.executionworker.sqlworkbench;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryAction;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryExecutionRequest;
@@ -16,6 +23,10 @@ import com.fasterxml.jackson.databind.node.IntNode;
 import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.SQLException;
+import javax.sql.DataSource;
 import org.h2.jdbcx.JdbcDataSource;
 import org.junit.jupiter.api.Test;
 
@@ -73,6 +84,104 @@ class JdbcSqlQueryExecutorTest {
     }
   }
 
+  @Test
+  void rollsBackDmlWhenSchemaSetupFailsAfterAutoCommitIsDisabled() throws Exception {
+    Connection connection = mock(Connection.class);
+    DataSource dataSource = mock(DataSource.class);
+    when(dataSource.getConnection()).thenReturn(connection);
+    doThrow(new SQLException("schema is unavailable")).when(connection).setSchema("MISSING");
+    JdbcSqlQueryExecutor executor = executor(dataSource);
+
+    assertThrows(IllegalStateException.class, () -> executor.executeDml(dmlRequest(
+        "MISSING",
+        List.of())));
+
+    verify(connection).setAutoCommit(false);
+    verify(connection).rollback();
+  }
+
+  @Test
+  void rollsBackDmlWhenRuntimeParameterBindingFailsAfterAutoCommitIsDisabled() throws Exception {
+    Connection connection = mock(Connection.class);
+    PreparedStatement statement = mock(PreparedStatement.class);
+    DataSource dataSource = mock(DataSource.class);
+    when(dataSource.getConnection()).thenReturn(connection);
+    when(connection.prepareStatement("update ORDERS set STATUS = ? where ORDER_ID = 1")).thenReturn(statement);
+    JdbcSqlQueryExecutor executor = executor(dataSource);
+
+    assertThrows(IllegalArgumentException.class, () -> executor.executeDml(dmlRequest(
+        "PUBLIC",
+        List.of(new SqlTypedParameter("status", "UNSUPPORTED", IntNode.valueOf(1))))));
+
+    verify(connection).setAutoCommit(false);
+    verify(connection).rollback();
+  }
+
+  @Test
+  void closesDmlStatementBeforeCommit() throws Exception {
+    Connection connection = mock(Connection.class);
+    PreparedStatement statement = mock(PreparedStatement.class);
+    DataSource dataSource = mock(DataSource.class);
+    when(dataSource.getConnection()).thenReturn(connection);
+    when(connection.prepareStatement("update ORDERS set STATUS = ? where ORDER_ID = 1")).thenReturn(statement);
+    when(statement.executeUpdate()).thenReturn(1);
+    JdbcSqlQueryExecutor executor = executor(dataSource);
+
+    assertEquals(1, executor.executeDml(dmlRequest(
+        "PUBLIC",
+        List.of(new SqlTypedParameter("status", "STRING", new com.fasterxml.jackson.databind.node.TextNode("READY"))))));
+
+    var order = inOrder(statement, connection);
+    order.verify(statement).close();
+    order.verify(connection).commit();
+  }
+
+  @Test
+  void preservesSuccessfulCommitWhenConnectionCleanupFails() throws Exception {
+    Connection connection = mock(Connection.class);
+    PreparedStatement statement = mock(PreparedStatement.class);
+    DataSource dataSource = mock(DataSource.class);
+    when(dataSource.getConnection()).thenReturn(connection);
+    when(connection.prepareStatement("update ORDERS set STATUS = ? where ORDER_ID = 1")).thenReturn(statement);
+    when(statement.executeUpdate()).thenReturn(1);
+    doThrow(new SQLException("connection cleanup failed")).when(connection).close();
+    JdbcSqlQueryExecutor executor = executor(dataSource);
+
+    int affectedRows = executor.executeDml(dmlRequest(
+        "PUBLIC",
+        List.of(new SqlTypedParameter("status", "STRING", new com.fasterxml.jackson.databind.node.TextNode("READY")))));
+
+    assertEquals(1, affectedRows);
+    verify(connection).commit();
+    verify(connection, never()).rollback();
+  }
+
+  @Test
+  void doesNotRollbackWhenCommitOutcomeIsUnknownAfterStatementExecution() throws Exception {
+    Connection connection = mock(Connection.class);
+    PreparedStatement statement = mock(PreparedStatement.class);
+    DataSource dataSource = mock(DataSource.class);
+    when(dataSource.getConnection()).thenReturn(connection);
+    when(connection.prepareStatement("update ORDERS set STATUS = ? where ORDER_ID = 1")).thenReturn(statement);
+    when(statement.executeUpdate()).thenReturn(1);
+    doThrow(new SQLException("commit acknowledgement was lost")).when(connection).commit();
+    JdbcSqlQueryExecutor executor = executor(dataSource);
+
+    IllegalStateException exception = assertThrows(
+        IllegalStateException.class,
+        () -> executor.executeDml(dmlRequest(
+            "PUBLIC",
+            List.of(new SqlTypedParameter(
+                "status",
+                "STRING",
+                new com.fasterxml.jackson.databind.node.TextNode("READY"))))));
+
+    assertEquals("controlled JDBC DML commit outcome is unknown", exception.getMessage());
+    verify(statement).executeUpdate();
+    verify(connection).commit();
+    verify(connection, never()).rollback();
+  }
+
   private SqlQueryExecutionRequest request() {
     return request(
         SqlQueryAction.RUN_READ_ONLY,
@@ -80,14 +189,30 @@ class JdbcSqlQueryExecutorTest {
   }
 
   private SqlQueryExecutionRequest request(SqlQueryAction action, String sql) {
+    return request(action, sql, "PUBLIC", List.of(new SqlTypedParameter("minimumOrderId", "INTEGER", IntNode.valueOf(1))));
+  }
+
+  private SqlQueryExecutionRequest dmlRequest(String schema, List<SqlTypedParameter> parameters) {
+    return request(
+        SqlQueryAction.COMMIT_DML,
+        "update ORDERS set STATUS = ? where ORDER_ID = 1",
+        schema,
+        parameters);
+  }
+
+  private SqlQueryExecutionRequest request(
+      SqlQueryAction action,
+      String sql,
+      String schema,
+      List<SqlTypedParameter> parameters) {
     var query = new SqlQueryRequest(
         "1.0",
         "as400-development",
         "development",
-        "PUBLIC",
+        schema,
         action,
         sql,
-        List.of(new SqlTypedParameter("minimumOrderId", "INTEGER", IntNode.valueOf(1))),
+        parameters,
         new SqlQueryLimits(1, 5_000_000, 30),
         "key");
     return new SqlQueryExecutionRequest(
@@ -100,5 +225,10 @@ class JdbcSqlQueryExecutorTest {
         new PolicyDecisionReference("decision-1", "policy-v1", "ALLOW"),
         new TraceContext("trace-1", "request-1"),
         OffsetDateTime.now().plusSeconds(30));
+  }
+
+  private JdbcSqlQueryExecutor executor(DataSource dataSource) {
+    Clock clock = Clock.systemUTC();
+    return new JdbcSqlQueryExecutor(dataSourceRequest -> dataSource, new InMemorySqlResultStore(clock), new ObjectMapper(), clock);
   }
 }

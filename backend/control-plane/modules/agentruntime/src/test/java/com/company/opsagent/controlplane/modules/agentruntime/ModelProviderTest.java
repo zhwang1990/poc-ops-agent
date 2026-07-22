@@ -11,6 +11,8 @@ import org.junit.jupiter.api.Test;
 
 class ModelProviderTest {
 
+  private static final String API_KEY = ModelProviderTestSecretMaterial.value();
+
   @Test
   void createCommandRejectsNonHttpsExternalBaseUrl() {
     assertThrows(IllegalArgumentException.class, () -> createCommand("http://api.example.com/v1"));
@@ -29,7 +31,7 @@ class ModelProviderTest {
         "OpenAI",
         "https://api.openai.com/v1",
         " ",
-        "TEST_API_KEY_PLACEHOLDER",
+        API_KEY,
         Duration.ofSeconds(30),
         5,
         5,
@@ -64,7 +66,7 @@ class ModelProviderTest {
         now);
 
     assertEquals(ModelProviderType.OPENAI_COMPATIBLE, provider.providerType());
-    assertFalse(provider.apiKeyCiphertext().contains("TEST_API_KEY_PLACEHOLDER"));
+    assertFalse(provider.apiKeyCiphertext().contains(API_KEY));
     assertTrue(provider.apiKeyConfigured());
   }
 
@@ -73,7 +75,7 @@ class ModelProviderTest {
         "OpenAI",
         baseUrl,
         "gpt-4.1-mini",
-        "TEST_API_KEY_PLACEHOLDER",
+        API_KEY,
         Duration.ofSeconds(30),
         5,
         5,

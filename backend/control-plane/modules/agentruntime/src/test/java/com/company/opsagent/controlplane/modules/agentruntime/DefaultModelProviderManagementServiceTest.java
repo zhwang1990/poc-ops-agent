@@ -13,9 +13,10 @@ import org.junit.jupiter.api.Test;
 
 class DefaultModelProviderManagementServiceTest {
 
+  private static final String MASTER_KEY = ModelProviderTestSecretMaterial.value();
   private final Clock clock = Clock.fixed(Instant.parse("2026-06-28T00:00:00Z"), ZoneOffset.UTC);
   private final AesGcmModelProviderSecretCodec codec = new AesGcmModelProviderSecretCodec(
-      "0123456789abcdef0123456789abcdef");
+      MASTER_KEY);
   private final InMemoryModelProviderStore store = new InMemoryModelProviderStore();
   private final DefaultModelProviderManagementService service = new DefaultModelProviderManagementService(
       store,
@@ -25,23 +26,24 @@ class DefaultModelProviderManagementServiceTest {
 
   @Test
   void createsProviderSummaryWithoutReturningSecretMaterial() {
-    ModelProviderSummary created = service.create(createCommand("TEST_API_KEY_PLACEHOLDER"), "admin");
+    String apiKey = ModelProviderTestSecretMaterial.value();
+    ModelProviderSummary created = service.create(createCommand(apiKey), "admin");
 
     assertTrue(created.apiKeyConfigured());
     assertTrue(created.apiKeyFingerprint().startsWith("fp_"));
     assertTrue(created.apiKeyCiphertext().isEmpty());
     assertEquals(1, created.configVersion());
     assertFalse(store.findById(created.providerId()).orElseThrow().apiKeyCiphertext()
-        .contains("TEST_API_KEY_PLACEHOLDER"));
+        .contains(apiKey));
   }
 
   @Test
   void rotatesApiKeyAndIncrementsConfigVersionWithoutChangingModelMetadata() {
-    ModelProviderSummary created = service.create(createCommand("first-secret"), "admin");
+    ModelProviderSummary created = service.create(createCommand(ModelProviderTestSecretMaterial.value()), "admin");
 
     ModelProviderSummary rotated = service.rotateApiKey(
         created.providerId(),
-        new ModelProviderApiKeyCommand("second-secret"),
+        new ModelProviderApiKeyCommand(ModelProviderTestSecretMaterial.value()),
         "admin");
 
     assertEquals(created.displayName(), rotated.displayName());
@@ -53,8 +55,8 @@ class DefaultModelProviderManagementServiceTest {
 
   @Test
   void switchesDefaultProviderOnlyWhenApiKeyIsConfigured() {
-    ModelProviderSummary first = service.create(createCommand("first-secret"), "admin");
-    ModelProviderSummary second = service.create(createCommand("second-secret"), "admin");
+    ModelProviderSummary first = service.create(createCommand(ModelProviderTestSecretMaterial.value()), "admin");
+    ModelProviderSummary second = service.create(createCommand(ModelProviderTestSecretMaterial.value()), "admin");
 
     service.setDefault(first.providerId(), "admin");
     ModelProviderSummary active = service.setDefault(second.providerId(), "admin");
@@ -66,7 +68,7 @@ class DefaultModelProviderManagementServiceTest {
 
   @Test
   void failsWhenDefaultProviderIsDisabled() {
-    ModelProviderSummary created = service.create(createCommand("TEST_API_KEY_PLACEHOLDER"), "admin");
+    ModelProviderSummary created = service.create(createCommand(ModelProviderTestSecretMaterial.value()), "admin");
     service.disable(created.providerId(), "admin");
 
     assertThrows(IllegalStateException.class, () -> service.setDefault(created.providerId(), "admin"));

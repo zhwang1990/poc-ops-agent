@@ -82,6 +82,9 @@ public class WorkerSqlEgressProperties {
     private String credentialAlias;
     private String username;
     private boolean enabled;
+    private boolean dmlEnabled;
+    private String dmlCredentialAlias;
+    private String dmlUsername;
 
     public String getConnectionId() {
       return connectionId;
@@ -147,6 +150,30 @@ public class WorkerSqlEgressProperties {
       this.enabled = enabled;
     }
 
+    public boolean isDmlEnabled() {
+      return dmlEnabled;
+    }
+
+    public void setDmlEnabled(boolean dmlEnabled) {
+      this.dmlEnabled = dmlEnabled;
+    }
+
+    public String getDmlCredentialAlias() {
+      return dmlCredentialAlias;
+    }
+
+    public void setDmlCredentialAlias(String dmlCredentialAlias) {
+      this.dmlCredentialAlias = dmlCredentialAlias;
+    }
+
+    public String getDmlUsername() {
+      return dmlUsername;
+    }
+
+    public void setDmlUsername(String dmlUsername) {
+      this.dmlUsername = dmlUsername;
+    }
+
     WorkerSqlConnectionDescriptor toDescriptor() {
       String resolvedUsername =
           username == null || username.isBlank() ? credentialAlias : username;
@@ -158,7 +185,10 @@ public class WorkerSqlEgressProperties {
           port,
           credentialAlias,
           resolvedUsername,
-          enabled);
+          enabled,
+          dmlEnabled,
+          dmlCredentialAlias,
+          dmlUsername);
     }
   }
 }

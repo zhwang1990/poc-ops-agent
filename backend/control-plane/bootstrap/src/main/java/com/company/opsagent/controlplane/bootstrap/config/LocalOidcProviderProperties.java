@@ -11,7 +11,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param issuer Provider 的发行者地址
  * @param audience 本地签发令牌默认写入的受众
  * @param clientId 本地联调使用的固定客户端标识
- * @param clientSecret 本地联调使用的固定客户端密钥
+ * @param clientSecret 本地联调必须由安全配置源注入的客户端密钥；缺失或空白时失败关闭
  * @param defaultSubject 默认登录主体标识
  * @param defaultUsername 默认登录用户名
  * @param defaultRoles 默认登录角色
@@ -35,7 +35,7 @@ public record LocalOidcProviderProperties(
     issuer = hasText(issuer) ? issuer : "http://127.0.0.1:8080/mock-oidc";
     audience = hasText(audience) ? audience : "ops-agent-internal";
     clientId = hasText(clientId) ? clientId : "ops-agent-local-client";
-    clientSecret = hasText(clientSecret) ? clientSecret : "ops-agent-local-secret";
+    clientSecret = requireText(clientSecret, "ops-agent.local-oidc-provider.client-secret");
     defaultSubject = hasText(defaultSubject) ? defaultSubject : "local-reader-id";
     defaultUsername = hasText(defaultUsername) ? defaultUsername : "local.reader";
     defaultRoles = defaultRoles == null || defaultRoles.isEmpty() ? List.of("ops-reader") : List.copyOf(defaultRoles);
@@ -45,5 +45,12 @@ public record LocalOidcProviderProperties(
 
   private static boolean hasText(String value) {
     return value != null && !value.isBlank();
+  }
+
+  private static String requireText(String value, String propertyName) {
+    if (!hasText(value)) {
+      throw new IllegalArgumentException(propertyName + " must be injected");
+    }
+    return value;
   }
 }

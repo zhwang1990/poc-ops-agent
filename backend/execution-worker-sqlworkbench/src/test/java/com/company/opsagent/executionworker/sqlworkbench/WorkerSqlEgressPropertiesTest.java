@@ -26,13 +26,21 @@ class WorkerSqlEgressPropertiesTest {
   void convertsLocalPropertiesToPolicyInputs() {
     WorkerSqlEgressProperties properties = new WorkerSqlEgressProperties();
     properties.setAllowedTargets(List.of(target("as400-dev.internal", 446)));
-    properties.setConnections(List.of(connection("as400-dev-readonly", "development", "as400-dev.internal", 446)));
+    WorkerSqlEgressProperties.Connection connection =
+        connection("as400-dev-readonly", "development", "as400-dev.internal", 446);
+    connection.setDmlEnabled(true);
+    connection.setDmlCredentialAlias("as400-dev-writer-password");
+    connection.setDmlUsername("as400-dev-writer");
+    properties.setConnections(List.of(connection));
 
     WorkerSqlEgressPolicy policy = properties.toPolicy();
 
     assertEquals(
         "as400-dev-readonly",
         policy.validate(request("as400-dev-readonly", "development")).connectionId());
+    assertEquals(
+        "as400-dev-writer",
+        policy.validate(request("as400-dev-readonly", "development")).dmlUsername());
   }
 
   /**

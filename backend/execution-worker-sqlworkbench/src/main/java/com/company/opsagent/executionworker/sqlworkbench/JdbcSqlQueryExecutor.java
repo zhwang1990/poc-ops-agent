@@ -68,22 +68,45 @@ public class JdbcSqlQueryExecutor implements SqlQueryExecutor {
 
   @Override
   public int executeDml(SqlQueryExecutionRequest request) {
-    try (Connection connection = dataSourceRegistry.resolve(request).getConnection()) {
+    Connection connection;
+    try {
+      connection = dataSourceRegistry.resolve(request).getConnection();
+    } catch (SQLException exception) {
+      throw new IllegalStateException("controlled JDBC DML failed", exception);
+    }
+
+    boolean autoCommitDisabled = false;
+    try {
       connection.setReadOnly(false);
       connection.setAutoCommit(false);
+      autoCommitDisabled = true;
       connection.setSchema(request.query().schema());
+      int affectedRows;
       try (var statement = connection.prepareStatement(request.query().sql())) {
         statement.setQueryTimeout(request.query().limits().timeoutSeconds());
         bindParameters(statement, request.query().parameters());
-        int affectedRows = statement.executeUpdate();
-        connection.commit();
-        return affectedRows;
-      } catch (SQLException exception) {
-        rollbackQuietly(connection);
-        throw exception;
+        affectedRows = statement.executeUpdate();
       }
+      try {
+        connection.commit();
+      } catch (SQLException | RuntimeException exception) {
+        throw new SqlDmlCommitOutcomeUnknownException(exception);
+      }
+      return affectedRows;
+    } catch (SqlDmlCommitOutcomeUnknownException exception) {
+      throw exception;
     } catch (SQLException exception) {
+      if (autoCommitDisabled) {
+        rollbackQuietly(connection);
+      }
       throw new IllegalStateException("controlled JDBC DML failed", exception);
+    } catch (RuntimeException exception) {
+      if (autoCommitDisabled) {
+        rollbackQuietly(connection);
+      }
+      throw exception;
+    } finally {
+      closeQuietly(connection);
     }
   }
 
@@ -92,6 +115,14 @@ public class JdbcSqlQueryExecutor implements SqlQueryExecutor {
       connection.rollback();
     } catch (SQLException ignored) {
       // Preserve the original DML failure as the stable error cause.
+    }
+  }
+
+  private void closeQuietly(Connection connection) {
+    try {
+      connection.close();
+    } catch (SQLException ignored) {
+      // A cleanup failure must not replace the committed result or the original DML failure.
     }
   }
 

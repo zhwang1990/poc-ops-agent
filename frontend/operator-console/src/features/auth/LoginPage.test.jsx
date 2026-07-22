@@ -23,6 +23,10 @@ function renderAt(path) {
   );
 }
 
+function runtimeLoginInput() {
+  return String(Date.now()) + String(Math.random());
+}
+
 function useAnonymousSession() {
   server.use(
     http.get("/auth/session", () =>
@@ -117,6 +121,7 @@ describe("LoginPage", () => {
 
   test("submits the built-in identity login contract and enters the overview after success", async () => {
     const user = userEvent.setup();
+    const submittedPassword = runtimeLoginInput();
     /** @type {unknown[]} */
     const requests = [];
     let authenticated = false;
@@ -159,10 +164,10 @@ describe("LoginPage", () => {
 
     await user.clear(screen.getByLabelText("用户名"));
     await user.type(screen.getByLabelText("用户名"), "alice");
-    await user.type(screen.getByLabelText("密码"), "Start#2026");
+    await user.type(screen.getByLabelText("密码"), submittedPassword);
     await user.click(screen.getByRole("button", { name: "登录" }));
 
-    expect(requests).toEqual([{ username: "alice", password: "Start#2026" }]);
+    expect(requests).toEqual([{ username: "alice", password: submittedPassword }]);
     expect(
       await screen.findByRole("heading", { name: "平台总览" }),
     ).toBeInTheDocument();
@@ -170,6 +175,7 @@ describe("LoginPage", () => {
 
   test("stays on the login page when the control plane rejects credentials", async () => {
     const user = userEvent.setup();
+    const rejectedPassword = runtimeLoginInput();
     server.use(
       http.post("/auth/login", () =>
         HttpResponse.json(
@@ -185,7 +191,7 @@ describe("LoginPage", () => {
     renderAt("/login");
 
     await user.type(screen.getByLabelText("用户名"), "alice");
-    await user.type(screen.getByLabelText("密码"), "wrong-password");
+    await user.type(screen.getByLabelText("密码"), rejectedPassword);
     await user.click(screen.getByRole("button", { name: "登录" }));
 
     expect(
@@ -197,6 +203,7 @@ describe("LoginPage", () => {
 
   test("explains backend connectivity failures without entering the overview", async () => {
     const user = userEvent.setup();
+    const unavailablePassword = runtimeLoginInput();
     server.use(
       http.post("/auth/login", () =>
         HttpResponse.json(
@@ -211,7 +218,7 @@ describe("LoginPage", () => {
     renderAt("/login");
 
     await user.type(screen.getByLabelText("用户名"), "alice");
-    await user.type(screen.getByLabelText("密码"), "Start#2026");
+    await user.type(screen.getByLabelText("密码"), unavailablePassword);
     await user.click(screen.getByRole("button", { name: "登录" }));
 
     expect(

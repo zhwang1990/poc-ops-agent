@@ -1,5 +1,8 @@
 package com.company.opsagent.executionworker.sqlworkbench;
 
+import com.company.opsagent.contracts.sqlworkbench.SqlControlledDmlExecutionRequest;
+import com.company.opsagent.contracts.sqlworkbench.SqlDmlImpactPreview;
+import com.company.opsagent.contracts.sqlworkbench.SqlDmlPreflightExecutionRequest;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryExecutionRequest;
 import com.company.opsagent.contracts.sqlworkbench.SqlQueryExecutionResult;
 import com.company.opsagent.contracts.sqlworkbench.SqlResultPage;
@@ -56,6 +59,28 @@ public class SqlQueryExecutionController {
     }).subscribeOn(Schedulers.boundedElastic());
   }
 
+  @PostMapping("/dml-preflight")
+  public Mono<SqlDmlImpactPreview> preflightDml(
+      @RequestHeader HttpHeaders headers,
+      @RequestBody SqlDmlPreflightExecutionRequest request) {
+    return Mono.defer(() -> {
+      authenticator.authenticateSqlDmlPreflight(headers, request);
+      return worker.preflightDml(request);
+    })
+        .onErrorMap(WorkerSqlEgressException.class, this::preflightDenied)
+        .subscribeOn(Schedulers.boundedElastic());
+  }
+
+  @PostMapping("/dml-commit")
+  public Mono<SqlQueryExecutionResult> executeControlledDml(
+      @RequestHeader HttpHeaders headers,
+      @RequestBody SqlControlledDmlExecutionRequest request) {
+    return Mono.fromCallable(() -> {
+      authenticator.authenticateControlledSqlDml(headers, request);
+      return worker.executeControlledDml(request);
+    }).subscribeOn(Schedulers.boundedElastic());
+  }
+
   @GetMapping("/results/{resultId}")
   public Mono<SqlResultPage> readResult(
       @RequestHeader HttpHeaders headers,
@@ -94,5 +119,12 @@ public class SqlQueryExecutionController {
       authenticator.authenticateSqlMetadataRead(headers, connection, schema);
       return metadataReader.read(connection, schema);
     }).subscribeOn(Schedulers.boundedElastic());
+  }
+
+  private ResponseStatusException preflightDenied(WorkerSqlEgressException exception) {
+    ResponseStatusException response =
+        new ResponseStatusException(HttpStatus.FORBIDDEN, exception.errorCode());
+    response.getBody().setProperty("errorCode", exception.errorCode());
+    return response;
   }
 }

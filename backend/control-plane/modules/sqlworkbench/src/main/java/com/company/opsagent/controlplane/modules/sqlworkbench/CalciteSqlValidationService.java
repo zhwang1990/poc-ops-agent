@@ -31,6 +31,16 @@ import org.apache.calcite.sql.parser.SqlParser;
  */
 public class CalciteSqlValidationService implements SqlValidationService {
 
+  private final CalciteSqlDmlAnalysis dmlAnalysis;
+
+  public CalciteSqlValidationService() {
+    this(new CalciteSqlDmlAnalysis());
+  }
+
+  CalciteSqlValidationService(CalciteSqlDmlAnalysis dmlAnalysis) {
+    this.dmlAnalysis = dmlAnalysis;
+  }
+
   @Override
   public SqlValidationReport validate(SqlQueryRequest request) {
     String sqlHash = sha256(request.sql());
@@ -64,6 +74,11 @@ public class CalciteSqlValidationService implements SqlValidationService {
           && request.action() != SqlQueryAction.COMMIT_DML
           && request.action() != SqlQueryAction.VALIDATE) {
         rejectionReasons.add("DML is only accepted for validation, preflight, or controlled commit");
+      }
+      try {
+        dmlAnalysis.inspect(statement);
+      } catch (SqlWorkbenchException exception) {
+        rejectionReasons.add(exception.getMessage());
       }
       inspectDml(statement, statementType, risks, unverifiedItems);
     }

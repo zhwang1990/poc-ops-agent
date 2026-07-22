@@ -20,9 +20,8 @@ import org.junit.jupiter.api.Test;
 
 class OpenAiCompatibleModelProviderProbeTest {
 
-  private static final String MASTER_KEY = "0123456789abcdef0123456789abcdef";
-  private static final String FAKE_API_KEY = "OPS_AGENT_FAKE_API_KEY_REPLACE_ME";
-  private static final String PROBE_API_KEY = "PROBE_API_KEY_PLACEHOLDER";
+  private static final String MASTER_KEY = ModelProviderTestSecretMaterial.value();
+  private static final String PROBE_API_KEY = ModelProviderTestSecretMaterial.value();
 
   private final AesGcmModelProviderSecretCodec codec =
       new AesGcmModelProviderSecretCodec(MASTER_KEY);
@@ -83,7 +82,8 @@ class OpenAiCompatibleModelProviderProbeTest {
       respond(exchange, 200, "{}");
     });
 
-    ModelProviderProbeResult result = probe().test(provider(serverBaseUrl(), FAKE_API_KEY));
+    ModelProviderProbeResult result = probe().test(provider(
+        "local-deepseek-default", serverBaseUrl(), ModelProviderTestSecretMaterial.value()));
 
     assertEquals("SKIPPED_FAKE_API_KEY", result.status());
     assertEquals(0, calls.get());
@@ -97,10 +97,14 @@ class OpenAiCompatibleModelProviderProbeTest {
   }
 
   private ModelProvider provider(String baseUrl, String apiKey) {
+    return provider("provider-1", baseUrl, apiKey);
+  }
+
+  private ModelProvider provider(String providerId, String baseUrl, String apiKey) {
     ModelProviderSecretCodec.EncryptedSecret encrypted = codec.encrypt(apiKey);
     OffsetDateTime now = OffsetDateTime.parse("2026-06-28T00:00:00Z");
     return new ModelProvider(
-        "provider-1",
+        providerId,
         "OpenAI",
         ModelProviderType.OPENAI_COMPATIBLE,
         baseUrl,

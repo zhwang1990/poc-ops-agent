@@ -1,10 +1,15 @@
 package com.company.opsagent.controlplane.modules.audit;
 
+import io.r2dbc.spi.ConnectionFactory;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
 import org.springframework.r2dbc.core.DatabaseClient;
+import org.springframework.transaction.NoTransactionException;
+import org.springframework.transaction.reactive.TransactionSynchronization;
+import org.springframework.transaction.reactive.TransactionSynchronizationManager;
+import reactor.core.publisher.Mono;
 
 /**
  * 基于 R2DBC 的审计链实现。
@@ -14,16 +19,28 @@ import org.springframework.r2dbc.core.DatabaseClient;
 public class R2dbcAuditTrail implements AuditTrail {
 
   private final DatabaseClient databaseClient;
+  private final ConnectionFactory connectionFactory;
   private final CopyOnWriteArrayList<AuditEvent> events = new CopyOnWriteArrayList<>();
 
   public R2dbcAuditTrail(DatabaseClient databaseClient) {
     this.databaseClient = databaseClient;
+    this.connectionFactory = databaseClient.getConnectionFactory();
     loadExisting();
   }
 
   @Override
+  public boolean supportsTransactionalParticipation(ConnectionFactory connectionFactory) {
+    return this.connectionFactory == connectionFactory;
+  }
+
+  @Override
   public void record(AuditEvent event) {
-    databaseClient.sql("""
+    recordReactive(event).block();
+  }
+
+  @Override
+  public Mono<Void> recordReactive(AuditEvent event) {
+    Mono<Void> insert = databaseClient.sql("""
             insert into audit_event (
               event_id,
               request_id,
@@ -60,8 +77,19 @@ public class R2dbcAuditTrail implements AuditTrail {
         .bind("occurredAt", event.timestamp())
         .fetch()
         .rowsUpdated()
-        .block();
-    events.add(event);
+        .then();
+    return TransactionSynchronizationManager.forCurrentTransaction()
+        .flatMap(manager -> {
+          manager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public Mono<Void> afterCommit() {
+              return Mono.fromRunnable(() -> events.add(event));
+            }
+          });
+          return insert;
+        })
+        .onErrorResume(NoTransactionException.class, ignored ->
+            insert.then(Mono.fromRunnable(() -> events.add(event))));
   }
 
   @Override
@@ -71,6 +99,7 @@ public class R2dbcAuditTrail implements AuditTrail {
 
   @Override
   public Optional<AuditEvent> latest() {
+    List<AuditEvent> events = snapshot();
     if (events.isEmpty()) {
       return Optional.empty();
     }

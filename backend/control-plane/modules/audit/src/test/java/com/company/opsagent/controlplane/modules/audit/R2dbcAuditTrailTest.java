@@ -1,6 +1,7 @@
 package com.company.opsagent.controlplane.modules.audit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.r2dbc.spi.ConnectionFactories;
@@ -10,9 +11,44 @@ import org.junit.jupiter.api.Test;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.r2dbc.connection.init.ConnectionFactoryInitializer;
 import org.springframework.r2dbc.connection.init.ResourceDatabasePopulator;
+import org.springframework.r2dbc.connection.R2dbcTransactionManager;
 import org.springframework.r2dbc.core.DatabaseClient;
+import org.springframework.transaction.reactive.TransactionalOperator;
+import reactor.core.publisher.Mono;
+import reactor.test.StepVerifier;
 
 class R2dbcAuditTrailTest {
+
+  @Test
+  void reportsTransactionalParticipationOnlyForItsConnectionFactory() {
+    ConnectionFactory connectionFactory = connectionFactory("audit-store-capability");
+    initialize(connectionFactory);
+    R2dbcAuditTrail auditTrail = new R2dbcAuditTrail(DatabaseClient.create(connectionFactory));
+
+    assertTrue(auditTrail.supportsTransactionalParticipation(connectionFactory));
+    assertFalse(auditTrail.supportsTransactionalParticipation(
+        connectionFactory("audit-store-other-capability")));
+  }
+
+  @Test
+  void reactiveRecordParticipatesInCallerTransaction() {
+    ConnectionFactory connectionFactory = connectionFactory("audit-store-transaction");
+    initialize(connectionFactory);
+    R2dbcAuditTrail auditTrail = new R2dbcAuditTrail(DatabaseClient.create(connectionFactory));
+    TransactionalOperator transactions = TransactionalOperator.create(
+        new R2dbcTransactionManager(connectionFactory));
+
+    StepVerifier.create(transactions.transactional(
+            auditTrail.recordReactive(
+                    event("event-1", "request-1", "trace-1", "alice", "ALLOW"))
+                .then(Mono.error(new IllegalStateException("force rollback")))))
+        .expectErrorMessage("force rollback")
+        .verify();
+
+    assertTrue(auditTrail.snapshot().isEmpty());
+    R2dbcAuditTrail reloaded = new R2dbcAuditTrail(DatabaseClient.create(connectionFactory));
+    assertTrue(reloaded.snapshot().isEmpty());
+  }
 
   @Test
   void recordsEventsToDatabaseAndReloadsSnapshot() {

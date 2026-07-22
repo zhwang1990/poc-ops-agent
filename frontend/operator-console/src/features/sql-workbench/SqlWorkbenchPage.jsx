@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   ChevronLeft,
@@ -17,8 +17,8 @@ import {
 import { ApiError } from "../../api/client.js";
 import {
   commitControlledSqlDml,
+  preflightControlledSqlDml,
   runReadOnlySqlQuery,
-  validateSqlQuery,
 } from "../../api/sql-api.js";
 import { DataTable } from "../../components/data-display/DataTable.jsx";
 import { StatusPill } from "../../components/data-display/StatusPill.jsx";
@@ -63,6 +63,8 @@ let sqlResultTabCounter = 0;
 /**
  * @typedef {import("../../schemas/sql-schemas.js").SqlConnectionSummary} SqlConnectionSummary
  * @typedef {import("../../schemas/sql-schemas.js").SqlValidationReport} SqlValidationReport
+ * @typedef {import("../../schemas/sql-schemas.js").SqlDmlPreflightResult} SqlDmlPreflightResult
+ * @typedef {import("../../schemas/sql-schemas.js").SqlDmlCommitRequest} SqlDmlCommitRequest
  * @typedef {import("../../schemas/sql-schemas.js").SqlDmlCommitRequest["query"]} SqlDmlCommitQuery
  * @typedef {import("../../schemas/sql-schemas.js").SqlQueryRunResult} SqlQueryRunResult
  * @typedef {import("../../schemas/sql-schemas.js").SqlResultPage} SqlResultPage
@@ -86,11 +88,16 @@ let sqlResultTabCounter = 0;
  *   sql: string,
  * }} SqlResultTab
  * @typedef {{
- *   report: SqlValidationReport,
+ *   preflight: SqlDmlPreflightResult,
  *   request: SqlDmlCommitQuery,
  *   resultTabId: string,
  *   sessionId: string,
  * }} PendingDmlRiskConfirmation
+ * @typedef {{
+ *   commitEnvelope: SqlDmlCommitRequest | null,
+ *   context: string,
+ *   idempotencyKey: string,
+ * }} DmlSubmissionIdentity
  * @typedef {{
  *   assistant: SqlAssistantResponse | null,
  *   assistantErrorMessage: string | null,
@@ -192,6 +199,11 @@ export function SqlWorkbenchPage() {
     /** @type {PendingDmlRiskConfirmation | null} */ (null),
   );
   const [isDmlRiskCommitPending, setIsDmlRiskCommitPending] = useState(false);
+  const [isWriteExecutionLocked, setIsWriteExecutionLocked] = useState(false);
+  const writeExecutionLockRef = useRef(false);
+  const dmlSubmissionIdentities = useRef(
+    /** @type {Map<string, DmlSubmissionIdentity>} */ (new Map()),
+  );
   const { isWorkspaceExpanded } = useWorkspaceLayout();
   const [editorResultSplit, setEditorResultSplit] = useState(DEFAULT_EDITOR_RESULT_SPLIT);
 
@@ -228,14 +240,22 @@ export function SqlWorkbenchPage() {
   const canValidate =
     isReadyConnection &&
     activeConnection?.capabilities.includes("VALIDATE") === true;
-  const canRunSqlStatement =
+  const canRunReadOnlyStatements =
     isReadyConnection &&
     activeConnection?.capabilities.includes("RUN_READ_ONLY") === true;
-  const canCommitDmlStatement =
+  const canRunControlledDmlStatement =
     isReadyConnection &&
+    activeConnection?.targetEnvironment !== "production" &&
+    activeConnection?.capabilities.includes("PREFLIGHT_DML") === true &&
     activeConnection?.capabilities.includes("COMMIT_DML") === true &&
-    activeSession.transactionMode === "manual" &&
-    isLikelyControlledDmlSql(activeSession.sql.trim());
+    !isWriteExecutionLocked &&
+    currentExecution?.status !== "UNKNOWN_REQUIRES_HANDOFF";
+  const dmlRunDisabledReason =
+    activeConnection?.targetEnvironment === "production"
+      ? "生产环境不允许执行写操作"
+      : isWriteExecutionLocked
+        ? "正在处理上一条写操作"
+      : "当前连接不允许执行写操作";
   const canUseAssistant =
     canValidate &&
     hasSqlText &&
@@ -794,7 +814,7 @@ export function SqlWorkbenchPage() {
    * @param {string} sqlText
    */
   function runReadOnlySql(sqlText) {
-    if (!activeConnection || !canRunSqlStatement) {
+    if (!activeConnection || !canRunReadOnlyStatements) {
       return;
     }
     const sql = sqlText.trim();
@@ -903,52 +923,97 @@ export function SqlWorkbenchPage() {
       });
   }
 
-  async function commitControlledDml() {
-    if (!activeConnection || !canCommitDmlStatement) {
+  /**
+   * @param {string} sqlText
+   */
+  function runSqlStatement(sqlText) {
+    const sql = sqlText.trim();
+    if (isLikelyReadOnlySql(sql)) {
+      runReadOnlySql(sql);
       return;
     }
-    const sql = activeSession.sql.trim();
+    if (isLikelyControlledDmlSql(sql)) {
+      void runControlledDml(sql);
+    }
+  }
+
+  /**
+   * @param {string} sqlText
+   */
+  async function runControlledDml(sqlText) {
+    if (
+      !activeConnection ||
+      !canRunControlledDmlStatement ||
+      !acquireWriteExecutionLock()
+    ) {
+      return;
+    }
+    const sql = sqlText.trim();
     const sessionId = activeSession.id;
     const schema = activeSchema;
     const connection = activeConnection;
-    const request = /** @type {SqlDmlCommitQuery} */ (
-      buildSqlQueryRequest(
-        connection,
-        schema,
-        "COMMIT_DML",
-        sql,
-        "COMMIT_DML",
-      )
+    const submission = dmlSubmissionFor(
+      sessionId,
+      connection,
+      schema,
+      sql,
     );
+    const { idempotencyKey } = submission;
     const resultTab = createResultTab(activeSession.resultTabs.length + 1, sql);
     appendResultTab(sessionId, resultTab);
 
     try {
-      const report = await validateSqlQuery(request);
-      updateSession(sessionId, {
-        validation: report,
-        errorMessage: null,
-        assistant: null,
-        assistantErrorMessage: null,
-      });
-      if (report.validationLevel === "REJECTED") {
-        throw new Error(buildDmlValidationDiagnosticMessage(report));
-      }
-      let confirmation = null;
-      if (report.risks.length > 0) {
-        setPendingDmlRiskConfirmation({
-          report,
-          request,
-          resultTabId: resultTab.id,
-          sessionId,
+      let execution;
+      if (submission.commitEnvelope) {
+        execution = await commitControlledSqlDml(submission.commitEnvelope);
+      } else {
+        const preflightRequest = buildSqlQueryRequest(
+          connection,
+          schema,
+          "PREFLIGHT_DML",
+          sql,
+          "PREFLIGHT_DML",
+          idempotencyKey,
+        );
+        const request = /** @type {SqlDmlCommitQuery} */ ({
+          ...preflightRequest,
+          action: "COMMIT_DML",
         });
-        return;
+        const preflight = await preflightControlledSqlDml(preflightRequest);
+        const report = preflight.validation;
+        updateSession(sessionId, {
+          validation: report,
+          errorMessage: null,
+          assistant: null,
+          assistantErrorMessage: null,
+        });
+        if (report.validationLevel === "REJECTED") {
+          clearDmlSubmissionIdentity(sessionId, idempotencyKey);
+          throw new Error(buildDmlValidationDiagnosticMessage(report));
+        }
+        if (!preflight.impactPreview) {
+          clearDmlSubmissionIdentity(sessionId, idempotencyKey);
+          throw new Error("服务端未返回预计影响，未执行。");
+        }
+        if (report.risks.length > 0) {
+          setPendingDmlRiskConfirmation({
+            preflight,
+            request,
+            resultTabId: resultTab.id,
+            sessionId,
+          });
+          return;
+        }
+        const commitEnvelope = /** @type {SqlDmlCommitRequest} */ ({
+          contractVersion: "1.1",
+          query: request,
+          confirmation: buildDmlRiskConfirmation(report),
+          receipt: preflight.receipt,
+        });
+        cacheDmlCommitEnvelope(sessionId, idempotencyKey, commitEnvelope);
+        execution = await commitControlledSqlDml(commitEnvelope);
       }
-      const execution = await commitControlledSqlDml({
-        contractVersion: "1.0",
-        query: request,
-        confirmation,
-      });
+      completeDmlSubmissionIdentity(sessionId, idempotencyKey, execution);
       updateResultTab(sessionId, resultTab.id, {
         execution,
         errorMessage: execution.errorMessage ?? null,
@@ -959,7 +1024,8 @@ export function SqlWorkbenchPage() {
         resultPageTokens: [null],
       });
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "DML 提交请求失败";
+      releaseWriteExecutionLock();
+      const errorMessage = error instanceof Error ? error.message : "写操作执行失败";
       updateResultTab(sessionId, resultTab.id, {
         errorMessage,
         execution: null,
@@ -981,14 +1047,18 @@ export function SqlWorkbenchPage() {
     if (!pendingDmlRiskConfirmation || isDmlRiskCommitPending) {
       return;
     }
-    const { report, request, resultTabId, sessionId } = pendingDmlRiskConfirmation;
+    const { preflight, request, resultTabId, sessionId } = pendingDmlRiskConfirmation;
     setIsDmlRiskCommitPending(true);
     try {
-      const execution = await commitControlledSqlDml({
-        contractVersion: "1.0",
+      const commitEnvelope = /** @type {SqlDmlCommitRequest} */ ({
+        contractVersion: "1.1",
         query: request,
-        confirmation: buildDmlRiskConfirmation(report),
+        confirmation: buildDmlRiskConfirmation(preflight.validation),
+        receipt: preflight.receipt,
       });
+      cacheDmlCommitEnvelope(sessionId, request.idempotencyKey, commitEnvelope);
+      const execution = await commitControlledSqlDml(commitEnvelope);
+      completeDmlSubmissionIdentity(sessionId, request.idempotencyKey, execution);
       updateResultTab(sessionId, resultTabId, {
         execution,
         errorMessage: execution.errorMessage ?? null,
@@ -1000,7 +1070,8 @@ export function SqlWorkbenchPage() {
       });
       setPendingDmlRiskConfirmation(null);
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "DML 提交请求失败";
+      releaseWriteExecutionLock();
+      const errorMessage = error instanceof Error ? error.message : "写操作执行失败";
       updateResultTab(sessionId, resultTabId, {
         errorMessage,
         execution: null,
@@ -1029,12 +1100,90 @@ export function SqlWorkbenchPage() {
       pendingDmlRiskConfirmation.sessionId,
       pendingDmlRiskConfirmation.resultTabId,
       {
-        errorMessage: "DML 提交已取消，未向服务端提交执行请求。",
+        errorMessage: "已取消写操作，未执行。",
         execution: null,
         isPending: false,
       },
     );
+    clearDmlSubmissionIdentity(
+      pendingDmlRiskConfirmation.sessionId,
+      pendingDmlRiskConfirmation.request.idempotencyKey,
+    );
     setPendingDmlRiskConfirmation(null);
+    releaseWriteExecutionLock();
+  }
+
+  function acquireWriteExecutionLock() {
+    if (writeExecutionLockRef.current) {
+      return false;
+    }
+    writeExecutionLockRef.current = true;
+    setIsWriteExecutionLocked(true);
+    return true;
+  }
+
+  function releaseWriteExecutionLock() {
+    if (!writeExecutionLockRef.current) {
+      return;
+    }
+    writeExecutionLockRef.current = false;
+    setIsWriteExecutionLocked(false);
+  }
+
+  /**
+   * @param {string} sessionId
+   * @param {SqlConnectionSummary} connection
+   * @param {string} schema
+   * @param {string} sql
+   */
+  function dmlSubmissionFor(sessionId, connection, schema, sql) {
+    const context = dmlSubmissionContext(connection, schema, sql);
+    const existing = dmlSubmissionIdentities.current.get(sessionId);
+    if (existing?.context === context) {
+      return existing;
+    }
+    const submission = {
+      commitEnvelope: null,
+      context,
+      idempotencyKey: createSqlIdempotencyKey("COMMIT_DML"),
+    };
+    dmlSubmissionIdentities.current.set(sessionId, submission);
+    return submission;
+  }
+
+  /**
+   * @param {string} sessionId
+   * @param {string} idempotencyKey
+   * @param {SqlDmlCommitRequest} commitEnvelope
+   */
+  function cacheDmlCommitEnvelope(sessionId, idempotencyKey, commitEnvelope) {
+    const existing = dmlSubmissionIdentities.current.get(sessionId);
+    if (existing?.idempotencyKey === idempotencyKey) {
+      existing.commitEnvelope = commitEnvelope;
+    }
+  }
+
+  /**
+   * @param {string} sessionId
+   * @param {string} idempotencyKey
+   * @param {SqlQueryRunResult} execution
+   */
+  function completeDmlSubmissionIdentity(sessionId, idempotencyKey, execution) {
+    if (isConfirmedDmlTerminalStatus(execution.status)) {
+      clearDmlSubmissionIdentity(sessionId, idempotencyKey);
+      releaseWriteExecutionLock();
+    }
+  }
+
+  /**
+   * @param {string} sessionId
+   * @param {string} idempotencyKey
+   */
+  function clearDmlSubmissionIdentity(sessionId, idempotencyKey) {
+    const existing = dmlSubmissionIdentities.current.get(sessionId);
+    if (existing?.idempotencyKey === idempotencyKey) {
+      dmlSubmissionIdentities.current.delete(sessionId);
+    }
   }
 
   /**
@@ -1187,13 +1336,6 @@ export function SqlWorkbenchPage() {
    */
   function selectResultTab(tabId) {
     updateSession(activeSession.id, { activeResultTabId: tabId });
-  }
-
-  /**
-   * @param {SqlTransactionMode} transactionMode
-   */
-  function updateTransactionMode(transactionMode) {
-    updateSession(activeSession.id, { transactionMode });
   }
 
   /**
@@ -1377,8 +1519,8 @@ export function SqlWorkbenchPage() {
 
           <SqlEditorPanel
             activeSchema={activeSchema}
-            canCommitDmlStatement={canCommitDmlStatement}
-            canRunSqlStatement={canRunSqlStatement}
+            canRunDmlStatements={canRunControlledDmlStatement}
+            canRunReadOnlyStatements={canRunReadOnlyStatements}
             comparePending={compareMutation.isPending}
             naturalLanguagePending={assistantMutation.isPending}
             onExportSql={exportSqlFile}
@@ -1387,11 +1529,10 @@ export function SqlWorkbenchPage() {
             onNaturalLanguageChange={updateNaturalLanguageState}
             onCompareChange={updateCompareState}
             onModeChange={updateSessionMode}
-            onCommitDml={commitControlledDml}
             onRunCompare={runCompare}
-            onRunStatement={runReadOnlySql}
+            onRunStatement={runSqlStatement}
             onSqlChange={updateSql}
-            onTransactionModeChange={updateTransactionMode}
+            dmlRunDisabledReason={dmlRunDisabledReason}
             session={activeSession}
           />
 
@@ -1485,7 +1626,7 @@ export function SqlWorkbenchPage() {
         onCancel={cancelDmlRiskConfirmation}
         onConfirm={confirmDmlRiskCommit}
         open={Boolean(pendingDmlRiskConfirmation)}
-        report={pendingDmlRiskConfirmation?.report ?? null}
+        preflight={pendingDmlRiskConfirmation?.preflight ?? null}
       />
     </SqlWorkbenchFrame>
   );
@@ -1770,9 +1911,10 @@ function InfoPanel({
   onApplyAssistantSuggestion,
   onRequestAssistant,
 }) {
+  const requiresHandoff = execution?.status === "UNKNOWN_REQUIRES_HANDOFF";
   return (
     <aside aria-label="SQL 信息面板" className={styles.infoPanel}>
-      <ExecutionFacts execution={execution} />
+      {requiresHandoff ? null : <ExecutionFacts execution={execution} />}
       <AiSqlAssistantPanel
         assistant={assistant}
         errorMessage={assistantErrorMessage}
@@ -1966,12 +2108,18 @@ function ResultPanel({
       })),
     [resultPage?.columns],
   );
-  const executionErrorMessage = execution && execution.status !== "SUCCEEDED"
+  const executionErrorMessage = execution &&
+    execution.status !== "SUCCEEDED" &&
+    execution.status !== "UNKNOWN_REQUIRES_HANDOFF"
     ? `${execution.errorCode ? `${execution.errorCode}: ` : ""}${
         execution.errorMessage ?? execution.status
       }`
     : null;
   const visibleErrorMessage = executionErrorMessage ?? errorMessage;
+
+  if (execution?.status === "UNKNOWN_REQUIRES_HANDOFF") {
+    return <DmlHandoffOutcome workflowId={execution.workflowId} />;
+  }
 
   if (sessionMode === "natural-language") {
     return (
@@ -2050,7 +2198,7 @@ function ResultPanel({
       !isLoading &&
       execution.affectedRows !== undefined &&
       execution.affectedRows !== null ? (
-        <p>{`DML 提交完成，影响 ${execution.affectedRows} 行。`}</p>
+        <p>{`执行完成，影响 ${execution.affectedRows} 行。`}</p>
       ) : null}
       {execution?.status === "SUCCEEDED" &&
       !resultPage &&
@@ -2073,12 +2221,25 @@ function ResultPanel({
 }
 
 /**
+ * @param {{workflowId: string}} props
+ */
+function DmlHandoffOutcome({ workflowId }) {
+  return (
+    <section aria-label="人工接管结果" className={styles.resultPanel}>
+      <PanelHeading compact detail="请按工作流完成人工确认" icon={AlertTriangle} title="需要人工接管" />
+      <p>需要人工接管以确认执行结果。</p>
+      <p>{workflowId}</p>
+    </section>
+  );
+}
+
+/**
  * @param {{
  *   isPending: boolean,
  *   onCancel: () => void,
  *   onConfirm: () => void,
  *   open: boolean,
- *   report: SqlValidationReport | null,
+ *   preflight: SqlDmlPreflightResult | null,
  * }} props
  */
 function DmlRiskConfirmationDialog({
@@ -2086,29 +2247,30 @@ function DmlRiskConfirmationDialog({
   onCancel,
   onConfirm,
   open,
-  report,
+  preflight,
 }) {
+  const report = preflight?.validation ?? null;
   return (
     <Dialog
-      closeLabel="关闭 DML 风险确认"
-      description="无 WHERE 条件的 UPDATE 或 DELETE 会影响更大范围，必须二次确认。"
+      closeLabel="关闭执行确认"
+      description="该语句可能影响较大范围。请确认预计影响和样本数据后再执行。"
       icon={<AlertTriangle aria-hidden="true" size={18} strokeWidth={2.35} />}
       onClose={isPending ? () => {} : onCancel}
-      open={open && Boolean(report)}
+      open={open && Boolean(preflight)}
       size="compact"
-      title="确认 DML 风险"
+      title="确认执行"
     >
       {report ? (
         <div className={styles.dmlRiskDialog}>
           <p className={styles.dmlRiskLead}>
-            当前 DML 已通过服务端受控校验，但包含高风险项。确认后控制面会携带确认码提交给受限 Worker 执行短事务。
+            该语句包含需要进一步确认的风险项。
           </p>
           <dl className={styles.dmlRiskFacts}>
             <div>
               <dt>风险</dt>
               <dd className={styles.dmlRiskTags}>
                 {report.risks.map((risk) => (
-                  <strong key={risk}>{risk}</strong>
+                  <strong key={risk}>{describeWriteRisk(risk)}</strong>
                 ))}
               </dd>
             </div>
@@ -2116,14 +2278,11 @@ function DmlRiskConfirmationDialog({
               <dt>对象</dt>
               <dd>{formatValues(report.referencedObjects)}</dd>
             </div>
-            <div>
-              <dt>SQL Hash</dt>
-              <dd>{report.sqlHash}</dd>
-            </div>
           </dl>
+          <DmlImpactPreview preview={preflight?.impactPreview ?? null} />
           {report.unverifiedItems.length > 0 ? (
             <p className={styles.dmlRiskNote}>
-              未验证项：{formatValues(report.unverifiedItems)}
+              存在未验证项：{formatValues(report.unverifiedItems)}
             </p>
           ) : null}
           <div className={styles.dmlRiskActions}>
@@ -2141,12 +2300,55 @@ function DmlRiskConfirmationDialog({
               onClick={onConfirm}
               type="button"
             >
-              {isPending ? "提交中" : "确认提交"}
+              {isPending ? "执行中" : "执行"}
             </button>
           </div>
         </div>
       ) : null}
     </Dialog>
+  );
+}
+
+/**
+ * @param {{preview: SqlDmlPreflightResult["impactPreview"]}} props
+ */
+function DmlImpactPreview({ preview }) {
+  if (!preview) {
+    return null;
+  }
+
+  const columns = preview.sampleColumns.map((column, index) => ({
+    key: column.name,
+    header: column.name,
+    render: (/** @type {unknown} */ row) =>
+      Array.isArray(row) ? readResultCell(row, index) : "",
+  }));
+
+  return (
+    <section aria-label="预计影响">
+      <dl className={styles.dmlRiskFacts}>
+        <div>
+          <dt>预计影响</dt>
+          <dd>
+            {preview.affectedRows === null ? "服务端未返回计数" : `预计影响 ${preview.affectedRows} 行`}
+          </dd>
+        </div>
+      </dl>
+      {columns.length > 0 && preview.sampleRows.length > 0 ? (
+        <DataTable
+          ariaLabel="写操作样本"
+          className={styles.resultTable}
+          columns={columns}
+          minWidth="420px"
+          rows={preview.sampleRows}
+        />
+      ) : null}
+      {preview.unverifiedItems.length > 0 ? (
+        <p className={styles.dmlRiskNote}>
+          存在未验证项：{formatValues(preview.unverifiedItems)}
+        </p>
+      ) : null}
+    </section>
   );
 }
 
@@ -2936,8 +3138,16 @@ function buildLimits(connection) {
  * @param {"VALIDATE" | "PREFLIGHT_DML" | "RUN_READ_ONLY" | "COMMIT_DML"} action
  * @param {string} sql
  * @param {string} idempotencyAction
+ * @param {string} [idempotencyKey]
  */
-function buildSqlQueryRequest(connection, schema, action, sql, idempotencyAction) {
+function buildSqlQueryRequest(
+  connection,
+  schema,
+  action,
+  sql,
+  idempotencyAction,
+  idempotencyKey = createSqlIdempotencyKey(idempotencyAction),
+) {
   return {
     contractVersion: "1.0",
     connectionId: connection.connectionId,
@@ -2947,8 +3157,27 @@ function buildSqlQueryRequest(connection, schema, action, sql, idempotencyAction
     sql,
     parameters: [],
     limits: buildLimits(connection),
-    idempotencyKey: createSqlIdempotencyKey(idempotencyAction),
+    idempotencyKey,
   };
+}
+
+/**
+ * @param {SqlConnectionSummary} connection
+ * @param {string} schema
+ * @param {string} sql
+ */
+function dmlSubmissionContext(connection, schema, sql) {
+  const limits = buildLimits(connection);
+  return JSON.stringify([
+    connection.connectionId,
+    connection.targetEnvironment,
+    schema,
+    sql,
+    [],
+    limits.maxRows,
+    limits.maxBytes,
+    limits.timeoutSeconds,
+  ]);
 }
 
 /**
@@ -3014,14 +3243,24 @@ function buildReadOnlyValidationDiagnosticMessage(report) {
  */
 function buildDmlValidationDiagnosticMessage(report) {
   return [
-    "DML 提交未通过服务端受控校验，未向 Worker 提交执行请求。",
-    `statementType=${report.statementType}`,
-    `validationLevel=${report.validationLevel}`,
-    `rejectionReasons=${formatValues(report.rejectionReasons)}`,
-    `risks=${formatValues(report.risks)}`,
-    `referencedObjects=${formatValues(report.referencedObjects)}`,
-    `sqlHash=${report.sqlHash}`,
+    "写操作未通过安全校验，未执行。",
+    `拒绝原因：${formatValues(report.rejectionReasons)}`,
+    `对象：${formatValues(report.referencedObjects)}`,
+    "请修正 SQL 后重试。",
   ].join("\n");
+}
+
+/**
+ * @param {string} risk
+ */
+function describeWriteRisk(risk) {
+  if (risk === "UPDATE_WITHOUT_WHERE") {
+    return "UPDATE 未限定 WHERE 条件";
+  }
+  if (risk === "DELETE_WITHOUT_WHERE") {
+    return "DELETE 未限定 WHERE 条件";
+  }
+  return "该语句需要进一步确认";
 }
 
 /**
@@ -3031,9 +3270,17 @@ function buildDmlRiskConfirmation(report) {
   return {
     contractVersion: "1.0",
     sqlHash: report.sqlHash,
-    confirmedRisks: report.risks,
+    confirmedRisks:
+      report.risks.length > 0 ? report.risks : ["CONTROLLED_DML_CONFIRMED"],
     confirmationCode: "CONFIRM_SQL_DML_RISK",
   };
+}
+
+/**
+ * @param {SqlQueryRunResult["status"]} status
+ */
+function isConfirmedDmlTerminalStatus(status) {
+  return ["SUCCEEDED", "FAILED", "REJECTED", "EXPIRED"].includes(status);
 }
 
 /**

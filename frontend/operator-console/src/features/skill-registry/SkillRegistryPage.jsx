@@ -353,10 +353,19 @@ function SkillCatalogState({ page, query, rows, setPage, showDetail }) {
  * @returns {Array<{header: string, key: string, render: (row: unknown) => import("react").ReactNode, align?: "left" | "center" | "right", width?: string}>}
  */
 function skillColumns(showDetail) {
+  const columnKeys = {
+    action: "action",
+    description: "description",
+    match: "match",
+    risk: "risk",
+    skill: "skill",
+    status: "status",
+  };
+
   return [
     {
       header: "Skill ID",
-      key: "skill",
+      key: columnKeys.skill,
       render: (row) => {
         const skill = /** @type {RegisteredSkill} */ (row);
         return (
@@ -370,7 +379,7 @@ function skillColumns(showDetail) {
     },
     {
       header: "描述",
-      key: "description",
+      key: columnKeys.description,
       render: (row) => {
         const skill = /** @type {RegisteredSkill} */ (row);
         return (
@@ -384,7 +393,7 @@ function skillColumns(showDetail) {
     },
     {
       header: "条件匹配",
-      key: "match",
+      key: columnKeys.match,
       render: (row) => {
         const skill = /** @type {RegisteredSkill} */ (row);
         return (
@@ -399,7 +408,7 @@ function skillColumns(showDetail) {
     },
     {
       header: "风险",
-      key: "risk",
+      key: columnKeys.risk,
       render: (row) => {
         const skill = /** @type {RegisteredSkill} */ (row);
         return (
@@ -412,7 +421,7 @@ function skillColumns(showDetail) {
     },
     {
       header: "状态",
-      key: "status",
+      key: columnKeys.status,
       render: (row) => {
         const skill = /** @type {RegisteredSkill} */ (row);
         return formatPublicationStatus(skill.publicationStatus);
@@ -422,7 +431,7 @@ function skillColumns(showDetail) {
     {
       align: "right",
       header: "详情",
-      key: "action",
+      key: columnKeys.action,
       render: (row) => {
         const skill = /** @type {RegisteredSkill} */ (row);
         return (

@@ -16,15 +16,11 @@ import org.springframework.web.util.UriComponentsBuilder;
     "server.port=18081",
     "spring.r2dbc.url=r2dbc:h2:mem:///local-oidc-provider-test;MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
     "ops-agent.workflow.startup-recovery-enabled=false",
-    "ops-agent.skill-registry.root-path=target/test-classes/skills",
-    "ops-agent.skill-registry.signature-required=true",
-    "ops-agent.skill-registry.signing-secret=ops-agent-skill-signing-key-2026-06-06-0001",
     "ops-agent.local-oidc-provider.enabled=true",
     "ops-agent.local-oidc-provider.issuer=http://127.0.0.1:18081/mock-oidc",
-    "ops-agent.local-oidc-provider.client-id=ops-agent-local-client",
-    "ops-agent.local-oidc-provider.client-secret=ops-agent-local-secret"
+    "ops-agent.local-oidc-provider.client-id=ops-agent-local-client"
 })
-class LocalOidcProviderControllerTest {
+class LocalOidcProviderControllerTest extends BootstrapSkillRegistryTestSupport {
 
   @Autowired
   private WebTestClient webTestClient;
@@ -78,7 +74,7 @@ class LocalOidcProviderControllerTest {
                 + "&code=" + code
                 + "&redirect_uri=" + redirectUri
                 + "&client_id=ops-agent-local-client"
-                + "&client_secret=ops-agent-local-secret")
+                + "&client_secret=" + localOidcClientSecret())
         .exchange()
         .expectStatus().isOk()
         .expectBody()

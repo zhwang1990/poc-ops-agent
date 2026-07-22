@@ -10,15 +10,21 @@ import com.company.opsagent.controlplane.modules.policy.PolicyDecisionService;
 import com.company.opsagent.controlplane.modules.agentrouting.SkillRoutingService;
 import com.company.opsagent.controlplane.modules.workflow.AgentDiagnosticWorkflowService;
 import com.company.opsagent.controlplane.modules.workflow.AgentWorkflowStore;
+import com.company.opsagent.controlplane.modules.workflow.ControlledSqlDmlWorkflowStore;
+import com.company.opsagent.controlplane.modules.workflow.ControlledSqlDmlWorkerGateway;
+import com.company.opsagent.controlplane.modules.workflow.ControlledSqlDmlWorkflowService;
+import com.company.opsagent.controlplane.modules.sqlworkbench.SqlDmlPreflightReceiptService;
 import com.company.opsagent.controlplane.modules.workflow.ReadOnlyDiagnosticWorkflowService;
 import com.company.opsagent.controlplane.modules.workflow.ReadOnlyWorkflowRecoveryService;
 import com.company.opsagent.controlplane.modules.workflow.ReadOnlyWorkflowStore;
 import com.company.opsagent.controlplane.modules.workflow.R2dbcAgentWorkflowStore;
+import com.company.opsagent.controlplane.modules.workflow.R2dbcControlledSqlDmlWorkflowStore;
 import com.company.opsagent.controlplane.modules.workflow.R2dbcReadOnlyWorkflowStore;
 import com.company.opsagent.controlplane.modules.workflow.RetryableFailureClassifier;
 import com.company.opsagent.controlplane.modules.workflow.WorkerGateway;
 import com.company.opsagent.controlplane.modules.workflow.WorkflowBackedAgentToolExecutor;
 import com.company.opsagent.controlplane.modules.workflow.WorkflowAgentRuntimeProgressSink;
+import com.company.opsagent.controlplane.modules.sqlworkbench.SqlWorkbenchWorkerClient;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Clock;
 import org.springframework.boot.ApplicationRunner;
@@ -61,6 +67,31 @@ public class WorkflowConfiguration {
   }
 
   @Bean
+  ControlledSqlDmlWorkflowStore controlledSqlDmlWorkflowStore(
+      DatabaseClient databaseClient,
+      AuditTrail auditTrail) {
+    return new R2dbcControlledSqlDmlWorkflowStore(databaseClient, auditTrail);
+  }
+
+  @Bean
+  ControlledSqlDmlWorkerGateway controlledSqlDmlWorkerGateway(
+      SqlWorkbenchWorkerClient sqlWorkbenchWorkerClient) {
+    return sqlWorkbenchWorkerClient::executeControlledDml;
+  }
+
+  @Bean
+  ControlledSqlDmlWorkflowService controlledSqlDmlWorkflowService(
+      ControlledSqlDmlWorkflowStore controlledSqlDmlWorkflowStore,
+      ControlledSqlDmlWorkerGateway controlledSqlDmlWorkerGateway,
+      SqlDmlPreflightReceiptService sqlDmlPreflightReceiptService) {
+    return new ControlledSqlDmlWorkflowService(
+        controlledSqlDmlWorkflowStore,
+        controlledSqlDmlWorkerGateway,
+        sqlDmlPreflightReceiptService,
+        Clock.systemUTC());
+  }
+
+  @Bean
   AgentRuntimeProgressSink agentRuntimeProgressSink(ReadOnlyWorkflowStore readOnlyWorkflowStore) {
     return new WorkflowAgentRuntimeProgressSink(readOnlyWorkflowStore, Clock.systemUTC());
   }
@@ -99,7 +130,9 @@ public class WorkflowConfiguration {
     initializer.setDatabasePopulator(new ResourceDatabasePopulator(
         new ClassPathResource("sql/migrations/V001__workflow_schema.sql"),
         new ClassPathResource("sql/migrations/V002__agent_workflow_schema.sql"),
-        new ClassPathResource("sql/migrations/V003__agent_workflow_result_columns.sql")));
+        new ClassPathResource("sql/migrations/V003__agent_workflow_result_columns.sql"),
+        new ClassPathResource("sql/migrations/V004__controlled_sql_dml_workflow.sql"),
+        new ClassPathResource("sql/migrations/V005__controlled_sql_dml_execution_expiry.sql")));
     return initializer;
   }
 

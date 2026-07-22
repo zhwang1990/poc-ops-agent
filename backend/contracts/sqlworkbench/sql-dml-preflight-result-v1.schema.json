@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://company.example/ops-agent/contracts/sqlworkbench/sql-dml-preflight-result-v1.schema.json",
+  "title": "SQL DML 预检结果 v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contractVersion", "validation", "impactPreview"],
+  "properties": {
+    "contractVersion": { "const": "1.0" },
+    "validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractVersion",
+        "statementType",
+        "validationLevel",
+        "sqlHash",
+        "referencedObjects",
+        "risks",
+        "rejectionReasons",
+        "unverifiedItems"
+      ],
+      "properties": {
+        "contractVersion": { "const": "1.0" },
+        "statementType": { "enum": ["SELECT", "INSERT", "UPDATE", "DELETE", "UNSUPPORTED"] },
+        "validationLevel": { "enum": ["VALIDATED", "PARTIAL", "REJECTED"] },
+        "sqlHash": { "type": "string", "minLength": 1 },
+        "referencedObjects": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "risks": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "rejectionReasons": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "unverifiedItems": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "impactPreview": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["contractVersion", "affectedRows", "sampleColumns", "sampleRows", "unverifiedItems"],
+      "properties": {
+        "contractVersion": { "const": "1.0" },
+        "affectedRows": { "type": ["integer", "null"], "minimum": 0 },
+        "sampleColumns": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "type", "masked"],
+            "properties": {
+              "name": { "type": "string", "minLength": 1 },
+              "type": { "type": "string", "minLength": 1 },
+              "masked": { "type": "boolean" }
+            }
+          }
+        },
+        "sampleRows": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {}
+          }
+        },
+        "unverifiedItems": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "validation": {
+            "properties": {
+              "statementType": { "enum": ["INSERT", "UPDATE", "DELETE"] },
+              "validationLevel": { "enum": ["VALIDATED", "PARTIAL"] }
+            },
+            "required": ["statementType", "validationLevel"]
+          }
+        },
+        "required": ["validation"]
+      },
+      "then": {
+        "properties": {
+          "impactPreview": { "type": "object" }
+        }
+      }
+    }
+  ]
+}

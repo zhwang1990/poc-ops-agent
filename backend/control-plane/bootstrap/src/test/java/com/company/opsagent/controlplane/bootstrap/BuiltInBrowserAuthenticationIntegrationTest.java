@@ -29,9 +29,6 @@ import org.springframework.test.web.reactive.server.WebTestClient;
     "ops-agent.policy.required-roles-by-action.internal.health.read[0]=ROLE_ops-reader",
     "ops-agent.policy.required-roles-by-action.internal.health.read[1]=ROLE_ops-admin",
     "ops-agent.policy.required-roles-by-action.internal.identity.password-reset[0]=ROLE_ops-admin",
-    "ops-agent.skill-registry.root-path=target/test-classes/skills",
-    "ops-agent.skill-registry.signature-required=true",
-    "ops-agent.skill-registry.signing-secret=ops-agent-skill-signing-key-2026-06-06-0001",
     "spring.r2dbc.url=r2dbc:h2:mem:///built-in-browser-test;MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
     "ops-agent.workflow.startup-recovery-enabled=false",
     "ops-agent.built-in-identity.lockout-threshold=5",
@@ -39,9 +36,14 @@ import org.springframework.test.web.reactive.server.WebTestClient;
     "ops-agent.built-in-identity.session-idle-timeout=15m",
     "ops-agent.built-in-identity.session-absolute-timeout=8h"
 })
-class BuiltInBrowserAuthenticationIntegrationTest {
+class BuiltInBrowserAuthenticationIntegrationTest extends BootstrapSkillRegistryTestSupport {
 
   private static final OffsetDateTime FIXED_TIME = OffsetDateTime.parse("2026-06-07T12:00:00Z");
+  private static final String OPERATOR_PASSWORD = BootstrapTestSecretMaterial.value();
+  private static final String ADMIN_PASSWORD = BootstrapTestSecretMaterial.value();
+  private static final String TEMPORARY_PASSWORD = BootstrapTestSecretMaterial.value();
+  private static final String CHANGED_PASSWORD = BootstrapTestSecretMaterial.value();
+  private static final String REJECTED_PASSWORD = BootstrapTestSecretMaterial.value();
 
   @Autowired
   private WebTestClient webTestClient;
@@ -62,16 +64,16 @@ class BuiltInBrowserAuthenticationIntegrationTest {
 
     insertAccount("account-1", "alice");
     insertRoleGrant("grant-1", "account-1", "ROLE_ops-reader");
-    insertCredential(passwordHasher.hash("account-1", "Start#2026", 1L, false));
+    insertCredential(passwordHasher.hash("account-1", OPERATOR_PASSWORD, 1L, false));
 
     insertAccount("account-admin-1", "admin");
     insertRoleGrant("grant-admin-1", "account-admin-1", "ROLE_ops-admin");
-    insertCredential(passwordHasher.hash("account-admin-1", "Admin#2026", 1L, false));
+    insertCredential(passwordHasher.hash("account-admin-1", ADMIN_PASSWORD, 1L, false));
   }
 
   @Test
   void supportsBuiltInBrowserLoginAndInternalAuthorization() {
-    ResponseCookie sessionCookie = login("alice", "Start#2026");
+    ResponseCookie sessionCookie = login("alice", OPERATOR_PASSWORD);
 
     webTestClient.get()
         .uri("/auth/session")
@@ -93,7 +95,7 @@ class BuiltInBrowserAuthenticationIntegrationTest {
 
   @Test
   void supportsAdminResetAndForcedPasswordChangeFlow() {
-    ResponseCookie adminCookie = login("admin", "Admin#2026");
+    ResponseCookie adminCookie = login("admin", ADMIN_PASSWORD);
 
     webTestClient.post()
         .uri("/internal/identity/password-reset")
@@ -103,14 +105,14 @@ class BuiltInBrowserAuthenticationIntegrationTest {
             {
               "accountId": "account-1",
               "reason": "routine reset",
-              "temporaryPassword": "Temp#2026",
+              "temporaryPassword": "%s",
               "forcePasswordChange": true
             }
-            """)
+            """.formatted(TEMPORARY_PASSWORD))
         .exchange()
         .expectStatus().isNoContent();
 
-    ResponseCookie temporaryCookie = login("alice", "Temp#2026");
+    ResponseCookie temporaryCookie = login("alice", TEMPORARY_PASSWORD);
 
     webTestClient.get()
         .uri("/internal/healthz")
@@ -118,7 +120,8 @@ class BuiltInBrowserAuthenticationIntegrationTest {
         .exchange()
         .expectStatus().isUnauthorized();
 
-    ResponseCookie changedCookie = changePassword(temporaryCookie, "Temp#2026", "Changed#2026");
+    ResponseCookie changedCookie = changePassword(
+        temporaryCookie, TEMPORARY_PASSWORD, CHANGED_PASSWORD);
 
     webTestClient.get()
         .uri("/internal/healthz")
@@ -131,7 +134,7 @@ class BuiltInBrowserAuthenticationIntegrationTest {
 
   @Test
   void revokesServerSideSessionOnLogout() {
-    ResponseCookie sessionCookie = login("alice", "Start#2026");
+    ResponseCookie sessionCookie = login("alice", OPERATOR_PASSWORD);
 
     webTestClient.get()
         .uri("/auth/logout")
@@ -153,12 +156,12 @@ class BuiltInBrowserAuthenticationIntegrationTest {
       webTestClient.post()
           .uri("/auth/login")
           .contentType(APPLICATION_JSON)
-          .bodyValue("""
+        .bodyValue("""
               {
                 "username": "alice",
-                "password": "Wrong#2026"
+                "password": "%s"
               }
-              """)
+              """.formatted(REJECTED_PASSWORD))
           .exchange()
           .expectStatus().isUnauthorized()
           .expectBody()
@@ -171,9 +174,9 @@ class BuiltInBrowserAuthenticationIntegrationTest {
         .bodyValue("""
             {
               "username": "alice",
-              "password": "Start#2026"
+              "password": "%s"
             }
-            """)
+            """.formatted(OPERATOR_PASSWORD))
         .exchange()
         .expectStatus().isEqualTo(423)
         .expectBody()

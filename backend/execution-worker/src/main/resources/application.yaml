@@ -25,6 +25,7 @@ ops-agent:
           port: 9092
           credential-alias: h2-local-readonly
           enabled: true
+          dml-enabled: false
     # Configure only through deployment secrets. Empty config fails closed.
     sql-credentials: {}
     http-egress:

@@ -14,7 +14,10 @@ public record WorkerSqlConnectionDescriptor(
     int port,
     String credentialAlias,
     String username,
-    boolean enabled) {
+    boolean enabled,
+    boolean dmlEnabled,
+    String dmlCredentialAlias,
+    String dmlUsername) {
 
   private static final Set<String> SUPPORTED_PLATFORM_TYPES = Set.of("DB2_FOR_I", "H2", "MYSQL");
 
@@ -25,7 +28,7 @@ public record WorkerSqlConnectionDescriptor(
       int port,
       String credentialAlias,
       boolean enabled) {
-    this(connectionId, targetEnvironment, "DB2_FOR_I", host, port, credentialAlias, credentialAlias, enabled);
+    this(connectionId, targetEnvironment, "DB2_FOR_I", host, port, credentialAlias, credentialAlias, enabled, false, null, null);
   }
 
   public WorkerSqlConnectionDescriptor(
@@ -36,7 +39,55 @@ public record WorkerSqlConnectionDescriptor(
       String credentialAlias,
       String username,
       boolean enabled) {
-    this(connectionId, targetEnvironment, "DB2_FOR_I", host, port, credentialAlias, username, enabled);
+    this(connectionId, targetEnvironment, "DB2_FOR_I", host, port, credentialAlias, username, enabled, false, null, null);
+  }
+
+  public WorkerSqlConnectionDescriptor(
+      String connectionId,
+      String targetEnvironment,
+      String platformType,
+      String host,
+      int port,
+      String credentialAlias,
+      String username,
+      boolean enabled) {
+    this(
+        connectionId,
+        targetEnvironment,
+        platformType,
+        host,
+        port,
+        credentialAlias,
+        username,
+        enabled,
+        false,
+        null,
+        null);
+  }
+
+  public WorkerSqlConnectionDescriptor(
+      String connectionId,
+      String targetEnvironment,
+      String platformType,
+      String host,
+      int port,
+      String credentialAlias,
+      String username,
+      boolean enabled,
+      boolean dmlEnabled,
+      String dmlCredentialAlias) {
+    this(
+        connectionId,
+        targetEnvironment,
+        platformType,
+        host,
+        port,
+        credentialAlias,
+        username,
+        enabled,
+        dmlEnabled,
+        dmlCredentialAlias,
+        null);
   }
 
   public WorkerSqlConnectionDescriptor {
@@ -52,6 +103,14 @@ public record WorkerSqlConnectionDescriptor(
     }
     credentialAlias = requiredText(credentialAlias, "credentialAlias");
     username = requiredText(username, "username");
+    dmlCredentialAlias = optionalText(dmlCredentialAlias);
+    dmlUsername = optionalText(dmlUsername);
+    if (sameIdentity(credentialAlias, dmlCredentialAlias)) {
+      throw new IllegalArgumentException("dmlCredentialAlias must differ from credentialAlias");
+    }
+    if (sameIdentity(username, dmlUsername)) {
+      throw new IllegalArgumentException("dmlUsername must differ from username");
+    }
   }
 
   public WorkerSqlEgressTarget target() {
@@ -63,5 +122,13 @@ public record WorkerSqlConnectionDescriptor(
       throw new IllegalArgumentException(name + " is required");
     }
     return value.trim();
+  }
+
+  private static String optionalText(String value) {
+    return value == null || value.isBlank() ? null : value.trim();
+  }
+
+  private static boolean sameIdentity(String readIdentity, String writeIdentity) {
+    return writeIdentity != null && readIdentity.equalsIgnoreCase(writeIdentity);
   }
 }

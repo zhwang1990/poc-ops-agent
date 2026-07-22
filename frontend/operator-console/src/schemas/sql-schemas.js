@@ -8,6 +8,7 @@ import { z } from "zod";
  * @typedef {z.infer<typeof sqlConnectionProbeResultSchema>} SqlConnectionProbeResult
  * @typedef {z.infer<typeof sqlQueryRunRequestSchema>} SqlQueryRunRequest
  * @typedef {z.infer<typeof sqlQueryRunResultSchema>} SqlQueryRunResult
+ * @typedef {z.infer<typeof sqlDmlPreflightResultSchema>} SqlDmlPreflightResult
  * @typedef {z.infer<typeof sqlDmlCommitRequestSchema>} SqlDmlCommitRequest
  * @typedef {z.infer<typeof sqlResultPageSchema>} SqlResultPage
  * @typedef {z.infer<typeof sqlMetadataResponseSchema>} SqlMetadataResponse
@@ -53,46 +54,6 @@ const sqlAssistantActionSchema = z.enum([
   "GENERATE_SELECT",
   "COMPARE_SUMMARY",
 ]);
-const productionWriteActions = new Set(["PREFLIGHT_DML", "COMMIT_DML"]);
-
-/**
- * @param {string} targetEnvironment
- */
-function isProductionEnvironment(targetEnvironment) {
-  return targetEnvironment === "production";
-}
-
-/**
- * @param {unknown[]} capabilities
- * @param {import("zod").RefinementCtx} context
- */
-function rejectProductionDmlCapabilities(capabilities, context) {
-  const firstDmlIndex = capabilities.findIndex((capability) =>
-    productionWriteActions.has(String(capability)),
-  );
-  if (firstDmlIndex >= 0) {
-    context.addIssue({
-      code: "custom",
-      message: "production SQL connections only allow query capabilities",
-      path: ["capabilities", firstDmlIndex],
-    });
-  }
-}
-
-/**
- * @param {unknown} action
- * @param {import("zod").RefinementCtx} context
- */
-function rejectProductionDmlAction(action, context) {
-  if (productionWriteActions.has(String(action))) {
-    context.addIssue({
-      code: "custom",
-      message: "production SQL workbench requests only allow query actions",
-      path: ["action"],
-    });
-  }
-}
-
 const sqlConnectionBaseSchema = z
   .object({
     contractVersion: z.literal("1.0"),
@@ -112,11 +73,7 @@ const sqlConnectionBaseSchema = z
   })
   .strict();
 
-const sqlConnectionSchema = sqlConnectionBaseSchema.superRefine((connection, context) => {
-  if (isProductionEnvironment(connection.targetEnvironment)) {
-    rejectProductionDmlCapabilities(connection.capabilities, context);
-  }
-});
+const sqlConnectionSchema = sqlConnectionBaseSchema;
 
 export const sqlConnectionListSchema = z.array(sqlConnectionSchema);
 
@@ -137,13 +94,7 @@ const sqlConnectionCreateRequestBaseSchema = z
   })
   .strict();
 
-export const sqlConnectionCreateRequestSchema = sqlConnectionCreateRequestBaseSchema.superRefine(
-  (connection, context) => {
-    if (isProductionEnvironment(connection.targetEnvironment)) {
-      rejectProductionDmlCapabilities(connection.capabilities, context);
-    }
-  },
-);
+export const sqlConnectionCreateRequestSchema = sqlConnectionCreateRequestBaseSchema;
 
 export const sqlConnectionUpdateRequestSchema = sqlConnectionCreateRequestSchema;
 
@@ -190,44 +141,86 @@ const sqlQueryRequestBaseSchema = z
   })
   .strict();
 
-export const sqlQueryRequestSchema = sqlQueryRequestBaseSchema.superRefine((request, context) => {
-  if (isProductionEnvironment(request.targetEnvironment)) {
-    rejectProductionDmlAction(request.action, context);
-  }
-});
+export const sqlQueryRequestSchema = sqlQueryRequestBaseSchema;
 
 export const sqlQueryRunRequestSchema = sqlQueryRequestBaseSchema
   .extend({
     action: z.literal("RUN_READ_ONLY"),
   })
-  .strict()
-  .superRefine((request, context) => {
-    if (isProductionEnvironment(request.targetEnvironment)) {
-      rejectProductionDmlAction(request.action, context);
-    }
-  });
+  .strict();
+
+export const sqlDmlPreflightRequestSchema = sqlQueryRequestBaseSchema
+  .extend({
+    action: z.literal("PREFLIGHT_DML"),
+  })
+  .strict();
+
+const sqlDmlPreviewColumnSchema = z
+  .object({
+    name: nonBlankString,
+    type: nonBlankString,
+    masked: z.boolean(),
+  })
+  .strict();
+
+const sqlDmlPreflightReceiptSchema = z
+  .object({
+    contractVersion: z.literal("1.0"),
+    receiptId: nonBlankString,
+    keyId: nonBlankString,
+    issuedAt: nonBlankString,
+    expiresAt: nonBlankString,
+    operatorId: nonBlankString,
+    requestHash: nonBlankString,
+    connectionId: nonBlankString,
+    targetEnvironment: nonBlankString,
+    schema: nonBlankString,
+    sqlHash: nonBlankString,
+    parametersHash: nonBlankString,
+    policyVersion: nonBlankString,
+    policySelectionHash: nonBlankString,
+    impactPreviewHash: nonBlankString,
+    preflightHash: nonBlankString,
+    signature: nonBlankString,
+  })
+  .strict();
+
+const sqlDmlImpactPreviewSchema = z
+  .object({
+    contractVersion: z.literal("1.0"),
+    affectedRows: z.number().int().min(0).nullable(),
+    sampleColumns: z.array(sqlDmlPreviewColumnSchema),
+    sampleRows: z.array(z.array(z.json())),
+    unverifiedItems: z.array(nonBlankString),
+  })
+  .strict();
+
+export const sqlDmlPreflightResultSchema = z
+  .object({
+    contractVersion: z.literal("1.1"),
+    validation: z.lazy(() => sqlValidationReportSchema),
+    impactPreview: sqlDmlImpactPreviewSchema.nullable(),
+    receipt: sqlDmlPreflightReceiptSchema,
+  })
+  .strict();
 
 const sqlDmlConfirmationSchema = z
   .object({
     contractVersion: z.literal("1.0"),
     sqlHash: nonBlankString,
-    confirmedRisks: z.array(nonBlankString).min(1),
+    confirmedRisks: z.array(nonBlankString),
     confirmationCode: z.literal("CONFIRM_SQL_DML_RISK"),
   })
   .strict();
 
 export const sqlDmlCommitRequestSchema = z
   .object({
-    contractVersion: z.literal("1.0"),
+    contractVersion: z.literal("1.1"),
     query: sqlQueryRequestBaseSchema
       .extend({ action: z.literal("COMMIT_DML") })
-      .strict()
-      .superRefine((request, context) => {
-        if (isProductionEnvironment(request.targetEnvironment)) {
-          rejectProductionDmlAction(request.action, context);
-        }
-      }),
-    confirmation: sqlDmlConfirmationSchema.nullable().optional(),
+      .strict(),
+    confirmation: sqlDmlConfirmationSchema,
+    receipt: sqlDmlPreflightReceiptSchema,
   })
   .strict();
 
@@ -285,7 +278,15 @@ export const sqlQueryRunResultSchema = z
     contractVersion: z.literal("1.0"),
     executionRequestId: nonBlankString,
     workflowId: nonBlankString,
-    status: z.enum(["QUEUED", "RUNNING", "SUCCEEDED", "FAILED", "REJECTED", "EXPIRED"]),
+    status: z.enum([
+      "QUEUED",
+      "RUNNING",
+      "SUCCEEDED",
+      "FAILED",
+      "REJECTED",
+      "EXPIRED",
+      "UNKNOWN_REQUIRES_HANDOFF",
+    ]),
     resultId: nonBlankString.nullable().optional(),
     errorCode: z.string().nullable().optional(),
     errorMessage: z.string().nullable().optional(),

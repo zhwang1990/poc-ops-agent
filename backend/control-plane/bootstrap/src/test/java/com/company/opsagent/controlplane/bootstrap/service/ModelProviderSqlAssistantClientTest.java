@@ -10,6 +10,7 @@ import com.company.opsagent.contracts.sqlworkbench.SqlAssistantStatus;
 import com.company.opsagent.contracts.sqlworkbench.SqlStatementType;
 import com.company.opsagent.contracts.sqlworkbench.SqlValidationLevel;
 import com.company.opsagent.contracts.sqlworkbench.SqlValidationReport;
+import com.company.opsagent.controlplane.bootstrap.BootstrapTestSecretMaterial;
 import com.company.opsagent.controlplane.modules.agentruntime.AesGcmModelProviderSecretCodec;
 import com.company.opsagent.controlplane.modules.agentruntime.InMemoryModelProviderStore;
 import com.company.opsagent.controlplane.modules.agentruntime.ModelProvider;
@@ -32,8 +33,8 @@ import org.junit.jupiter.api.Test;
 
 class ModelProviderSqlAssistantClientTest {
 
-  private static final String MASTER_KEY = "0123456789abcdef0123456789abcdef";
-  private static final String API_KEY = "SQL_ASSISTANT_API_KEY_PLACEHOLDER";
+  private static final String MASTER_KEY = BootstrapTestSecretMaterial.value();
+  private static final String API_KEY = BootstrapTestSecretMaterial.value();
 
   private final AesGcmModelProviderSecretCodec codec =
       new AesGcmModelProviderSecretCodec(MASTER_KEY);

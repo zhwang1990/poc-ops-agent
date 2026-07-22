@@ -20,14 +20,20 @@ const rows = [
   { id: "node-c", status: "healthy", latency: "16ms" },
 ];
 
+const columnKeys = {
+  latency: "latency",
+  nodeId: "id",
+  status: "status",
+};
+
 /** @type {TestColumn[]} */
 const columns = [
-  { header: "节点", key: "id", render: (row) => getCell(row, "id") },
-  { header: "状态", key: "status", render: (row) => getCell(row, "status") },
+  { header: "节点", key: columnKeys.nodeId, render: (row) => getCell(row, "id") },
+  { header: "状态", key: columnKeys.status, render: (row) => getCell(row, "status") },
   {
     align: "right",
     header: "延迟",
-    key: "latency",
+    key: columnKeys.latency,
     render: (row) => getCell(row, "latency"),
   },
 ];

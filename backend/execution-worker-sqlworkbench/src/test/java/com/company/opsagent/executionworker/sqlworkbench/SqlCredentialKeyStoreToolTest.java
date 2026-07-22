@@ -16,6 +16,8 @@ class SqlCredentialKeyStoreToolTest {
 
   @Test
   void writesCredentialFromStdinWithoutEchoingSecret() throws Exception {
+    String storePassword = SqlTestSecretMaterial.value();
+    String databasePassword = SqlTestSecretMaterial.value();
     var keyStorePath = Files.createTempFile("ops-agent-sql-credentials", ".jceks");
     Files.deleteIfExists(keyStorePath);
     var output = new ByteArrayOutputStream();
@@ -32,20 +34,21 @@ class SqlCredentialKeyStoreToolTest {
             "OPS_AGENT_SQL_KEYSTORE_PASSWORD",
             "--secret-stdin"
         },
-        Map.of("OPS_AGENT_SQL_KEYSTORE_PASSWORD", "store-password"),
-        new ByteArrayInputStream("database-password\n".getBytes(StandardCharsets.UTF_8)),
+        Map.of("OPS_AGENT_SQL_KEYSTORE_PASSWORD", storePassword),
+        new ByteArrayInputStream((databasePassword + System.lineSeparator()).getBytes(StandardCharsets.UTF_8)),
         new PrintStream(output, true, StandardCharsets.UTF_8),
         new PrintStream(error, true, StandardCharsets.UTF_8));
 
     assertEquals(0, exitCode);
-    assertFalse(output.toString(StandardCharsets.UTF_8).contains("database-password"));
-    assertFalse(error.toString(StandardCharsets.UTF_8).contains("database-password"));
-    var provider = new JavaKeyStorePasswordProvider(keyStorePath, "store-password".toCharArray());
-    assertArrayEquals("database-password".toCharArray(), provider.password("as400-dev-readonly"));
+    assertFalse(output.toString(StandardCharsets.UTF_8).contains(databasePassword));
+    assertFalse(error.toString(StandardCharsets.UTF_8).contains(databasePassword));
+    var provider = new JavaKeyStorePasswordProvider(keyStorePath, storePassword.toCharArray());
+    assertArrayEquals(databasePassword.toCharArray(), provider.password("as400-dev-readonly"));
   }
 
   @Test
   void rejectsMissingStorePasswordEnvironmentVariable() {
+    String databasePassword = SqlTestSecretMaterial.value();
     var output = new ByteArrayOutputStream();
     var error = new ByteArrayOutputStream();
 
@@ -61,16 +64,18 @@ class SqlCredentialKeyStoreToolTest {
             "--secret-stdin"
         },
         Map.of(),
-        new ByteArrayInputStream("database-password\n".getBytes(StandardCharsets.UTF_8)),
+        new ByteArrayInputStream((databasePassword + System.lineSeparator()).getBytes(StandardCharsets.UTF_8)),
         new PrintStream(output, true, StandardCharsets.UTF_8),
         new PrintStream(error, true, StandardCharsets.UTF_8));
 
     assertEquals(2, exitCode);
-    assertFalse(error.toString(StandardCharsets.UTF_8).contains("database-password"));
+    assertFalse(error.toString(StandardCharsets.UTF_8).contains(databasePassword));
   }
 
   @Test
   void rejectsUnknownOption() throws Exception {
+    String storePassword = SqlTestSecretMaterial.value();
+    String databasePassword = SqlTestSecretMaterial.value();
     var keyStorePath = Files.createTempFile("ops-agent-sql-credentials", ".jceks");
     Files.deleteIfExists(keyStorePath);
     var output = new ByteArrayOutputStream();
@@ -89,8 +94,8 @@ class SqlCredentialKeyStoreToolTest {
             "value",
             "--secret-stdin"
         },
-        Map.of("OPS_AGENT_SQL_KEYSTORE_PASSWORD", "store-password"),
-        new ByteArrayInputStream("database-password\n".getBytes(StandardCharsets.UTF_8)),
+        Map.of("OPS_AGENT_SQL_KEYSTORE_PASSWORD", storePassword),
+        new ByteArrayInputStream((databasePassword + System.lineSeparator()).getBytes(StandardCharsets.UTF_8)),
         new PrintStream(output, true, StandardCharsets.UTF_8),
         new PrintStream(error, true, StandardCharsets.UTF_8));
 

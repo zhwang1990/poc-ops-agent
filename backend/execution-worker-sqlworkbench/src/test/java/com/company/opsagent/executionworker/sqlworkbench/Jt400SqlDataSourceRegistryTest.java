@@ -24,6 +24,7 @@ class Jt400SqlDataSourceRegistryTest {
 
   @Test
   void createsDataSourceFromWorkerDescriptorAndCredentialAlias() {
+    char[] databasePassword = SqlTestSecretMaterial.password();
     CapturingDataSourceFactory factory = new CapturingDataSourceFactory();
     DataSource expected = new JdbcDataSource();
     factory.dataSource = expected;
@@ -31,7 +32,7 @@ class Jt400SqlDataSourceRegistryTest {
         policy(),
         alias -> {
           assertEquals("as400-dev-readonly", alias);
-          return "database-password".toCharArray();
+          return databasePassword.clone();
         },
         factory);
 
@@ -40,7 +41,7 @@ class Jt400SqlDataSourceRegistryTest {
     assertSame(expected, actual);
     assertEquals("as400-dev.internal", factory.systemName);
     assertEquals("readonly_user", factory.username);
-    assertArrayEquals("database-password".toCharArray(), factory.password);
+    assertArrayEquals(databasePassword, factory.password);
   }
 
   private WorkerSqlEgressPolicy policy() {

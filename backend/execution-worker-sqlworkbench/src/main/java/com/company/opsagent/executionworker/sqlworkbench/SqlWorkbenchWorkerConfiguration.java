@@ -13,7 +13,8 @@ import org.springframework.context.annotation.Configuration;
 @EnableConfigurationProperties({
     WorkerSqlEgressProperties.class,
     SqlWorkerTransportAuthProperties.class,
-    WorkerSqlCredentialProperties.class
+    WorkerSqlCredentialProperties.class,
+    WorkerSqlDmlReplayProperties.class
 })
 public class SqlWorkbenchWorkerConfiguration {
 
@@ -23,6 +24,37 @@ public class SqlWorkbenchWorkerConfiguration {
   @Bean
   WorkerSqlEgressPolicy workerSqlEgressPolicy(WorkerSqlEgressProperties properties) {
     return properties.toPolicy();
+  }
+
+  /**
+   * 构建 Worker 本地 DML 功能与写凭据门禁。
+   */
+  @Bean
+  WorkerSqlDmlExecutionPolicy workerSqlDmlExecutionPolicy(WorkerSqlEgressProperties properties) {
+    return new WorkerSqlDmlExecutionPolicy(
+        properties.getConnections().stream()
+            .map(WorkerSqlEgressProperties.Connection::toDescriptor)
+            .toList());
+  }
+
+  /**
+   * 构建受控 DML 的持久化防重放边界；启用写能力但缺少目录时启动失败。
+   */
+  @Bean
+  SqlDmlExecutionReplayGuard sqlDmlExecutionReplayGuard(
+      WorkerSqlDmlReplayProperties replayProperties,
+      WorkerSqlEgressProperties egressProperties,
+      Clock workerClock) {
+    boolean dmlEnabled = egressProperties.getConnections().stream()
+        .anyMatch(WorkerSqlEgressProperties.Connection::isDmlEnabled);
+    if (!replayProperties.isConfigured()) {
+      if (dmlEnabled) {
+        throw new IllegalStateException(
+            "SQL DML replay directory is required when controlled DML is enabled");
+      }
+      return SqlDmlExecutionReplayGuard.unavailable();
+    }
+    return new FileSqlDmlExecutionReplayGuard(replayProperties.directoryPath(), workerClock);
   }
 
   /**
@@ -76,7 +108,7 @@ public class SqlWorkbenchWorkerConfiguration {
    * SQL 数据源解析边界，真实连接配置接入前仍先强制执行出口 allowlist。
    */
   @Bean
-  SqlDataSourceRegistry sqlDataSourceRegistry(
+  ConfiguredSqlDataSourceRegistry sqlDataSourceRegistry(
       WorkerSqlEgressPolicy workerSqlEgressPolicy,
       SqlPasswordProvider sqlPasswordProvider) {
     return new ConfiguredSqlDataSourceRegistry(
@@ -98,6 +130,16 @@ public class SqlWorkbenchWorkerConfiguration {
     return new JdbcSqlQueryExecutor(sqlDataSourceRegistry, sqlResultStore, objectMapper, workerClock);
   }
 
+  /**
+   * 构建只读 DML 影响预览执行器。
+   */
+  @Bean
+  SqlDmlImpactPreviewExecutor sqlDmlImpactPreviewExecutor(
+      SqlDataSourceRegistry sqlDataSourceRegistry,
+      ObjectMapper objectMapper) {
+    return new JdbcSqlDmlImpactPreviewExecutor(sqlDataSourceRegistry, objectMapper);
+  }
+
   @Bean
   SqlMetadataReader sqlMetadataReader(
       SqlDataSourceRegistry sqlDataSourceRegistry,
@@ -111,11 +153,19 @@ public class SqlWorkbenchWorkerConfiguration {
   @Bean
   RestrictedSqlQueryExecutionWorker restrictedSqlQueryExecutionWorker(
       Clock workerClock,
-      SqlQueryExecutor sqlQueryExecutor) {
+      SqlQueryExecutor sqlQueryExecutor,
+      SqlDmlImpactPreviewExecutor sqlDmlImpactPreviewExecutor,
+      WorkerSqlDmlExecutionPolicy workerSqlDmlExecutionPolicy,
+      SqlDmlExecutionReplayGuard sqlDmlExecutionReplayGuard,
+      ConfiguredSqlDataSourceRegistry sqlDataSourceRegistry) {
     return new RestrictedSqlQueryExecutionWorker(
         new CalciteSqlReadOnlyGuard(),
         new CalciteSqlDmlGuard(),
         sqlQueryExecutor,
+        sqlDmlImpactPreviewExecutor,
+        workerSqlDmlExecutionPolicy,
+        sqlDataSourceRegistry,
+        sqlDmlExecutionReplayGuard,
         workerClock);
   }
 }

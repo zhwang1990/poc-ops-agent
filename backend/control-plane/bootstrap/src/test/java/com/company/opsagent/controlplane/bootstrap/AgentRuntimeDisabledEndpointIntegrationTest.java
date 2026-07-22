@@ -31,14 +31,12 @@ import org.springframework.test.web.reactive.server.WebTestClient;
     "ops-agent.policy.version=rbac-v1",
     "ops-agent.policy.required-roles-by-action.internal.agent.diagnostics.read[0]=ROLE_ops-reader",
     "ops-agent.policy.required-roles-by-action.internal.agent.diagnostics.read[1]=ROLE_ops-admin",
-    "ops-agent.skill-registry.root-path=target/test-classes/skills",
-    "ops-agent.skill-registry.signature-required=true",
     "ops-agent.audit.storage-path=target/test-audit/agent-runtime-disabled-audit.jsonl",
     "spring.r2dbc.url=r2dbc:h2:mem:///agent-runtime-disabled-endpoint-test;MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
     "ops-agent.workflow.startup-recovery-enabled=false",
     "ops-agent.agent-runtime.enabled=false"
 })
-class AgentRuntimeDisabledEndpointIntegrationTest {
+class AgentRuntimeDisabledEndpointIntegrationTest extends BootstrapSkillRegistryTestSupport {
 
   @Autowired
   private WebTestClient webTestClient;
