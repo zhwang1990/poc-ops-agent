@@ -8,6 +8,7 @@ import { useEffect, useRef } from "react";
 
 import {
   findSqlEditorStatements,
+  isLikelyControlledDmlSql,
   isLikelyReadOnlySql,
 } from "./sql-workbench-utils.js";
 import styles from "./SqlWorkbenchPage.module.css";
@@ -88,16 +89,43 @@ class SqlRunGutterSpacerMarker extends GutterMarker {
 
 const sqlRunGutterSpacerMarker = new SqlRunGutterSpacerMarker();
 
+/**
+ * @param {string} sqlText
+ * @param {boolean} canRunReadOnlyStatements
+ * @param {boolean} canRunDmlStatements
+ * @param {string} dmlRunDisabledReason
+ */
+function resolveSqlRunState(
+  sqlText,
+  canRunReadOnlyStatements,
+  canRunDmlStatements,
+  dmlRunDisabledReason,
+) {
+  if (isLikelyReadOnlySql(sqlText)) {
+    return {
+      canRun: canRunReadOnlyStatements,
+      title: canRunReadOnlyStatements ? "运行此 SQL" : "当前连接不允许执行只读查询",
+    };
+  }
+  if (isLikelyControlledDmlSql(sqlText)) {
+    return {
+      canRun: canRunDmlStatements,
+      title: canRunDmlStatements ? "运行此 SQL" : dmlRunDisabledReason,
+    };
+  }
+  return { canRun: false, title: "仅支持 SELECT、INSERT、UPDATE 或 DELETE" };
+}
+
 class SqlRunGutterMarker extends GutterMarker {
   /**
    * @param {SqlEditorStatement} statement
-   * @param {boolean} canRun
+   * @param {{canRun: boolean, title: string}} runState
    * @param {{current: (sqlText: string) => void}} onRunStatementRef
    */
-  constructor(statement, canRun, onRunStatementRef) {
+  constructor(statement, runState, onRunStatementRef) {
     super();
     this.statement = statement;
-    this.canRun = canRun;
+    this.runState = runState;
     this.onRunStatementRef = onRunStatementRef;
   }
 
@@ -110,7 +138,8 @@ class SqlRunGutterMarker extends GutterMarker {
       other.statement.from === this.statement.from &&
       other.statement.to === this.statement.to &&
       other.statement.sql === this.statement.sql &&
-      other.canRun === this.canRun
+      other.runState.canRun === this.runState.canRun &&
+      other.runState.title === this.runState.title
     );
   }
 
@@ -118,11 +147,9 @@ class SqlRunGutterMarker extends GutterMarker {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "cm-sql-run-button";
-    button.setAttribute("aria-label", "执行此 SQL");
-    button.title = this.canRun
-      ? "执行此 SQL"
-      : "仅支持开发/测试连接上的 SELECT 或 WITH 只读 SQL";
-    button.disabled = !this.canRun;
+    button.setAttribute("aria-label", "运行此 SQL");
+    button.title = this.runState.title;
+    button.disabled = !this.runState.canRun;
     button.textContent = "▶";
     button.addEventListener("mousedown", (event) => {
       event.preventDefault();
@@ -130,7 +157,7 @@ class SqlRunGutterMarker extends GutterMarker {
     button.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
-      if (!this.canRun) {
+      if (!this.runState.canRun) {
         return;
       }
       this.onRunStatementRef.current(this.statement.sql);
@@ -140,10 +167,17 @@ class SqlRunGutterMarker extends GutterMarker {
 }
 
 /**
- * @param {boolean} canRunStatements
+ * @param {boolean} canRunReadOnlyStatements
+ * @param {boolean} canRunDmlStatements
+ * @param {string} dmlRunDisabledReason
  * @param {{current: (sqlText: string) => void}} onRunStatementRef
  */
-function createSqlRunGutterExtension(canRunStatements, onRunStatementRef) {
+function createSqlRunGutterExtension(
+  canRunReadOnlyStatements,
+  canRunDmlStatements,
+  dmlRunDisabledReason,
+  onRunStatementRef,
+) {
   return gutter({
     class: "cm-sql-run-gutter",
     initialSpacer: () => sqlRunGutterSpacerMarker,
@@ -157,7 +191,12 @@ function createSqlRunGutterExtension(canRunStatements, onRunStatementRef) {
           line.from,
           new SqlRunGutterMarker(
             statement,
-            canRunStatements && isLikelyReadOnlySql(statement.sql),
+            resolveSqlRunState(
+              statement.sql,
+              canRunReadOnlyStatements,
+              canRunDmlStatements,
+              dmlRunDisabledReason,
+            ),
             onRunStatementRef,
           ),
         );
@@ -179,20 +218,31 @@ function exposeSqlRunGutter(view) {
 
 /**
  * @param {{
- *   canRunStatements: boolean,
+ *   canRunDmlStatements: boolean,
+ *   canRunReadOnlyStatements: boolean,
+ *   dmlRunDisabledReason: string,
  *   onChange: (sqlText: string) => void,
  *   onRunStatement: (sqlText: string) => void,
  *   value: string,
  * }} props
  */
-export function SqlCodeEditor({ canRunStatements, onChange, onRunStatement, value }) {
+export function SqlCodeEditor({
+  canRunDmlStatements,
+  canRunReadOnlyStatements,
+  dmlRunDisabledReason,
+  onChange,
+  onRunStatement,
+  value,
+}) {
   const rootRef = useRef(/** @type {HTMLDivElement | null} */ (null));
   const viewRef = useRef(/** @type {EditorView | null} */ (null));
   const onChangeRef = useRef(onChange);
   const onRunStatementRef = useRef(onRunStatement);
   const runGutterCompartmentRef = useRef(new Compartment());
   const initialValueRef = useRef(value);
-  const initialCanRunStatementsRef = useRef(canRunStatements);
+  const initialCanRunDmlStatementsRef = useRef(canRunDmlStatements);
+  const initialCanRunReadOnlyStatementsRef = useRef(canRunReadOnlyStatements);
+  const initialDmlRunDisabledReasonRef = useRef(dmlRunDisabledReason);
   const isApplyingExternalValueRef = useRef(false);
 
   useEffect(() => {
@@ -215,7 +265,12 @@ export function SqlCodeEditor({ canRunStatements, onChange, onRunStatement, valu
         extensions: [
           basicSetup,
           runGutterCompartmentRef.current.of(
-            createSqlRunGutterExtension(initialCanRunStatementsRef.current, onRunStatementRef),
+            createSqlRunGutterExtension(
+              initialCanRunReadOnlyStatementsRef.current,
+              initialCanRunDmlStatementsRef.current,
+              initialDmlRunDisabledReasonRef.current,
+              onRunStatementRef,
+            ),
           ),
           sql(),
           sqlEditorTheme,
@@ -254,10 +309,15 @@ export function SqlCodeEditor({ canRunStatements, onChange, onRunStatement, valu
 
     view.dispatch({
       effects: runGutterCompartmentRef.current.reconfigure(
-        createSqlRunGutterExtension(canRunStatements, onRunStatementRef),
+        createSqlRunGutterExtension(
+          canRunReadOnlyStatements,
+          canRunDmlStatements,
+          dmlRunDisabledReason,
+          onRunStatementRef,
+        ),
       ),
     });
-  }, [canRunStatements]);
+  }, [canRunDmlStatements, canRunReadOnlyStatements, dmlRunDisabledReason]);
 
   useEffect(() => {
     const view = viewRef.current;

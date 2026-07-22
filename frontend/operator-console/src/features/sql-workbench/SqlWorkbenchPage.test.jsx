@@ -69,20 +69,8 @@ function readSqlText() {
  * @param {number} index
  */
 async function clickRunSqlButton(user, index = 0) {
-  const runButtons = await screen.findAllByRole("button", { name: "执行此 SQL" });
+  const runButtons = await screen.findAllByRole("button", { name: "运行此 SQL" });
   await user.click(runButtons[index]);
-}
-
-/**
- * @param {ReturnType<typeof userEvent.setup>} user
- */
-async function enableManualDml(user) {
-  const transactionControls = screen.getByRole("group", { name: "SQL 事务控制" });
-  const modeButton = within(transactionControls).getByRole("button", { name: "事务模式" });
-  if (modeButton.getAttribute("aria-pressed") !== "true") {
-    await user.click(modeButton);
-  }
-  return within(transactionControls).getByRole("button", { name: "提交当前受控 DML" });
 }
 
 function expectDirectSqlToolbarActionsHidden() {
@@ -349,10 +337,10 @@ describe("SqlWorkbenchPage", () => {
     expect(screen.queryByText("COL_045")).not.toBeInTheDocument();
   });
 
-  test("uses server preflight before showing DML confirmation", async () => {
+  test("uses server preflight before showing execution confirmation", async () => {
     const user = userEvent.setup();
     const confirmSpy = vi.spyOn(window, "confirm").mockImplementation(() => {
-      throw new Error("Browser confirm should not be used for DML risk confirmation");
+      throw new Error("Browser confirm should not be used for execution confirmation");
     });
     server.use(
       http.get("/internal/sql-workbench/connections", () =>
@@ -367,30 +355,19 @@ describe("SqlWorkbenchPage", () => {
 
     await screen.findByText("已连接 · development");
     await replaceSqlText(user, "update ORDERS.ORDERS set status = 'READY'");
-    const transactionControls = screen.getByRole("group", { name: "SQL 事务控制" });
-    const transactionModeButton = within(transactionControls).getByRole("button", {
-      name: "事务模式",
-    });
-    const manualCommitButton = within(transactionControls).getByRole("button", {
-      name: "提交当前受控 DML",
-    });
+    expect(screen.queryByRole("group", { name: "SQL 事务控制" })).not.toBeInTheDocument();
+    await clickRunSqlButton(user);
 
-    expect(transactionModeButton).toHaveAttribute("aria-pressed", "false");
-    expect(manualCommitButton).toBeDisabled();
-
-    await user.click(transactionModeButton);
-    expect(transactionModeButton).toHaveAttribute("aria-pressed", "true");
-    expect(manualCommitButton).toBeEnabled();
-    await user.click(manualCommitButton);
-
-    const riskDialog = await screen.findByRole("dialog", { name: "确认 DML 风险" });
+    const riskDialog = await screen.findByRole("dialog", { name: "确认执行" });
     expect(confirmSpy).not.toHaveBeenCalled();
     expect(await screen.findByText("预计影响 4 行")).toBeInTheDocument();
-    expect(within(riskDialog).getByText("UPDATE_WITHOUT_WHERE")).toBeInTheDocument();
-    expect(within(riskDialog).getByText("sha256:update-without-where")).toBeInTheDocument();
+    expect(within(riskDialog).getByText("UPDATE 未限定 WHERE 条件")).toBeInTheDocument();
+    expect(within(riskDialog).queryByText("UPDATE_WITHOUT_WHERE")).not.toBeInTheDocument();
+    expect(within(riskDialog).queryByText("sha256:update-without-where")).not.toBeInTheDocument();
   });
 
-  test("keeps DML submit disabled when server omits COMMIT_DML capability", async () => {
+  test("disables write execution when the server omits COMMIT_DML capability", async () => {
+    const user = userEvent.setup();
     server.use(
       http.get("/internal/sql-workbench/connections", () =>
         HttpResponse.json(connectionWithoutDmlCapability()),
@@ -400,12 +377,15 @@ describe("SqlWorkbenchPage", () => {
     renderAt("/sql");
 
     await screen.findByText("已连接 · development");
-    expect(
-      screen.getByRole("button", { name: "提交当前受控 DML" }),
-    ).toBeDisabled();
+    await replaceSqlText(user, "update ORDERS.ORDERS set status = 'READY' where order_id = 4");
+    expect(screen.getByRole("button", { name: "运行此 SQL" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "运行此 SQL" })).toHaveAttribute(
+      "title",
+      "当前连接不允许执行写操作",
+    );
   });
 
-  test("forwards the server preflight receipt with the no-WHERE risk confirmation", async () => {
+  test("forwards the server preflight receipt after execution confirmation", async () => {
     const user = userEvent.setup();
     /** @type {unknown[]} */
     const preflightRequests = [];
@@ -439,15 +419,11 @@ describe("SqlWorkbenchPage", () => {
 
     await screen.findByText("已连接 · development");
     await replaceSqlText(user, "update ORDERS.ORDERS set status = 'READY'");
-    const transactionControls = screen.getByRole("group", { name: "SQL 事务控制" });
-    await user.click(within(transactionControls).getByRole("button", { name: "事务模式" }));
-    await user.click(
-      within(transactionControls).getByRole("button", { name: "提交当前受控 DML" }),
-    );
+    await clickRunSqlButton(user);
 
-    const riskDialog = await screen.findByRole("dialog", { name: "确认 DML 风险" });
+    const riskDialog = await screen.findByRole("dialog", { name: "确认执行" });
 
-    await user.click(within(riskDialog).getByRole("button", { name: "确认提交" }));
+    await user.click(within(riskDialog).getByRole("button", { name: "执行" }));
 
     await waitFor(() => expect(commitRequests).toHaveLength(1));
     expect(preflightRequests).toHaveLength(1);
@@ -469,11 +445,13 @@ describe("SqlWorkbenchPage", () => {
     ).toBe(
       /** @type {{idempotencyKey: string}} */ (preflightRequests[0]).idempotencyKey,
     );
-    expect(await screen.findByText("DML 提交完成，影响 4 行。")).toBeInTheDocument();
+    expect(await screen.findByText("执行完成，影响 4 行。")).toBeInTheDocument();
   });
 
-  test("sends an explicit empty risk confirmation for a no-risk DML preflight", async () => {
+  test("submits a no-risk write from the shared run action", async () => {
     const user = userEvent.setup();
+    /** @type {unknown[]} */
+    const preflightRequests = [];
     /** @type {unknown[]} */
     const commitRequests = [];
     const preflight = preflightWithoutRisk();
@@ -481,7 +459,10 @@ describe("SqlWorkbenchPage", () => {
       http.get("/internal/sql-workbench/connections", () =>
         HttpResponse.json(sqlConnections),
       ),
-      http.post("/internal/sql-workbench/queries/preflight", () => HttpResponse.json(preflight)),
+      http.post("/internal/sql-workbench/queries/preflight", async ({ request }) => {
+        preflightRequests.push(await request.json());
+        return HttpResponse.json(preflight);
+      }),
       http.post("/internal/sql-workbench/queries/commit", async ({ request }) => {
         commitRequests.push(await request.json());
         return HttpResponse.json({
@@ -501,22 +482,21 @@ describe("SqlWorkbenchPage", () => {
 
     await screen.findByText("已连接 · development");
     await replaceSqlText(user, "update ORDERS.ORDERS set status = 'READY' where order_id = 4");
-    const transactionControls = screen.getByRole("group", { name: "SQL 事务控制" });
-    await user.click(within(transactionControls).getByRole("button", { name: "事务模式" }));
-    await user.click(
-      within(transactionControls).getByRole("button", { name: "提交当前受控 DML" }),
-    );
+    await clickRunSqlButton(user);
 
     await waitFor(() => expect(commitRequests).toHaveLength(1));
+    expect(preflightRequests).toHaveLength(1);
+    expect(screen.queryByRole("dialog", { name: "确认执行" })).not.toBeInTheDocument();
     expect(commitRequests[0]).toMatchObject({
       confirmation: {
         contractVersion: "1.0",
         sqlHash: "sha256:update-with-where",
-        confirmedRisks: [],
+        confirmedRisks: ["CONTROLLED_DML_CONFIRMED"],
         confirmationCode: "CONFIRM_SQL_DML_RISK",
       },
       receipt: preflight.receipt,
     });
+    expect(await screen.findByText("执行完成，影响 1 行。")).toBeInTheDocument();
   });
 
   test("retries a lost DML commit with its original envelope without re-running preflight", async () => {
@@ -561,17 +541,17 @@ describe("SqlWorkbenchPage", () => {
       user,
       "update ORDERS.ORDERS set status = 'READY'",
     );
-    await user.click(await enableManualDml(user));
-    const riskDialog = await screen.findByRole("dialog", { name: "确认 DML 风险" });
-    await user.click(within(riskDialog).getByRole("button", { name: "确认提交" }));
+    await clickRunSqlButton(user);
+    const riskDialog = await screen.findByRole("dialog", { name: "确认执行" });
+    await user.click(within(riskDialog).getByRole("button", { name: "执行" }));
     expect(await screen.findByText("Network request failed")).toBeInTheDocument();
 
-    await user.click(await enableManualDml(user));
+    await clickRunSqlButton(user);
     await waitFor(() => expect(commitPayloads).toHaveLength(2));
 
     expect(preflightPayloads).toHaveLength(1);
     expect(commitPayloads[1]).toBe(commitPayloads[0]);
-    expect(await screen.findByLabelText("DML 人工接管结果")).toBeInTheDocument();
+    expect(await screen.findByLabelText("人工接管结果")).toBeInTheDocument();
     expect(screen.getByText("workflow-dml-retry-handoff")).toBeInTheDocument();
   });
 
@@ -617,10 +597,10 @@ describe("SqlWorkbenchPage", () => {
       user,
       "update ORDERS.ORDERS set status = 'READY' where order_id = 41",
     );
-    await user.click(await enableManualDml(user));
+    await clickRunSqlButton(user);
     await waitFor(() => expect(commitPayloads).toHaveLength(1));
 
-    await user.click(await enableManualDml(user));
+    await clickRunSqlButton(user);
     await waitFor(() => expect(commitPayloads).toHaveLength(2));
 
     expect(preflightPayloads).toHaveLength(1);
@@ -656,14 +636,14 @@ describe("SqlWorkbenchPage", () => {
       user,
       "update ORDERS.ORDERS set status = 'READY' where order_id = 42",
     );
-    await user.click(await enableManualDml(user));
+    await clickRunSqlButton(user);
     expect(await screen.findByText("Network request failed")).toBeInTheDocument();
 
     await replaceSqlText(
       user,
       "update ORDERS.ORDERS set status = 'READY' where order_id = 43",
     );
-    await user.click(await enableManualDml(user));
+    await clickRunSqlButton(user);
     await waitFor(() => expect(commitRequests).toHaveLength(2));
 
     expect(commitRequests[1].query.idempotencyKey).not.toBe(
@@ -697,11 +677,11 @@ describe("SqlWorkbenchPage", () => {
       user,
       "update ORDERS.ORDERS set status = 'READY' where order_id = 44",
     );
-    await user.click(await enableManualDml(user));
+    await clickRunSqlButton(user);
     await waitFor(() => expect(commitRequests).toHaveLength(1));
-    expect(await screen.findByText("DML 提交完成，影响 1 行。")).toBeInTheDocument();
+    expect(await screen.findByText("执行完成，影响 1 行。")).toBeInTheDocument();
 
-    await user.click(await enableManualDml(user));
+    await clickRunSqlButton(user);
     await waitFor(() => expect(commitRequests).toHaveLength(2));
 
     expect(commitRequests[1].query.idempotencyKey).not.toBe(
@@ -736,14 +716,10 @@ describe("SqlWorkbenchPage", () => {
 
     await screen.findByText("已连接 · development");
     await replaceSqlText(user, "update ORDERS.ORDERS set status = 'READY' where order_id = 4");
-    const transactionControls = screen.getByRole("group", { name: "SQL 事务控制" });
-    await user.click(within(transactionControls).getByRole("button", { name: "事务模式" }));
-    await user.click(
-      within(transactionControls).getByRole("button", { name: "提交当前受控 DML" }),
-    );
+    await clickRunSqlButton(user);
 
-    expect(await screen.findByLabelText("DML 人工接管结果")).toBeInTheDocument();
-    expect(screen.getByText("需要人工接管以确认 DML 执行结果。")).toBeInTheDocument();
+    expect(await screen.findByLabelText("人工接管结果")).toBeInTheDocument();
+    expect(screen.getByText("需要人工接管以确认执行结果。")).toBeInTheDocument();
     expect(screen.getAllByText("workflow-dml-unknown")).toHaveLength(1);
     expect(screen.queryByText("执行事实")).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "查询结果" })).not.toBeInTheDocument();
@@ -751,11 +727,7 @@ describe("SqlWorkbenchPage", () => {
     expect(screen.queryByText("execution-dml-unknown")).not.toBeInTheDocument();
     expect(screen.queryByText("resultId")).not.toBeInTheDocument();
     expect(screen.queryByRole("table", { name: "SQL SELECT 查询结果" })).not.toBeInTheDocument();
-    expect(
-      within(screen.getByRole("group", { name: "SQL 事务控制" })).getByRole("button", {
-        name: "提交当前受控 DML",
-      }),
-    ).toBeDisabled();
+    expect(screen.getByRole("button", { name: "运行此 SQL" })).toBeDisabled();
   });
 
   test("prioritizes unknown DML handoff after the session mode changes during a pending commit", async () => {
@@ -798,11 +770,7 @@ describe("SqlWorkbenchPage", () => {
 
     await screen.findByText("已连接 · development");
     await replaceSqlText(user, "update ORDERS.ORDERS set status = 'READY' where order_id = 4");
-    const transactionControls = screen.getByRole("group", { name: "SQL 事务控制" });
-    await user.click(within(transactionControls).getByRole("button", { name: "事务模式" }));
-    await user.click(
-      within(transactionControls).getByRole("button", { name: "提交当前受控 DML" }),
-    );
+    await clickRunSqlButton(user);
     await commitStarted;
 
     await user.click(screen.getByRole("tab", { name: "自然语言" }));
@@ -810,8 +778,8 @@ describe("SqlWorkbenchPage", () => {
 
     releaseCommit();
 
-    expect(await screen.findByLabelText("DML 人工接管结果")).toBeInTheDocument();
-    expect(screen.getByText("需要人工接管以确认 DML 执行结果。")).toBeInTheDocument();
+    expect(await screen.findByLabelText("人工接管结果")).toBeInTheDocument();
+    expect(screen.getByText("需要人工接管以确认执行结果。")).toBeInTheDocument();
     expect(screen.getAllByText("workflow-dml-unknown-after-mode-switch")).toHaveLength(1);
     expect(screen.queryByText("执行事实")).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "生成结果" })).not.toBeInTheDocument();
@@ -1302,7 +1270,7 @@ describe("SqlWorkbenchPage", () => {
     expectExecutionFactsErrorFieldsHidden();
 
     await replaceSqlText(user, "SELECT * FROM ORDERS.ORDERS");
-    expect(screen.getByRole("button", { name: "执行此 SQL" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "运行此 SQL" })).toBeEnabled();
 
     await clickRunSqlButton(user);
     expect(await screen.findByText("OD-10500")).toBeInTheDocument();
@@ -1320,7 +1288,7 @@ describe("SqlWorkbenchPage", () => {
     expect(runRequests[0]).not.toHaveProperty("validationHash");
 
     await replaceSqlText(user, "UPDATE ORDERS.ORDERS SET status = 'X'");
-    expect(screen.getByRole("button", { name: "执行此 SQL" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "运行此 SQL" })).toBeEnabled();
     expectDirectSqlToolbarActionsHidden();
     expect(runRequests).toHaveLength(1);
   });
@@ -1423,7 +1391,7 @@ describe("SqlWorkbenchPage", () => {
 
     await replaceSqlText(user, "SELECT * FROM ORDERS.ONE;\nSELECT * FROM ORDERS.TWO;");
     const runStatementButtons = await screen.findAllByRole("button", {
-      name: "执行此 SQL",
+      name: "运行此 SQL",
     });
     expect(runStatementButtons).toHaveLength(2);
 
@@ -1479,7 +1447,7 @@ describe("SqlWorkbenchPage", () => {
     expect(editor.querySelector(".cm-sql-comment")).toHaveTextContent(
       "-- run this read-only smoke check",
     );
-    expect(screen.getByRole("button", { name: "执行此 SQL" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "运行此 SQL" })).toBeEnabled();
 
     await clickRunSqlButton(user);
 
@@ -1519,7 +1487,7 @@ describe("SqlWorkbenchPage", () => {
     await replaceSqlText(user, multiStatementSql);
 
     const runStatementButtons = await screen.findAllByRole("button", {
-      name: "执行此 SQL",
+      name: "运行此 SQL",
     });
     expect(runStatementButtons).toHaveLength(2);
     expectDirectSqlToolbarActionsHidden();
@@ -1536,7 +1504,7 @@ describe("SqlWorkbenchPage", () => {
     );
   });
 
-  test("disables gutter run buttons for non-read-only SQL statements", async () => {
+  test("disables gutter run buttons for unsupported SQL statements", async () => {
     const user = userEvent.setup();
     server.use(
       http.get("/internal/sql-workbench/connections", () =>
@@ -1549,11 +1517,11 @@ describe("SqlWorkbenchPage", () => {
     await screen.findByText("已连接 · development");
     await replaceSqlText(
       user,
-      "UPDATE ORDERS.ORDERS SET STATUS = 'X';\nSELECT * FROM ORDERS.ORDERS",
+      "CREATE TABLE ORDERS.TEMP_ORDERS (ORDER_ID INTEGER);\nSELECT * FROM ORDERS.ORDERS",
     );
 
     const runStatementButtons = await screen.findAllByRole("button", {
-      name: "执行此 SQL",
+      name: "运行此 SQL",
     });
     expect(runStatementButtons).toHaveLength(2);
     expect(runStatementButtons[0]).toBeDisabled();
@@ -1840,11 +1808,11 @@ describe("SqlWorkbenchPage", () => {
 
     await screen.findByText("已连接 · production");
     await replaceSqlText(user, "update ORDERS.ORDERS set status = 'READY'");
-    const transactionControls = screen.getByRole("group", { name: "SQL 事务控制" });
-    await user.click(within(transactionControls).getByRole("button", { name: "事务模式" }));
-    expect(
-      within(transactionControls).getByRole("button", { name: "提交当前受控 DML" }),
-    ).toBeDisabled();
+    expect(screen.getByRole("button", { name: "运行此 SQL" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "运行此 SQL" })).toHaveAttribute(
+      "title",
+      "生产环境不允许执行写操作",
+    );
   });
 
   test("uses the AI SQL assistant as advisory input that is revalidated on execution", async () => {
@@ -1886,7 +1854,7 @@ describe("SqlWorkbenchPage", () => {
     await user.click(screen.getByRole("button", { name: "应用建议到编辑器" }));
     expect(readSqlText()).toBe("select order_id, status from ORDERS.ORDERS");
     expect(screen.queryByText("VALIDATED")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "执行此 SQL" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "运行此 SQL" })).toBeEnabled();
   });
 
   test("shows an AI SQL assistant loading animation while advice is pending", async () => {
